@@ -285,6 +285,7 @@ function setSkillUsesLeft(u, idx, v) {
   }
   u.usesArr = u.usesArr || [];
   u.usesArr[idx] = v;
+  if (idx === 0) u.usesLeft = v; // 兼容：主技能次数镜像到 usesLeft（供 hasAnyAction 等读取）
 }
 function initUnitUses(u, def) {
   u.usesLeft = def.skill && def.skill.uses != null ? def.skill.uses : Infinity;
@@ -390,6 +391,52 @@ function chaseBlinkCells(tr, tc) {
     out.push([nr, nc]);
   }
   return out;
+}
+
+/* ---------------- 玉皇大帝：紫薇神步 / 放逐 / 天威 ---------------- */
+/* 某格九宫格（3×3）内的敌方英雄（不含剑刃、不含友军） */
+function enemiesInBox3(r, c, player) {
+  const out = [];
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      const v = unitAt(r + dr, c + dc);
+      if (v && !v.sword && v.player !== player) out.push(v);
+    }
+  }
+  return out;
+}
+/* 四个墙角及其对应的 2×2 四宫格（含墙角格本身） */
+const BOARD_CORNERS = [
+  { corner: { r: 0, c: 0 }, cells: [[0, 0], [0, 1], [1, 0], [1, 1]] },
+  { corner: { r: 0, c: 5 }, cells: [[0, 4], [0, 5], [1, 4], [1, 5]] },
+  { corner: { r: 5, c: 0 }, cells: [[4, 0], [4, 1], [5, 0], [5, 1]] },
+  { corner: { r: 5, c: 5 }, cells: [[4, 4], [4, 5], [5, 4], [5, 5]] },
+];
+/* 该墙角是否可用于放逐：四宫格内没有任何英雄，且墙角格本身为空 */
+function cornerExileOk(cn) {
+  if (!cn || !cn.cells.every(([r, c]) => !unitAt(r, c))) return false;
+  const cr = cn.corner.r, cc = cn.corner.c;
+  return inBounds(cr, cc) && !board[cr][cc];
+}
+/* 将单位击飞出 (boxR,boxC) 的九宫格：移到九宫格以外的最近合法空格；无解返回 null */
+function knockOutOfBox3(v, boxR, boxC) {
+  const p = findPos(v);
+  if (!p) return null;
+  const inBox = (r, c) => Math.abs(r - boxR) <= 1 && Math.abs(c - boxC) <= 1;
+  const cand = [];
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (inBox(r, c)) continue;
+      if (board[r][c]) continue;
+      cand.push({ r, c, d: Math.abs(r - p.r) + Math.abs(c - p.c) });
+    }
+  }
+  if (!cand.length) return null;
+  cand.sort((A, B) => A.d - B.d || A.r - B.r || A.c - B.c);
+  const dest = cand[0];
+  board[dest.r][dest.c] = v;
+  board[p.r][p.c] = null;
+  return dest;
 }
 /* 孤胆侠九宫格内的存活友军（不含自己、不含剑刃） */
 function alliesIn3x3(u) {
@@ -1115,6 +1162,50 @@ function computeSkillTargets() {
       }
       break;
     }
+
+    case "ziwei": {
+      // 与雷霆万钧同范围：九宫格 8 格 + 四方向第 2 格；落点必须完全为空
+      const cand = [];
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        if (dr === 0 && dc === 0) continue;
+        cand.push([r + dr, c + dc]);
+      }
+      for (const [dr, dc] of DIRS) cand.push([r + dr * 2, c + dc * 2]);
+      const seenZ = new Set();
+      for (const [rr, cc] of cand) {
+        if (!inBounds(rr, cc)) continue;
+        const key = rr + "_" + cc;
+        if (seenZ.has(key)) continue;
+        seenZ.add(key);
+        if (board[rr][cc]) continue; // 落点必须为空（任何英雄/剑刃）
+        skillTargets.push([rr, cc]);
+      }
+      break;
+    }
+
+    case "exile": {
+      if (skillSub && skillSub.kind === "exile-target") {
+        // 第 2 步：可选的墙角（四宫格全空的墙角）
+        for (const cn of BOARD_CORNERS) {
+          if (cornerExileOk(cn)) skillTargets.push([cn.corner.r, cn.corner.c]);
+        }
+      } else {
+        // 第 1 步：全图存活敌方英雄
+        for (const v of unitsOf(u.player === 1 ? 2 : 1)) {
+          const p = findPos(v);
+          if (p) skillTargets.push([p.r, p.c]);
+        }
+      }
+      break;
+    }
+
+    case "tianwei": {
+      // 全图任意空格落点
+      for (let rr = 0; rr < SIZE; rr++) for (let cc = 0; cc < SIZE; cc++) {
+        if (!board[rr][cc]) skillTargets.push([rr, cc]);
+      }
+      break;
+    }
   }
 }
 
@@ -1350,6 +1441,27 @@ function useSkill(tr, tc) {
     return; // 尚未结算，等待落点
   }
 
+  // 玉皇大帝·放逐：第 1 步先选“被放逐的敌人”（本地选择，不消耗行动）
+  if (s.type === "exile" && !(skillSub && skillSub.kind === "exile-target")) {
+    const et = unitAt(tr, tc);
+    if (!et || et.sword || et.player === a.player) {
+      addLog("放逐：请选择一名存活的敌方英雄。");
+      render();
+      return;
+    }
+    const legal = BOARD_CORNERS.filter(cornerExileOk);
+    if (!legal.length) {
+      addLog("放逐：四个墙角对应的四宫格内都已有英雄，无法释放（不消耗次数）。");
+      render();
+      return;
+    }
+    skillSub = { kind: "exile-target", tUid: et.uid, tR: tr, tC: tc };
+    skillTargets = legal.map((cn) => [cn.corner.r, cn.corner.c]);
+    render();
+    addLog("👑 已锁定 " + label(et) + "，请选择放逐的墙角（高亮为四宫格全空的墙角；不消耗行动）。");
+    return; // 尚未结算，等待墙角
+  }
+
   if (gameMode === "online") {
     onlineForward({
       type: "skill",
@@ -1358,6 +1470,7 @@ function useSkill(tr, tc) {
       idx: activeSkillIdx,
       reposition: s.type === "shuidiao" && skillSub ? { r: skillSub.r, c: skillSub.c } : undefined,
       chaseTarget: s.type === "chase" && skillSub && skillSub.kind === "chase-blink" ? { r: skillSub.tR, c: skillSub.tC } : undefined,
+      exileTarget: s.type === "exile" && skillSub && skillSub.kind === "exile-target" ? { r: skillSub.tR, c: skillSub.tC } : undefined,
     });
     return;
   }
@@ -1752,6 +1865,83 @@ function useSkill(tr, tc) {
         addLog("🩸 " + label(a) + " 释放【" + s.name + "】，命中 " + victims.length + " 名敌人，但没有造成实际伤害，未回血。");
       }
       if (kills > 0) addLog("🩸 血崩击杀 " + kills + " 名敌人，【" + s.name + "】使用次数已刷新。");
+      break;
+    }
+
+    case "ziwei": {
+      // 范围：九宫格 或 四方向第 2 格（与雷霆万钧一致）；落点必须完全为空
+      const okPos = (Math.abs(tr - r) <= 1 && Math.abs(tc - c) <= 1 && !(tr === r && tc === c)) ||
+        (Math.abs(tr - r) + Math.abs(tc - c) === 2 && (tr === r || tc === c));
+      if (!inBounds(tr, tc) || board[tr][tc] || !okPos) {
+        addLog("紫薇神步：落点不合法（必须为空且在九宫格 / 四方向第 2 格内）。");
+        clearSelection();
+        render();
+        return;
+      }
+      const beforeU = enemiesInBox3(r, c, a.player);   // 位移前的九宫格
+      board[tr][tc] = a;
+      board[r][c] = null;
+      const afterU = enemiesInBox3(tr, tc, a.player);  // 位移后的九宫格
+      let zHit = 0;
+      for (const t of beforeU) { if (!findPos(t)) continue; applyDamage(t, s.damage, "skill", a); zHit++; }
+      for (const t of afterU) { if (!findPos(t)) continue; applyDamage(t, s.damage, "skill", a); zHit++; } // 重叠区域再结算一次
+      if (window.SFX) window.SFX.play("dash", { sfx: sfxOf(a) });
+      addLog("👑 " + label(a) + " 释放【" + s.name + "】，瞬移到 (" + (tr + 1) + "," + (tc + 1) + ")，位移前后共结算 " + zHit + " 次伤害（重叠区域分别计算）。");
+      fx.push({ r: tr, c: tc, text: "神步", kind: "skill" });
+      break;
+    }
+
+    case "exile": {
+      const sub = skillSub && skillSub.kind === "exile-target" ? skillSub : null;
+      const tgt = sub ? unitAt(sub.tR, sub.tC) : null;
+      if (!sub || !tgt || tgt.sword || tgt.uid !== sub.tUid || !findPos(tgt)) {
+        addLog("放逐：目标已失效，请重新选择。");
+        skillSub = null;
+        clearSelection();
+        render();
+        return;
+      }
+      const cn = BOARD_CORNERS.find((x) => x.corner.r === tr && x.corner.c === tc);
+      if (!cn || !cornerExileOk(cn)) {
+        addLog("放逐：该墙角当前不可选（其 2×2 四宫格内已有英雄）。");
+        render();
+        return;
+      }
+      const from = findPos(tgt);
+      board[cn.corner.r][cn.corner.c] = tgt;
+      board[from.r][from.c] = null;
+      skillSub = null;
+      addLog("👑 " + label(a) + " 释放【" + s.name + "】，将 " + label(tgt) + " 放逐到墙角 (" + (cn.corner.r + 1) + "," + (cn.corner.c + 1) + ")。");
+      fx.push({ r: cn.corner.r, c: cn.corner.c, text: "放逐", kind: "skill" });
+      break;
+    }
+
+    case "tianwei": {
+      if (!inBounds(tr, tc) || board[tr][tc]) {
+        addLog("天威：落点必须是空格。");
+        clearSelection();
+        render();
+        return;
+      }
+      board[tr][tc] = a;
+      board[r][c] = null;
+      // 落点九宫格内的敌人：按位置排序，逐个「1 伤 + 尝试击飞出九宫格」
+      const victims = enemiesInBox3(tr, tc, a.player).slice().sort((x, y) => {
+        const px = findPos(x), py = findPos(y);
+        if (!px) return 1;
+        if (!py) return -1;
+        return (px.r - py.r) || (px.c - py.c);
+      });
+      let tHit = 0, tKnock = 0;
+      for (const t of victims) {
+        if (!findPos(t)) continue;
+        applyDamage(t, s.damage, "skill", a); // 每名敌人最多结算一次
+        tHit++;
+        if (findPos(t) && knockOutOfBox3(t, tr, tc)) tKnock++;
+      }
+      if (window.SFX) window.SFX.play("dash", { sfx: sfxOf(a) });
+      addLog("👑 " + label(a) + " 释放【" + s.name + "】，降临 (" + (tr + 1) + "," + (tc + 1) + ")，命中 " + tHit + " 名敌人，击飞 " + tKnock + " 名。");
+      fx.push({ r: tr, c: tc, text: "天威", kind: "skill" });
       break;
     }
   }
@@ -2974,6 +3164,25 @@ function aiSkillScore(u, s, pos, rr, cc, w) {
     }
     case "shield_self":
       return 10;
+    case "ziwei": {
+      // 位移前后两个九宫格分别计分（重叠区域按两次）
+      const zb = enemiesInBox3(pos.r, pos.c, u.player);
+      const za = enemiesInBox3(rr, cc, u.player);
+      let sc = 0;
+      for (const e of zb) sc += w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0);
+      for (const e of za) sc += w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0);
+      const zb0 = nearestEnemyDist(pos.r, pos.c, u.player);
+      const za0 = nearestEnemyDist(rr, cc, u.player);
+      sc += (zb0 - za0) * (w.distW / 2);
+      return sc > 0 ? sc : 2; // 没命中也能位移走位
+    }
+    case "tianwei": {
+      // 落点九宫格内的敌人（天威消耗行动，故只在能打到人时才使用）
+      const es = enemiesInBox3(rr, cc, u.player);
+      let sc = 0;
+      for (const e of es) sc += w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0) + 6;
+      return sc > 0 ? sc : null;
+    }
     case "bloodburst": {
       // 以自身为中心九宫格：按命中的敌人数量与是否击杀打分；范围内没敌人就不使用
       let sc = 0;
@@ -3203,6 +3412,22 @@ function aiEnumerate() {
         return;
       }
 
+      // 玉皇大帝·放逐：两步选择（先选敌人、再选墙角），此处直接枚举「敌人 × 合法墙角」组合
+      if (s.type === "exile") {
+        const legal = BOARD_CORNERS.filter(cornerExileOk);
+        if (!legal.length) return;
+        for (const v of unitsOf(aiPlayer === 1 ? 2 : 1)) {
+          const vp = findPos(v);
+          if (!vp) continue;
+          for (const cn of legal) {
+            // 打分：控制价值 + 残血目标优先（放逐本身不造成伤害）
+            let sc = 10 + (v.hp <= 2 ? 14 : 0);
+            acts.push({ type: "skill", u, pos, target: { r: vp.r, c: vp.c }, corner: { r: cn.corner.r, c: cn.corner.c }, skillIdx: si, score: sc * w.skillW });
+          }
+        }
+        return;
+      }
+
       activeSkillIdx = si;
       selected = { r: pos.r, c: pos.c };
       computeSkillTargets();
@@ -3252,6 +3477,8 @@ function aiApplyAction(act) {
     useSkill(act.target.r, act.target.c);
     // 刺客·追猎第二段：第 2 步选择闪身落点
     if (act.landing) useSkill(act.landing.r, act.landing.c);
+    // 玉皇大帝·放逐：第 2 步选择墙角
+    if (act.corner) useSkill(act.corner.r, act.corner.c);
   }
 }
 /* AI 完成一次回合（可能包含多次「不结束回合」的剑圣突进） */

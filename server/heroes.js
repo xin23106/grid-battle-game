@@ -36,4 +36,10 @@ module.exports = [
     skill: { name: "雷霆万钧", type: "thunder", damage: 1, uses: 1, empowerTurns: 3, empowerShield: 2, empowerActions: 2 } },
   { id: "vampire", name: "吸血鬼", hp: 5, sfx: "magic",
     skill: { name: "血崩", type: "bloodburst", damage: 1, uses: 1, free: true, refreshOnKill: true } },
+  { id: "jade", name: "玉皇大帝", hp: 5, sfx: "magic",
+    skill: { name: "紫薇神步", type: "ziwei", damage: 1, uses: 1, free: true },
+    extraSkills: [
+      { name: "放逐", type: "exile", uses: 1, free: true },
+      { name: "天威", type: "tianwei", damage: 1, uses: 1 },
+    ] },
 ];

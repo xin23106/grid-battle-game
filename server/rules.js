@@ -32,6 +32,7 @@ function setSkillUses(s, u, idx, v) {
   if (skills.length === 1) { u.usesLeft = v; return; }
   u.usesArr = u.usesArr || [];
   u.usesArr[idx] = v;
+  if (idx === 0) u.usesLeft = v; // 兼容：主技能次数镜像
 }
 /* 被抓取：不能做任何动作 */
 function isGrabbed(u) {
@@ -310,8 +311,53 @@ function dragonBreathArea(u, r, c, dr, dc) {
   }
   return out;
 }
-function computeDash(s, u, r, c, dr, dc, maxSteps) {
-  const steps = maxSteps || 3;
+/* ---------------- 玉皇大帝：紫薇神步 / 放逐 / 天威 ---------------- */
+/* 某格九宫格（3×3）内的敌方英雄（不含剑刃/友军） */
+function box3Enemies(s, r, c, player) {
+  const out = [];
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      const rr = r + dr, cc = c + dc;
+      const v = inB(rr, cc) ? s.board[rr][cc] : null;
+      if (isUnit(v) && v.player !== player) out.push(v);
+    }
+  }
+  return out;
+}
+/* 四个墙角及其 2×2 四宫格（含墙角格本身） */
+const CORNERS = [
+  { corner: { r: 0, c: 0 }, cells: [[0, 0], [0, 1], [1, 0], [1, 1]] },
+  { corner: { r: 0, c: 5 }, cells: [[0, 4], [0, 5], [1, 4], [1, 5]] },
+  { corner: { r: 5, c: 0 }, cells: [[4, 0], [4, 1], [5, 0], [5, 1]] },
+  { corner: { r: 5, c: 5 }, cells: [[4, 4], [4, 5], [5, 4], [5, 5]] },
+];
+/* 该墙角是否可用于放逐：四宫格内没有任何英雄，且墙角格本身为空 */
+function cornerOk(s, cn) {
+  if (!cn) return false;
+  if (!cn.cells.every(([r, c]) => !isUnit(inB(r, c) ? s.board[r][c] : null))) return false;
+  const cr = cn.corner.r, cc = cn.corner.c;
+  return inB(cr, cc) && !s.board[cr][cc];
+}
+/* 将单位击飞出 (boxR,boxC) 九宫格：移到九宫格以外的最近合法空格；无解返回 null */
+function knockOutBox3(s, v, boxR, boxC) {
+  const p = findPos(s, v);
+  if (!p) return null;
+  const inBox = (r, c) => Math.abs(r - boxR) <= 1 && Math.abs(c - boxC) <= 1;
+  const cand = [];
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (inBox(r, c) || s.board[r][c]) continue;
+      cand.push({ r, c, d: Math.abs(r - p.r) + Math.abs(c - p.c) });
+    }
+  }
+  if (!cand.length) return null;
+  cand.sort((A, B) => A.d - B.d || A.r - B.r || A.c - B.c);
+  const dest = cand[0];
+  s.board[dest.r][dest.c] = v;
+  s.board[p.r][p.c] = null;
+  return dest;
+}
+function computeDash(s, u, r, c, dr, dc, maxSteps) {  const steps = maxSteps || 3;
   const hits = []; let dest = null;
   for (let k = 1; k <= steps; k++) {
     const rr = r + dr * k, cc = c + dc * k;
@@ -713,6 +759,41 @@ function applyAction(state, player, action) {
         setSkillUses(s, u, idx, Math.max(0, skillUsesLeft(s, u, idx) - 1));
         for (const e of hitUnits) applyDamage(s, e, sk.damage, u);
         u.chaseStage = 1;
+      }
+    } else if (sk.type === "ziwei") {
+      // 范围与雷霆万钧一致；落点必须为空
+      const okPos = (Math.abs(r - from.r) <= 1 && Math.abs(c - from.c) <= 1 && !(r === from.r && c === from.c)) ||
+        (Math.abs(r - from.r) + Math.abs(c - from.c) === 2 && (r === from.r || c === from.c));
+      if (!inB(r, c) || s.board[r][c] || !okPos) return err("紫薇神步落点不合法（需为空且在同范围格内）");
+      const zBefore = box3Enemies(s, from.r, from.c, player);
+      s.board[r][c] = u;
+      s.board[from.r][from.c] = null;
+      const zAfter = box3Enemies(s, r, c, player);
+      for (const e of zBefore) { if (findPos(s, e)) applyDamage(s, e, sk.damage, u); }
+      for (const e of zAfter) { if (findPos(s, e)) applyDamage(s, e, sk.damage, u); } // 重叠区域再结算一次
+    } else if (sk.type === "exile") {
+      const et = action.exileTarget && action.exileTarget.r != null ? action.exileTarget : null;
+      const target = et && inB(et.r, et.c) ? s.board[et.r][et.c] : null;
+      if (!isUnit(target) || target.player === player) return err("放逐目标不合法（需存活敌人）");
+      const cn = CORNERS.find((x) => x.corner.r === r && x.corner.c === c);
+      if (!cn || !cornerOk(s, cn)) return err("该墙角不可选（其四宫格内已有英雄）");
+      const tp = findPos(s, target);
+      s.board[cn.corner.r][cn.corner.c] = target;
+      s.board[tp.r][tp.c] = null;
+    } else if (sk.type === "tianwei") {
+      if (!inB(r, c) || s.board[r][c]) return err("天威落点必须是空格");
+      s.board[r][c] = u;
+      s.board[from.r][from.c] = null;
+      const victims = box3Enemies(s, r, c, player).sort((x, y) => {
+        const px = findPos(s, x), py = findPos(s, y);
+        if (!px) return 1;
+        if (!py) return -1;
+        return (px.r - py.r) || (px.c - py.c);
+      });
+      for (const e of victims) {
+        if (!findPos(s, e)) continue;
+        applyDamage(s, e, sk.damage, u); // 每名敌人最多一次
+        if (findPos(s, e)) knockOutBox3(s, e, r, c);
       }
     } else return err("未知技能");
 
