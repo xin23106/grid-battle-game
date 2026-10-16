@@ -697,14 +697,42 @@ function assassinInFlank(attacker, target) {
   return false;
 }
 
+/* ---------------- 西楚霸王·鬼雄 ---------------- */
+/* 鬼雄是否已触发（触发后进入「绝境」：普通攻击伤害永久 +1） */
+function isGuixiongActive(u) {
+  return !!(u && !u.sword && u.heroId === "xiangyu" && u.guixiongUsed);
+}
+/* 鬼雄触发时的九宫格反击：对周围 8 格内所有敌方英雄各造成 2 点伤害（走统一伤害结算） */
+function guixiongCounter(u) {
+  const pos = findPos(u);
+  if (!pos) return 0;
+  const victims = [];
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      if (dr === 0 && dc === 0) continue;
+      const t = unitAt(pos.r + dr, pos.c + dc);
+      if (t && !t.sword && t.player !== u.player) victims.push(t);
+    }
+  }
+  let hit = 0;
+  for (const t of victims) {
+    if (!findPos(t)) continue;
+    applyDamage(t, 2, "skill", u); // 统一结算：护盾 / 闪避 / 阵亡 / 被动均生效
+    hit++;
+  }
+  return hit;
+}
+
 /* 普通攻击伤害结算（纯计算，不产生副作用，便于测试）：
  * 基础伤害 1；若目标被夹击，额外 =（夹击方向数 − 1）。
  * 例：2 个方向 +1（共 2 点）、3 个方向 +2（共 3 点）、4 个方向 +3（共 4 点）。
- * 【刺客·暗杀】：刺客参与本次夹击时，夹击额外 +1（同一次夹击最多 +1）。 */
+ * 【刺客·暗杀】：刺客参与本次夹击时，夹击额外 +1（同一次夹击最多 +1）。
+ * 【西楚霸王·绝境】：鬼雄触发后，普通攻击额外 +1（永久，仅普攻）。 */
 function resolveNormalAttack(attacker, target) {
   const info = computeFlankInfo();
   const d = info.get(target.uid) || { base: false, protected: false, flanked: false, count: 0, bonus: 0 };
   const assassin = d.flanked && assassinInFlank(attacker, target) ? 1 : 0;
+  const guixiong = isGuixiongActive(attacker) ? 1 : 0;
   return {
     base: d.base,
     protected: d.protected,
@@ -712,7 +740,8 @@ function resolveNormalAttack(attacker, target) {
     flank: d.flanked,
     bonus: d.bonus,
     assassin,
-    damage: BASE_ATTACK + d.bonus + assassin,
+    guixiong,
+    damage: BASE_ATTACK + d.bonus + assassin + guixiong,
   };
 }
 
@@ -798,6 +827,7 @@ function handlePlacement(r, c) {
     empowerTurns: 0,            // 雷电之主·强化剩余自身回合
     chaseStage: 0,              // 刺客·追猎阶段（0=未开始 / 1=第二段待释放）
     chaseMark: 0,               // 被哪个刺客（uid）附加了追猎标记，0=无
+    guixiongUsed: false,        // 西楚霸王·鬼雄：首次致命锁血是否已触发
   };
   initUnitUses(unit, def);
   board[r][c] = unit;
@@ -1283,7 +1313,24 @@ function applyDamage(target, amount, kind, source) {
     addLog("🐉 龙魂：龙人闪避了本次伤害（0 点）。");
     grantDragonMove(target);
   }
+  // 西楚霸王·鬼雄：首次致命伤害 → 锁血到 1（每局一次），随后反击九宫格内敌人并进入绝境强化
+  let guixiongTriggered = false;
+  if (dmg > 0 && target.hp - dmg <= 0 && target.heroId === "xiangyu" && !target.guixiongUsed) {
+    target.guixiongUsed = true;
+    guixiongTriggered = true;
+    dmg = Math.max(0, target.hp - 1);
+    addLog("👹 西楚霸王·鬼雄：锁定生命为 1 点，免于阵亡（本局一次）！");
+    if (pos) fx.push({ r: pos.r, c: pos.c, text: "鬼雄!", kind: "skill" });
+    if (window.SFX) window.SFX.play("skill", { sfx: sfxOf(target) });
+  }
   if (dmg > 0) target.hp -= dmg;
+
+  // 鬼雄的反击在「锁血生效之后」执行：对九宫格内所有敌人各 2 点（走统一结算）
+  if (guixiongTriggered && findPos(target)) {
+    const hit = guixiongCounter(target);
+    addLog("👹 鬼雄反击：对九宫格内 " + hit + " 名敌人各造成 2 点伤害。");
+    addLog("👹 西楚霸王进入【绝境】：此后普通攻击伤害 +1（持续到本局结束）。");
+  }
 
   if (pos) fx.push({ r: pos.r, c: pos.c, text: dodged ? "闪避" : (dmg > 0 ? "-" + dmg : "格挡"), kind: kind || "normal" });
 
@@ -1306,6 +1353,7 @@ function applyDamage(target, amount, kind, source) {
       usesLeft: target.usesLeft || 0,
       swords: target.swords || 0,
       lockUsed: !!target.lockUsed,
+      guixiongUsed: !!target.guixiongUsed,
     });
     board[pos.r][pos.c] = null;
     addLog(label(target) + " 阵亡！");
@@ -1353,12 +1401,12 @@ function normalAttack(attacker, target) {
 
   if (res.flank) {
     addLog("【夹击×" + res.count + "】" + label(attacker) + " 攻击 " + label(target) + "，额外伤害 +" + res.bonus +
-      (res.assassin ? "，刺客·暗杀 +1" : "") + (aBonus ? "，猛攻令 +1" : "") + "（共 " + total + " 点）。");
+      (res.assassin ? "，刺客·暗杀 +1" : "") + (res.guixiong ? "，鬼雄·绝境 +1" : "") + (aBonus ? "，猛攻令 +1" : "") + "（共 " + total + " 点）。");
     if (res.assassin) addLog("🗡 刺客·暗杀触发：本次夹击额外 +1 点伤害。");
   } else if (res.base && res.protected) {
-    addLog("【队友保护，夹击无效】" + label(attacker) + " 攻击 " + label(target) + "，造成 " + (BASE_ATTACK + aBonus) + " 点伤害" + (aBonus ? "（猛攻令 +1）" : "") + "。");
+    addLog("【队友保护，夹击无效】" + label(attacker) + " 攻击 " + label(target) + "，造成 " + (res.damage + aBonus) + " 点伤害" + (res.guixiong ? "（鬼雄·绝境 +1）" : "") + (aBonus ? "（猛攻令 +1）" : "") + "。");
   } else {
-    addLog(label(attacker) + " 攻击 " + label(target) + "，造成 " + (BASE_ATTACK + aBonus) + " 点伤害" + (aBonus ? "（猛攻令 +1）" : "") + "。");
+    addLog(label(attacker) + " 攻击 " + label(target) + "，造成 " + (res.damage + aBonus) + " 点伤害" + (res.guixiong ? "（鬼雄·绝境 +1）" : "") + (aBonus ? "（猛攻令 +1）" : "") + "。");
   }
 
   if (window.SFX) window.SFX.play("attack", { sfx: sfxOf(attacker) });
@@ -2172,6 +2220,7 @@ function useTalismanEffect(id, tr, tc) {
         usesLeft: rec.usesLeft || 0,      // 不重置技能次数
         statuses: {},
         lockUsed: !!rec.lockUsed,         // 锁血状态保留（每局一次）
+        guixiongUsed: !!rec.guixiongUsed, // 鬼雄触发状态保留（每局一次）
         sdStage: 0,
         dragonMoves: 0,
         empowerTurns: 0,
@@ -2434,6 +2483,13 @@ function buildUnit(u) {
     b.textContent = "🎯";
     el.appendChild(b);
   }
+  if (u.guixiongUsed) {
+    const b = document.createElement("span");
+    b.className = "badge guixiong";
+    b.title = "鬼雄已触发：生命锁定 1 · 普通攻击伤害 +1（绝境）";
+    b.textContent = "👹";
+    el.appendChild(b);
+  }
   return el;
 }
 
@@ -2639,6 +2695,11 @@ function updateHeroCard() {
       : '<span class="chip">🐺 孤胆未生效（九宫格内有友军）</span>');
     chips.push('<span class="chip ' + (u.lockUsed ? "" : "lone") + '">' + (u.lockUsed ? "锁血：已使用" : "锁血：可用") + "</span>");
   }
+  if (u.heroId === "xiangyu") {
+    chips.push(u.guixiongUsed
+      ? '<span class="chip guixiong">👹 鬼雄已触发：生命锁定 1 · 普通攻击伤害 +1（绝境）</span>'
+      : '<span class="chip">👹 鬼雄：未触发（首次致命伤锁血为 1，并反击九宫格 2 点）</span>');
+  }
   if (u.statuses) {
     for (const k of Object.keys(u.statuses)) {
       chips.push('<span class="chip frozen">⛓ ' + (u.statuses[k].label || k) + (u.statuses[k].turns != null ? " 剩 " + u.statuses[k].turns : "") + "</span>");
@@ -2789,6 +2850,9 @@ function renderDetailCard() {
     st.push(u.lockUsed ? "锁血：已使用" : "锁血：可用");
   }
   if (hasSuperArmor(u)) st.push("霸体：免疫抓取等负面效果");
+  if (u.heroId === "xiangyu") {
+    st.push(u.guixiongUsed ? "鬼雄已触发：生命锁定 1，普通攻击伤害 +1（绝境）" : "鬼雄：未触发（首次致命伤锁血为 1 并反击九宫格 2 点）");
+  }
   if (flankImmune(u)) st.push("免疫夹击加成");
   if (u.frozen > 0) st.push("冰封：跳过 " + u.frozen + " 个回合");
   if (u.statuses) for (const k of Object.keys(u.statuses)) st.push((u.statuses[k].label || k) + "（剩 " + (u.statuses[k].turns != null ? u.statuses[k].turns : 1) + "）");
@@ -3877,6 +3941,8 @@ window.GameAPI = {
   flankCountAt,
   resolveNormalAttack,
   assassinInFlank,
+  isGuixiongActive,
+  guixiongCounter,
   computeChaseLine,
   chaseTargetsOf,
   chaseBlinkCells,
@@ -3959,6 +4025,7 @@ window.GameAPI = {
         empowerTurns: spec.empowerTurns || 0,
         chaseStage: spec.chaseStage || 0,
         chaseMark: spec.chaseMark || 0,
+        guixiongUsed: !!spec.guixiongUsed,
       };
       initUnitUses(unit, def);
       if (spec.uses != null) unit.usesLeft = spec.uses;

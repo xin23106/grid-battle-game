@@ -192,10 +192,35 @@ function assassinInFlank(s, attacker, target) {
   }
   return false;
 }
+/* 西楚霸王·鬼雄是否已触发（绝境：普通攻击 +1） */
+function isGuixiongActive(s, u) {
+  return !!(u && !u.sword && u.heroId === "xiangyu" && u.guixiongUsed);
+}
 function normalDamage(s, attacker, target) {
   const d = flankInfo(s).get(target.uid);
   const assassin = d && d.flanked && assassinInFlank(s, attacker, target) ? 1 : 0;
-  return BASE_ATTACK + (d ? d.bonus : 0) + assassin + attackerBonus(s, attacker);
+  const guixiong = isGuixiongActive(s, attacker) ? 1 : 0; // 绝境：普攻 +1
+  return BASE_ATTACK + (d ? d.bonus : 0) + assassin + guixiong + attackerBonus(s, attacker);
+}
+/* 鬼雄触发时的九宫格反击：对周围 8 格内敌人各 2 点（走统一结算） */
+function guixiongCounter(s, u) {
+  const p = findPos(s, u);
+  if (!p) return 0;
+  const victims = [];
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      if (dr === 0 && dc === 0) continue;
+      const t = inB(p.r + dr, p.c + dc) ? s.board[p.r + dr][p.c + dc] : null;
+      if (isUnit(t) && t.player !== u.player) victims.push(t);
+    }
+  }
+  let hit = 0;
+  for (const t of victims) {
+    if (!findPos(s, t)) continue;
+    applyDamage(s, t, 2, u);
+    hit++;
+  }
+  return hit;
 }
 /* ---------------- 刺客·追猎 ---------------- */
 function computeChaseLine(s, u, r, c, dr, dc) {
@@ -283,13 +308,21 @@ function applyDamage(s, target, amount, source) {
     target.lockUsed = true;
     dmg = Math.max(0, target.hp - 1);
   }
+  // 西楚霸王·鬼雄：首次致命伤害锁血到 1（每局一次），随后反击九宫格并进入绝境
+  let guixiongTriggered = false;
+  if (dmg > 0 && target.hp - dmg <= 0 && target.heroId === "xiangyu" && !target.guixiongUsed) {
+    target.guixiongUsed = true;
+    guixiongTriggered = true;
+    dmg = Math.max(0, target.hp - 1);
+  }
   if (dmg > 0) target.hp -= dmg;
+  if (guixiongTriggered && findPos(s, target)) guixiongCounter(s, target);
   if (target.hp <= 0 && pos) {
     // 追猎标记清理：目标阵亡 → 清自身标记；刺客阵亡 → 清其遗留标记
     target.chaseMark = 0;
     if (target.heroId === "assassin") clearChaseMarks(s, target.uid);
     // 记录阵亡（供还魂令），先于清空棋盘 / 生成剑刃
-    s.graveyard.push({ player: target.player, heroId: target.heroId, r: pos.r, c: pos.c, usesLeft: target.usesLeft || 0, swords: target.swords || 0, lockUsed: !!target.lockUsed });
+    s.graveyard.push({ player: target.player, heroId: target.heroId, r: pos.r, c: pos.c, usesLeft: target.usesLeft || 0, swords: target.swords || 0, lockUsed: !!target.lockUsed, guixiongUsed: !!target.guixiongUsed });
     s.board[pos.r][pos.c] = null;
     spawnSword(s, pos.r, pos.c);
     // 击杀刷新：刺客·追猎 / 吸血鬼·血崩（同一次击杀只刷新一次）
@@ -487,7 +520,7 @@ function applyAction(state, player, action) {
                       shield: 0, frozen: 0, swords: def.blades || 0,
                       usesLeft: def.skill.uses == null ? 9999 : def.skill.uses,
                       statuses: {}, lockUsed: false, sdStage: 0, dragonMoves: 0, empowerTurns: 0,
-                      chaseStage: 0, chaseMark: 0,
+                      chaseStage: 0, chaseMark: 0, guixiongUsed: false,
                       usesArr: heroSkills(def).map((sk) => (sk.uses == null ? 9999 : sk.uses)) };
     s.placed[player].push(heroId);
     s.toPlace--;
@@ -542,7 +575,7 @@ function applyAction(state, player, action) {
         const def = heroDef(rec.heroId);
         s.board[to.r][to.c] = { uid: s.unitSeq++, heroId: def.id, player, hp: Math.min(3, def.hp), maxHp: def.hp,
                                 shield: 0, frozen: 0, swords: rec.swords || 0, usesLeft: rec.usesLeft || 0,
-                                statuses: {}, lockUsed: !!rec.lockUsed, sdStage: 0, dragonMoves: 0, empowerTurns: 0, chaseStage: 0, chaseMark: 0 };
+                                statuses: {}, lockUsed: !!rec.lockUsed, sdStage: 0, dragonMoves: 0, empowerTurns: 0, chaseStage: 0, chaseMark: 0, guixiongUsed: !!rec.guixiongUsed };
         s.graveyard.splice(idx, 1);
         break;
       }
@@ -808,4 +841,5 @@ function applyAction(state, player, action) {
 }
 
 module.exports = { createState, applyAction, applyNegativeStatus, hasSuperArmor, isLoneActive, applyDamage, SIZE, PER_PLAYER,
-  normalDamage, assassinInFlank, computeChaseLine, chaseTargetsOf, chaseBlinkCells, refreshChase, endChase, skillFreeForS, refreshSkillOnKill };
+  normalDamage, assassinInFlank, computeChaseLine, chaseTargetsOf, chaseBlinkCells, refreshChase, endChase, skillFreeForS, refreshSkillOnKill,
+  isGuixiongActive, guixiongCounter, box3Enemies, CORNERS, cornerOk, knockOutBox3 };

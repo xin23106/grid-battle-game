@@ -671,6 +671,8 @@ html, body {
 .dc-meta { color: var(--muted); font-size: 11px; margin-top: 3px; }
 .dc-status { margin-top: 10px; font-size: 12px; color: #cbd5e1; }
 .chip.lone { background: #7c2d12; color: #fed7aa; }
+.chip.guixiong { background: #9a3412; color: #ffedd5; }
+.badge.guixiong { top: 2px; left: 3px; background: #f97316; color: #1a1205; }
 .cell.superarmor .unit { box-shadow: 0 0 0 2px #facc15, 0 0 10px rgba(250, 204, 21, .6); }
 
 /* 技能栏（支持多个技能按钮） */

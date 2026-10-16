@@ -42,4 +42,6 @@ module.exports = [
       { name: "放逐", type: "exile", uses: 1, free: true },
       { name: "天威", type: "tianwei", damage: 1, uses: 1 },
     ] },
+  { id: "xiangyu", name: "西楚霸王", hp: 6, sfx: "heavy",
+    skill: { name: "鬼雄", type: "passive", uses: 0 } },
 ];
