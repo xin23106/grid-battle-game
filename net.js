@@ -30,6 +30,13 @@
   }
   let SERVER_URL = "";
   try { SERVER_URL = localStorage.getItem(KEY) || ""; } catch (e) {}
+  // 兼容修正：忽略早期版本存错的「本页主机:3000」地址（那并不是真正的联机服务器），改用默认值
+  if (SERVER_URL) {
+    try {
+      const u = new URL(SERVER_URL);
+      if (u.hostname === location.hostname && /:3000\/?$/.test(SERVER_URL)) SERVER_URL = "";
+    } catch (e) {}
+  }
   if (!SERVER_URL) SERVER_URL = defaultUrl();
 
   const NET = {
