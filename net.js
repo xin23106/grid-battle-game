@@ -7,7 +7,13 @@
  * ========================================================================= */
 (function () {
   const KEY = "herochess.net.url";
+  // 【可选】公网站点（如 GitHub Pages）上「在线真人对战」的默认服务器。
+  // 留空 = 用「当前页面主机名:3000」；填入 wss://… 后，部署在公网的页面会自动连接它。
+  // 注意：cloudflared 临时隧道地址每次重启都会变；变了改这一行（或直接在游戏里手填服务器地址）。
+  const CLOUD_SERVER = "wss://rack-flowers-fool-promoting.trycloudflare.com";
   function defaultUrl() {
+    const isLocal = /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/.test(location.hostname || "");
+    if (CLOUD_SERVER && !isLocal) return normalizeUrl(CLOUD_SERVER);
     const proto = location.protocol === "https:" ? "wss://" : "ws://";
     return proto + (location.hostname || "localhost") + ":3000";
   }
