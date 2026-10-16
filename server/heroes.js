@@ -31,7 +31,7 @@ module.exports = [
       { name: "水调歌头", type: "shuidiao", range: 3, damage: 1, grabDamage: 2, uses: 1 },
     ] },
   { id: "longren", name: "龙人", hp: 5, sfx: "magic",
-    skill: { name: "龙息", type: "dragonbreath", damage: 2, uses: 1 } },
+    skill: { name: "龙息", type: "dragonbreath", damage: 1, uses: 1, free: true } },
   { id: "thunder", name: "雷电之主", hp: 5, sfx: "ice",
     skill: { name: "雷霆万钧", type: "thunder", damage: 1, uses: 1, empowerTurns: 3, empowerShield: 2, empowerActions: 2 } },
   { id: "vampire", name: "吸血鬼", hp: 5, sfx: "magic",

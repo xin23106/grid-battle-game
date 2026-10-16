@@ -116,7 +116,7 @@ function createState() {
            toPlace: PER_PLAYER, placed: { 1: [], 2: [] }, turnActionUsed: false,
            turnActionsMax: 1, turnActionsLeft: 1, turnActorUid: 0, empowerTurnActive: false,
            talisman: { 1: drawTalismanId(), 2: drawTalismanId() }, talismanUsed: { 1: false, 2: false },
-           assaultPlayer: 0, guardPlayer: 0, extraMoves: 0, graveyard: [] };
+           assaultPlayer: 0, guardPlayer: 0, extraMoves: 0, extraTurnPending: false, graveyard: [] };
 }
 const clone = (s) => JSON.parse(JSON.stringify(s));
 const findPos = (s, u) => {
@@ -393,7 +393,10 @@ function endTurn(s) {
     }
   }
   s.empowerTurnActive = false;
-  s.currentPlayer = s.currentPlayer === 1 ? 2 : 1;
+  // 行军令：若存在「额外回合」，则当前玩家再获得一个完整回合，结束后才交给对手
+  const samePlayer = !!s.extraTurnPending;
+  s.extraTurnPending = false;
+  if (!samePlayer) s.currentPlayer = s.currentPlayer === 1 ? 2 : 1;
   beginTurn(s);
 }
 function checkVictory(s) {
@@ -465,7 +468,7 @@ function applyAction(state, player, action) {
     const hasTo = to.r != null && to.c != null;
     switch (t.effect) {
       case "assault": s.assaultPlayer = player; break;
-      case "march": s.extraMoves = (s.extraMoves || 0) + (t.extraMoves || 1); break;
+      case "march": s.extraTurnPending = true; break;
       case "guard": s.guardPlayer = player; break;
       case "refresh": {
         const u = hasTo && inB(to.r, to.c) ? s.board[to.r][to.c] : null;

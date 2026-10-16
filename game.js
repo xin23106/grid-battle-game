@@ -118,7 +118,8 @@ let talismanUsed = { 1: false, 2: false }; // 是否已使用
 let talismanMode = null;               // 正在选择目标的锦囊 id
 let talismanTargets = [];              // 当前锦囊的可选目标格
 let talismanBuff = { assaultPlayer: 0, guardPlayer: 0 }; // 猛攻令 / 坚守令 生效阵营
-let extraMoves = 0;                    // 行军令：本回合额外移动次数
+let extraMoves = 0;                    // （已废弃）行军令旧机制：本回合额外移动次数
+let extraTurnPending = false;          // 行军令：本回合结束后，当前玩家额外获得一个完整回合
 let graveyard = [];                    // 阵亡记录（供还魂令）
 let reviveOptions = [];                // 还魂令：可复活的阵亡记录
 let detailUnit = null;                 // 详情面板当前展示的英雄
@@ -827,8 +828,12 @@ function endTurn() {
     }
   }
   empowerTurnActive = false;
-  currentPlayer = currentPlayer === 1 ? 2 : 1;
+  // 行军令：若本回合附加了「额外回合」，则不交给对方，而是让当前玩家再获得一个完整回合
+  const samePlayer = extraTurnPending;
+  extraTurnPending = false;
+  if (!samePlayer) currentPlayer = currentPlayer === 1 ? 2 : 1;
   beginTurn();
+  if (samePlayer) addLog("🐎 行军令：玩家" + currentPlayer + " 获得一个额外回合（行动已刷新）。");
   render();
   // 回合交接后触发 AI（此前 AI 依赖“行动时自动结束回合”的棋盘点击回调，改为手动结束后必须在这里补上）
   aiKick();
@@ -1178,7 +1183,8 @@ function applyDamage(target, amount, kind, source) {
     addLog("🛡 孤胆侠·霸体：抵挡本次致命伤害，生命锁定为 1 点（本局一次）。");
     if (pos) fx.push({ r: pos.r, c: pos.c, text: "锁血!", kind: "shield" });
   }
-  // 龙魂：龙人在受到实际伤害前 1/3 概率闪避（护盾等前置减伤处理之后；完全抵消则不触发）
+  // 龙魂：龙人受到实际伤害前有 1/2（50%）概率闪避（护盾等前置减伤处理之后；完全抵消则不触发）
+  // 每次伤害事件只判定一次；闪避成功则获得 1 次龙胆额外移动次数
   let dodged = false;
   if (dmg > 0 && target.heroId === "longren" && dragonDodged()) {
     dodged = true;
@@ -1915,8 +1921,8 @@ function useTalismanEffect(id, tr, tc) {
       addLog("🔥 玩家" + player + " 使用【猛攻令】：本回合己方造成的伤害 +1（普攻 / 技能 / 剑圣）。");
       break;
     case "march":
-      extraMoves += t.extraMoves || 1;
-      addLog("🐎 玩家" + player + " 使用【行军令】：本回合额外获得 " + (t.extraMoves || 1) + " 次移动机会。");
+      extraTurnPending = true;
+      addLog("🐎 玩家" + player + " 使用【行军令】：本回合结束后获得一个【额外回合】（完整行动，结束后才轮到对手）。");
       break;
     case "refresh": {
       const u = tr != null ? board[tr][tc] : null;
@@ -2079,6 +2085,25 @@ function selectDragonMove(u, r, c) {
   attackTargets = [];
   render();
   addLog("🐉 龙胆：" + label(u) + " 有 " + (u.dragonMoves || 0) + " 次额外移动机会，请选择移动方向。");
+}
+/* 龙胆（主动）：点击按钮进入额外移动选格；再次点击取消 */
+function activateDragonMove(u) {
+  if (!u || u.sword) return;
+  if (dragonMoveUnit === u) { // 取消
+    dragonMoveUnit = null;
+    dragonMoveTargets = [];
+    clearSelection();
+    render();
+    return;
+  }
+  if ((u.dragonMoves || 0) <= 0) {
+    addLog("🐉 龙胆：尚未积累额外移动次数（需【龙魂】成功闪避）。");
+    render();
+    return;
+  }
+  const p = findPos(u);
+  if (!p) return;
+  selectDragonMove(u, p.r, p.c);
 }
 function performDragonMove(r, c) {
   const u = dragonMoveUnit;
@@ -2512,6 +2537,20 @@ function updateSkillBar() {
     b.addEventListener("click", () => activateSkill(i));
     skillBarEl.appendChild(b);
   });
+
+  // 龙人·龙胆：主动「额外移动」按钮（消耗由龙魂成功闪避积累的次数）
+  if (u.heroId === "longren") {
+    const b = document.createElement("button");
+    b.className = "skill-btn dragon-btn";
+    const dm = u.dragonMoves || 0;
+    b.disabled = dm <= 0;
+    b.textContent = dragonMoveUnit === u
+      ? "✖ 取消 【龙胆】选择移动方向"
+      : "【龙胆】额外移动 ×" + dm + (dm > 0 ? "" : "（无次数）");
+    if (dragonMoveUnit === u) b.classList.add("active");
+    b.addEventListener("click", () => activateDragonMove(u));
+    skillBarEl.appendChild(b);
+  }
 }
 
 /* ---------------- 英雄详情面板（点击英雄查看技能介绍） ---------------- */
@@ -2752,7 +2791,8 @@ function buildShareLink(code) {
   const wsProto = location.protocol === "https:" ? "wss://" : "ws://";
   let saved = "";
   try { saved = localStorage.getItem("herochess.net.url") || ""; } catch (e) {}
-  let server = saved;
+  // 优先使用「当前实际连接的服务器地址」（包含默认 CLOUD_SERVER），其次自定义地址，最后才回退到 本页主机:3000
+  let server = (window.NET && window.NET.serverUrl) || saved || "";
   // 服务器地址里若含 localhost，换成可被好友访问的主机名
   if (server && host && (server.indexOf("localhost") >= 0 || server.indexOf("127.0.0.1") >= 0)) {
     server = server.split("localhost").join(host).split("127.0.0.1").join(host);
@@ -3313,6 +3353,7 @@ function applyRemoteState(state) {
     talismanBuff = { assaultPlayer: state.assaultPlayer || 0, guardPlayer: state.guardPlayer || 0 };
   }
   if (state.extraMoves != null) extraMoves = state.extraMoves;
+  if (state.extraTurnPending != null) extraTurnPending = !!state.extraTurnPending;
   if (state.turnActionUsed != null) turnActionUsed = state.turnActionUsed;
   // 联机：同步行动预算（否则“行动后不自动结束”时无法判断能否结束回合）
   if (state.turnActionsLeft != null) turnActionsLeft = state.turnActionsLeft;
@@ -3589,6 +3630,8 @@ window.GameAPI = {
   getTalismanBuff() { return Object.assign({}, talismanBuff); },
   getGraveyard() { return graveyard.slice(); },
   getExtraMoves() { return extraMoves; },
+  getExtraTurnPending() { return extraTurnPending; },
+  activateDragonMove,
   talismanTargetsFor,
   startTalismanUse,
   useTalismanEffect,
