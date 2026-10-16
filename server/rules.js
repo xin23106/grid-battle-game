@@ -390,6 +390,82 @@ function knockOutBox3(s, v, boxR, boxC) {
   s.board[p.r][p.c] = null;
   return dest;
 }
+/* ---------------- 天道超：神罗天征 / 万象天引 ---------------- */
+function sortUnitsByPosS(s, list) {
+  return list.slice().sort((x, y) => {
+    const px = findPos(s, x), py = findPos(s, y);
+    if (!px) return 1;
+    if (!py) return -1;
+    return (px.r - py.r) || (px.c - py.c);
+  });
+}
+/* 神罗天征：击退出 (boxR,boxC) 九宫格，优先远离 (fromR,fromC) */
+function knockOutBoxAwayS(s, t, boxR, boxC, fromR, fromC) {
+  const p = findPos(s, t);
+  if (!p) return null;
+  const inBox = (r, c) => Math.abs(r - boxR) <= 1 && Math.abs(c - boxC) <= 1;
+  const ok = (r, c) => inB(r, c) && !s.board[r][c] && !inBox(r, c) && !(r === fromR && c === fromC);
+  const dirs = [];
+  const sx = p.r === fromR ? 0 : (p.r > fromR ? 1 : -1);
+  const sy = p.c === fromC ? 0 : (p.c > fromC ? 1 : -1);
+  if (sx || sy) dirs.push([sx, sy]);
+  for (const d of DIRS) if (!dirs.some((q) => q[0] === d[0] && q[1] === d[1])) dirs.push(d);
+  for (const d of dirs) {
+    const nr = p.r + d[0], nc = p.c + d[1];
+    if (!ok(nr, nc)) continue;
+    s.board[nr][nc] = t; s.board[p.r][p.c] = null;
+    return { r: nr, c: nc };
+  }
+  const far = [];
+  for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (ok(r, c)) far.push({ r, c, d: Math.abs(r - p.r) + Math.abs(c - p.c) });
+  if (!far.length) return null;
+  far.sort((A, B) => A.d - B.d || A.r - B.r || A.c - B.c);
+  const dest = far[0];
+  s.board[dest.r][dest.c] = t; s.board[p.r][p.c] = null;
+  return dest;
+}
+/* 万象天引第三段：沿远离 (fromR,fromC) 的方向击退 1 格 */
+function pushAwayOneS(s, t, fromR, fromC) {
+  const p = findPos(s, t);
+  if (!p) return null;
+  const ok = (r, c) => inB(r, c) && !s.board[r][c] && !(r === fromR && c === fromC);
+  const dirs = [];
+  const sx = p.r === fromR ? 0 : (p.r > fromR ? 1 : -1);
+  const sy = p.c === fromC ? 0 : (p.c > fromC ? 1 : -1);
+  if (sx || sy) dirs.push([sx, sy]);
+  for (const d of DIRS) if (!dirs.some((q) => q[0] === d[0] && q[1] === d[1])) dirs.push(d);
+  for (const d of dirs) {
+    const nr = p.r + d[0], nc = p.c + d[1];
+    if (!ok(nr, nc)) continue;
+    s.board[nr][nc] = t; s.board[p.r][p.c] = null;
+    return { r: nr, c: nc };
+  }
+  return null;
+}
+/* 万象天引某阶段的合法目标格（stage 0=前方九宫格 / 1=龙息范围 / 2=普攻相邻） */
+function wxtTargetsS(s, u, r, c, dr, dc, stage, player) {
+  const out = [];
+  if (stage === 2) {
+    for (const d of DIRS) {
+      const t = inB(r + d[0], c + d[1]) ? s.board[r + d[0]][c + d[1]] : null;
+      if (isUnit(t) && t.player !== player) out.push([r + d[0], c + d[1]]);
+    }
+    return out;
+  }
+  if (stage === 0) {
+    const cr = r + dr, cc = c + dc;
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      const t = inB(cr + i, cc + j) ? s.board[cr + i][cc + j] : null;
+      if (isUnit(t) && t.player !== player) out.push([cr + i, cc + j]);
+    }
+    return out;
+  }
+  for (const [rr, cc] of dragonBreathArea(u, r, c, dr, dc)) {
+    const t = inB(rr, cc) ? s.board[rr][cc] : null;
+    if (isUnit(t) && t.player !== player) out.push([rr, cc]);
+  }
+  return out;
+}
 function computeDash(s, u, r, c, dr, dc, maxSteps) {  const steps = maxSteps || 3;
   const hits = []; let dest = null;
   for (let k = 1; k <= steps; k++) {
@@ -520,7 +596,7 @@ function applyAction(state, player, action) {
                       shield: 0, frozen: 0, swords: def.blades || 0,
                       usesLeft: def.skill.uses == null ? 9999 : def.skill.uses,
                       statuses: {}, lockUsed: false, sdStage: 0, dragonMoves: 0, empowerTurns: 0,
-                      chaseStage: 0, chaseMark: 0, guixiongUsed: false,
+                      chaseStage: 0, chaseMark: 0, guixiongUsed: false, wxtStage: 0,
                       usesArr: heroSkills(def).map((sk) => (sk.uses == null ? 9999 : sk.uses)) };
     s.placed[player].push(heroId);
     s.toPlace--;
@@ -575,7 +651,7 @@ function applyAction(state, player, action) {
         const def = heroDef(rec.heroId);
         s.board[to.r][to.c] = { uid: s.unitSeq++, heroId: def.id, player, hp: Math.min(3, def.hp), maxHp: def.hp,
                                 shield: 0, frozen: 0, swords: rec.swords || 0, usesLeft: rec.usesLeft || 0,
-                                statuses: {}, lockUsed: !!rec.lockUsed, sdStage: 0, dragonMoves: 0, empowerTurns: 0, chaseStage: 0, chaseMark: 0, guixiongUsed: !!rec.guixiongUsed };
+                                statuses: {}, lockUsed: !!rec.lockUsed, sdStage: 0, dragonMoves: 0, empowerTurns: 0, chaseStage: 0, chaseMark: 0, guixiongUsed: !!rec.guixiongUsed, wxtStage: 0 };
         s.graveyard.splice(idx, 1);
         break;
       }
@@ -631,7 +707,8 @@ function applyAction(state, player, action) {
     if (sk.type === "chase" && (u.chaseStage || 0) === 1 && chaseTargetsOf(s, u).length === 0) endChase(s, u);
     const isSd2 = sk.type === "shuidiao" && (u.sdStage || 0) === 1; // 第二段同属一套，不额外占次数
     const isChase2 = sk.type === "chase" && (u.chaseStage || 0) === 1; // 追猎第二段不额外占次数
-    if (!isSd2 && !isChase2 && skillUsesLeft(s, u, idx) <= 0) return err("技能次数不足");
+    const isWxtCombo = sk.type === "wxt" && (u.wxtStage || 0) >= 1; // 万象天引第二/三段不重复占整套次数
+    if (!isSd2 && !isChase2 && !isWxtCombo && skillUsesLeft(s, u, idx) <= 0) return err("技能次数不足");
     if (sk.costSwords && (u.swords || 0) < sk.costSwords) return err("没有剑，无法发动剑圣");
     if (!skillFreeForS(u, sk) && !canActNow(s, u)) return err("本回合已经行动过了");
     const freeAction = skillFreeForS(u, sk); // 结算前判定：追猎会改动 chaseStage，放到最后会翻转结果
@@ -828,9 +905,50 @@ function applyAction(state, player, action) {
         applyDamage(s, e, sk.damage, u); // 每名敌人最多一次
         if (findPos(s, e)) knockOutBox3(s, e, r, c);
       }
+    } else if (sk.type === "shenluo") {
+      // 神罗天征：九宫格内敌人各 1 伤并击退出九宫格
+      const victims = sortUnitsByPosS(s, box3Enemies(s, from.r, from.c, player));
+      for (const e of victims) {
+        if (!findPos(s, e)) continue;
+        applyDamage(s, e, sk.damage, u);
+        if (findPos(s, e)) knockOutBoxAwayS(s, e, from.r, from.c, from.r, from.c);
+      }
+    } else if (sk.type === "wxt") {
+      // 万象天引：三阶段连招
+      const stage = u.wxtStage || 0;
+      const wt = isUnit(t) ? t : null;
+      if (!wt || wt.player === player) return err("万象天引：请选择一名存活的敌方英雄");
+      if (stage === 2) {
+        if (Math.abs(r - from.r) + Math.abs(c - from.c) !== 1) return err("万象天引·第三段：只能选择相邻敌人");
+        applyDamage(s, wt, sk.damage, u);
+        if (findPos(s, wt)) pushAwayOneS(s, wt, from.r, from.c);
+        u.wxtStage = 0; // 连招结束
+      } else {
+        const wd = action.wxtDir && action.wxtDir.dr != null ? action.wxtDir : null;
+        if (!wd) return err("万象天引：请先选择方向");
+        const dr = Number(wd.dr), dc = Number(wd.dc);
+        if (!((dr === 0 && (dc === 1 || dc === -1)) || (dc === 0 && (dr === 1 || dr === -1)))) return err("万象天引：方向不合法");
+        if (!wxtTargetsS(s, u, from.r, from.c, dr, dc, stage, player).some((p) => p[0] === r && p[1] === c)) return err("万象天引：目标不在该段范围内");
+        if (stage === 0) {
+          const lr = from.r + dr * 2, lc = from.c + dc * 2; // 正前方两格
+          if (!inB(lr, lc) || (s.board[lr][lc] && s.board[lr][lc] !== wt)) return err("万象天引·第一段：正前方两格被占据或越界");
+          const tp = findPos(s, wt);
+          if (tp.r !== lr || tp.c !== lc) { s.board[lr][lc] = wt; s.board[tp.r][tp.c] = null; }
+          applyDamage(s, wt, sk.damage, u);
+          u.wxtStage = 1;
+        } else {
+          const lr = from.r + dr, lc = from.c + dc;        // 正前方一格
+          if (!inB(lr, lc) || (s.board[lr][lc] && s.board[lr][lc] !== wt)) return err("万象天引·第二段：正前方格被占据或越界");
+          const tp = findPos(s, wt);
+          if (tp.r !== lr || tp.c !== lc) { s.board[lr][lc] = wt; s.board[tp.r][tp.c] = null; }
+          applyDamage(s, wt, sk.damage, u);
+          if (findPos(s, wt)) applyNegativeStatus(s, wt, "grab", { damage: 0, turns: 1, label: "万象天引·抓取" });
+          u.wxtStage = 2;
+        }
+      }
     } else return err("未知技能");
 
-    if (!isSd2 && !isChase2 && !consumedHere) setSkillUses(s, u, idx, Math.max(0, skillUsesLeft(s, u, idx) - 1));
+    if (!isSd2 && !isChase2 && !isWxtCombo && !consumedHere) setSkillUses(s, u, idx, Math.max(0, skillUsesLeft(s, u, idx) - 1));
     if (sk.costSwords) u.swords = Math.max(0, (u.swords || 0) - sk.costSwords);
     const isFree = freeAction;
     finish(s, u, isFree, !!(sk.free && !sk.perTurn));

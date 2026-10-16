@@ -438,6 +438,90 @@ function knockOutOfBox3(v, boxR, boxC) {
   board[p.r][p.c] = null;
   return dest;
 }
+
+/* ---------------- 天道超：神罗天征 / 万象天引 ---------------- */
+/* 按棋盘位置排序（多目标逐个结算，保证顺序固定、不重叠） */
+function sortUnitsByPos(list) {
+  return list.slice().sort((x, y) => {
+    const px = findPos(x), py = findPos(y);
+    if (!px) return 1;
+    if (!py) return -1;
+    return (px.r - py.r) || (px.c - py.c);
+  });
+}
+/* 神罗天征：把目标击退出 (boxR,boxC) 九宫格；优先沿远离 (fromR,fromC) 的方向 */
+function knockOutBoxAway(t, boxR, boxC, fromR, fromC) {
+  const p = findPos(t);
+  if (!p) return null;
+  const inBox = (r, c) => Math.abs(r - boxR) <= 1 && Math.abs(c - boxC) <= 1;
+  const ok = (r, c) => inBounds(r, c) && !board[r][c] && !inBox(r, c) && !(r === fromR && c === fromC);
+  const dirs = [];
+  const sx = p.r === fromR ? 0 : (p.r > fromR ? 1 : -1);
+  const sy = p.c === fromC ? 0 : (p.c > fromC ? 1 : -1);
+  if (sx || sy) dirs.push([sx, sy]);            // 首选：远离方向
+  for (const d of DIRS) if (!dirs.some((q) => q[0] === d[0] && q[1] === d[1])) dirs.push(d);
+  for (const d of dirs) {
+    const nr = p.r + d[0], nc = p.c + d[1];
+    if (!ok(nr, nc)) continue;
+    board[nr][nc] = t;
+    board[p.r][p.c] = null;
+    return { r: nr, c: nc };
+  }
+  const far = [];
+  for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+    if (ok(r, c)) far.push({ r, c, d: Math.abs(r - p.r) + Math.abs(c - p.c) });
+  }
+  if (!far.length) return null;
+  far.sort((A, B) => A.d - B.d || A.r - B.r || A.c - B.c);
+  const dest = far[0];
+  board[dest.r][dest.c] = t;
+  board[p.r][p.c] = null;
+  return dest;
+}
+/* 万象天引第三段：沿远离 (fromR,fromC) 的方向击退 1 格 */
+function pushAwayOne(t, fromR, fromC) {
+  const p = findPos(t);
+  if (!p) return null;
+  const ok = (r, c) => inBounds(r, c) && !board[r][c] && !(r === fromR && c === fromC);
+  const dirs = [];
+  const sx = p.r === fromR ? 0 : (p.r > fromR ? 1 : -1);
+  const sy = p.c === fromC ? 0 : (p.c > fromC ? 1 : -1);
+  if (sx || sy) dirs.push([sx, sy]);
+  for (const d of DIRS) if (!dirs.some((q) => q[0] === d[0] && q[1] === d[1])) dirs.push(d);
+  for (const d of dirs) {
+    const nr = p.r + d[0], nc = p.c + d[1];
+    if (!ok(nr, nc)) continue;
+    board[nr][nc] = t;
+    board[p.r][p.c] = null;
+    return { r: nr, c: nc };
+  }
+  return null;
+}
+/* 万象天引某阶段的合法目标格：
+ * stage 0 = 前方九宫格（中心为正前方一格）；stage 1 = 龙息范围（复用同一算法）；stage 2 = 普攻相邻 */
+function wxtStageTargets(u, r, c, dr, dc, stage) {
+  const out = [];
+  if (stage === 2) {
+    for (const d of DIRS) {
+      const t = unitAt(r + d[0], c + d[1]);
+      if (t && !t.sword && t.player !== u.player) out.push([r + d[0], c + d[1]]);
+    }
+    return out;
+  }
+  if (stage === 0) {
+    const cr = r + dr, cc = c + dc;
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      const t = unitAt(cr + i, cc + j);
+      if (t && !t.sword && t.player !== u.player) out.push([cr + i, cc + j]);
+    }
+    return out;
+  }
+  for (const [rr, cc] of dragonBreathArea(u, r, c, dr, dc)) {
+    const t = unitAt(rr, cc);
+    if (t && !t.sword && t.player !== u.player) out.push([rr, cc]);
+  }
+  return out;
+}
 /* 孤胆侠九宫格内的存活友军（不含自己、不含剑刃） */
 function alliesIn3x3(u) {
   const p = findPos(u);
@@ -828,6 +912,7 @@ function handlePlacement(r, c) {
     chaseStage: 0,              // 刺客·追猎阶段（0=未开始 / 1=第二段待释放）
     chaseMark: 0,               // 被哪个刺客（uid）附加了追猎标记，0=无
     guixiongUsed: false,        // 西楚霸王·鬼雄：首次致命锁血是否已触发
+    wxtStage: 0,                // 天道超·万象天引：连招阶段（0=第一段可用 / 1=第二段待执行 / 2=第三段待执行）
   };
   initUnitUses(unit, def);
   board[r][c] = unit;
@@ -1236,6 +1321,40 @@ function computeSkillTargets() {
       }
       break;
     }
+
+    case "shenluo": {
+      // 九宫格内敌人；没有敌人时也可释放（点击自身格）
+      for (const d of DIRS) {
+        const t = unitAt(r + d[0], c + d[1]);
+        if (t && !t.sword && t.player !== u.player) skillTargets.push([r + d[0], c + d[1]]);
+      }
+      skillTargets.push([r, c]);
+      break;
+    }
+
+    case "wxt": {
+      const stage = u.wxtStage || 0;
+      if (stage === 2) {
+        // 第三段：普通攻击范围（相邻）内的敌人
+        for (const [rr, cc] of wxtStageTargets(u, r, c, 0, 0, 2)) skillTargets.push([rr, cc]);
+      } else if (!(skillSub && skillSub.kind === "wxt-dir-set")) {
+        // 第 0 步：选择方向（高亮上下左右四格）
+        for (const d of DIRS) {
+          const rr = r + d[0], cc = c + d[1];
+          if (!inBounds(rr, cc)) continue;
+          skillTargets.push([rr, cc]);
+          dashOptions.push({ kind: "wxt-dir", dir: [d[0], d[1]], dest: { r: rr, c: cc }, path: [[rr, cc]] });
+        }
+      } else {
+        const [dr, dc] = skillSub.dir;
+        for (const [rr, cc] of wxtStageTargets(u, r, c, dr, dc, stage)) skillTargets.push([rr, cc]);
+        // 预览落点（第一段=正前方两格；第二段=正前方一格）
+        const lr = stage === 0 ? r + dr * 2 : r + dr;
+        const lc = stage === 0 ? c + dc * 2 : c + dc;
+        if (inBounds(lr, lc) && !board[lr][lc]) dashOptions.push({ kind: "wxt-landing", path: [[lr, lc]] });
+      }
+      break;
+    }
   }
 }
 
@@ -1510,6 +1629,27 @@ function useSkill(tr, tc) {
     return; // 尚未结算，等待墙角
   }
 
+  // 天道超·万象天引：第一/二段先选方向（本地选择，不消耗行动）
+  if (s.type === "wxt" && (a.wxtStage || 0) < 2 && !(skillSub && skillSub.kind === "wxt-dir-set")) {
+    const fd = DIRS.find((d) => r + d[0] === tr && c + d[1] === tc);
+    if (!fd) {
+      addLog("万象天引：请先点击上/下/左/右选择一个【前方】方向。");
+      render();
+      return;
+    }
+    const stageNow = a.wxtStage || 0;
+    if (!wxtStageTargets(a, r, c, fd[0], fd[1], stageNow).length) {
+      addLog("万象天引：该方向没有可牵引的敌方英雄，请换一个方向。");
+      render();
+      return;
+    }
+    skillSub = { kind: "wxt-dir-set", dir: [fd[0], fd[1]] };
+    computeSkillTargets();
+    render();
+    addLog("🌀 已选择方向，请点击目标释放【" + s.name + "·" + (stageNow === 0 ? "第一段" : "第二段") + "】。");
+    return; // 尚未结算，等待目标
+  }
+
   if (gameMode === "online") {
     onlineForward({
       type: "skill",
@@ -1519,6 +1659,7 @@ function useSkill(tr, tc) {
       reposition: s.type === "shuidiao" && skillSub ? { r: skillSub.r, c: skillSub.c } : undefined,
       chaseTarget: s.type === "chase" && skillSub && skillSub.kind === "chase-blink" ? { r: skillSub.tR, c: skillSub.tC } : undefined,
       exileTarget: s.type === "exile" && skillSub && skillSub.kind === "exile-target" ? { r: skillSub.tR, c: skillSub.tC } : undefined,
+      wxtDir: s.type === "wxt" && skillSub && skillSub.kind === "wxt-dir-set" ? { dr: skillSub.dir[0], dc: skillSub.dir[1] } : undefined,
     });
     return;
   }
@@ -1550,6 +1691,7 @@ function useSkill(tr, tc) {
   if (window.SFX) window.SFX.play("skill", { sfx: sfxOf(a) });
   const sd2 = s.type === "shuidiao" && (a.sdStage || 0) === 1; // 水调歌头第二段（同一套的延续）
   const chase2 = s.type === "chase" && (a.chaseStage || 0) === 1; // 追猎第二段（不消耗次数、不消耗行动）
+  const wxtCombo = s.type === "wxt" && (a.wxtStage || 0) >= 1; // 万象天引第二/三段（只消耗行动，不重复消耗整套次数）
   // 是否消耗行动机会必须在结算前判定：追猎结算会改动 chaseStage，若放到最后判定会翻转结果
   const freeAction = skillFreeFor(a, s);
   let consumedHere = false; // 追猎第一段在分支内「先扣次数再结算」，避免击杀刷新被尾部扣次数覆盖
@@ -1992,10 +2134,107 @@ function useSkill(tr, tc) {
       fx.push({ r: tr, c: tc, text: "天威", kind: "skill" });
       break;
     }
+
+    case "shenluo": {
+      const victims = sortUnitsByPos(enemiesInBox3(r, c, a.player));
+      let sHit = 0, sPushed = 0;
+      for (const t of victims) {
+        if (!findPos(t)) continue;
+        applyDamage(t, s.damage, "skill", a);              // 先伤害
+        sHit++;
+        if (findPos(t) && knockOutBoxAway(t, r, c, r, c)) sPushed++; // 再尝试击退出九宫格
+      }
+      if (window.SFX) window.SFX.play("skill", { sfx: sfxOf(a) });
+      fx.push({ r, c, text: "神罗", kind: "skill" });
+      addLog("🌀 " + label(a) + " 释放【" + s.name + "】，命中 " + sHit + " 名敌人，击退 " + sPushed + " 名。");
+      break;
+    }
+
+    case "wxt": {
+      const stage = a.wxtStage || 0;
+      const wt = unitAt(tr, tc);
+      if (!wt || wt.sword || wt.player === a.player) {
+        addLog("万象天引：请选择一名存活的敌方英雄。");
+        render();
+        return;
+      }
+      if (stage === 2) {
+        // 第三段·引力弹射：普攻范围（相邻），1 伤 + 远离方向击退 1 格
+        if (Math.abs(tr - r) + Math.abs(tc - c) !== 1) {
+          addLog("万象天引·第三段：只能选择相邻的敌方英雄。");
+          render();
+          return;
+        }
+        applyDamage(wt, s.damage, "skill", a);
+        let pushed = false;
+        if (findPos(wt)) pushed = !!pushAwayOne(wt, r, c);
+        a.wxtStage = 0; // 连招结束
+        fx.push({ r: tr, c: tc, text: "弹射", kind: "skill" });
+        addLog("🌀 " + label(a) + " 释放【" + s.name + "·第三段·引力弹射】，对 " + label(wt) + " 造成 " + s.damage +
+          " 点伤害" + (pushed ? "并沿远离方向击退 1 格" : "（无合法击退位置，仅受伤）") + "，连招结束。");
+        break;
+      }
+      const sub = skillSub && skillSub.kind === "wxt-dir-set" ? skillSub : null;
+      if (!sub) {
+        addLog("万象天引：请先选择方向。");
+        render();
+        return;
+      }
+      const [dr, dc] = sub.dir;
+      const inRange = wxtStageTargets(a, r, c, dr, dc, stage).some((p) => p[0] === tr && p[1] === tc);
+      if (!inRange) {
+        addLog("万象天引：目标不在该段的合法范围内。");
+        render();
+        return;
+      }
+      if (stage === 0) {
+        // 第一段·引力汇聚：拉到【正前方两格】
+        const lr = r + dr * 2, lc = c + dc * 2;
+        if (!inBounds(lr, lc) || (board[lr][lc] && board[lr][lc] !== wt)) {
+          addLog("万象天引·第一段：正前方两格被占据或越界，无法执行（不消耗行动/次数）。");
+          render();
+          return;
+        }
+        const from = findPos(wt);
+        if (from.r !== lr || from.c !== lc) {
+          board[lr][lc] = wt;
+          board[from.r][from.c] = null;
+        }
+        applyDamage(wt, s.damage, "skill", a);
+        a.wxtStage = 1; // 进入第二段
+        fx.push({ r: lr, c: lc, text: "引力", kind: "skill" });
+        addLog("🌀 " + label(a) + " 释放【" + s.name + "·第一段·引力汇聚】，将 " + label(wt) + " 拉到正前方两格 (" +
+          (lr + 1) + "," + (lc + 1) + ") 并造成 " + s.damage + " 点伤害（第二段待执行，可跨回合）。");
+      } else {
+        // 第二段·万象引渡：抓到【正前方一格】+ 抓取 1 回合
+        const lr = r + dr, lc = c + dc;
+        if (!inBounds(lr, lc) || (board[lr][lc] && board[lr][lc] !== wt)) {
+          addLog("万象天引·第二段：正前方格被占据或越界，无法执行（不消耗行动/次数）。");
+          render();
+          return;
+        }
+        const from = findPos(wt);
+        if (from.r !== lr || from.c !== lc) {
+          board[lr][lc] = wt;
+          board[from.r][from.c] = null;
+        }
+        applyDamage(wt, s.damage, "skill", a);
+        let grabbed = false;
+        if (findPos(wt)) {
+          applyNegativeStatus(wt, "grab", { damage: 0, turns: 1, label: "万象天引·抓取" });
+          grabbed = true;
+        }
+        a.wxtStage = 2; // 进入第三段
+        fx.push({ r: lr, c: lc, text: "引渡", kind: "skill" });
+        addLog("🌀 " + label(a) + " 释放【" + s.name + "·第二段·万象引渡】，将 " + label(wt) + " 抓到正前方一格 (" +
+          (lr + 1) + "," + (lc + 1) + ") 并造成 " + s.damage + " 点伤害" + (grabbed ? "，施加【抓取 1 回合】" : "（目标已阵亡，不施加抓取）") + "（第三段待执行，可跨回合）。");
+      }
+      break;
+    }
   }
 
   // 消耗一次释放次数（无限次技能不减少；水调歌头 / 追猎第二段不额外消耗；追猎第一段已在分支内提前扣除）
-  if (!sd2 && !chase2 && !consumedHere) {
+  if (!sd2 && !chase2 && !wxtCombo && !consumedHere) {
     const curUses = skillUsesLeft(a, activeSkillIdx);
     if (curUses !== Infinity) setSkillUsesLeft(a, activeSkillIdx, curUses - 1);
   }
@@ -2055,8 +2294,9 @@ function activateSkill(idx) {
   }
   const isSd2 = s.type === "shuidiao" && (u.sdStage || 0) === 1; // 第二段同属一套，不额外占次数
   const isChase2 = s.type === "chase" && (u.chaseStage || 0) === 1; // 追猎第二段不额外占次数
+  const isWxtCombo = s.type === "wxt" && (u.wxtStage || 0) >= 1; // 万象天引第二/三段不重复占整套次数
   const sl = skillUsesLeft(u, idx);
-  if (!isSd2 && !isChase2 && sl !== Infinity && sl <= 0) {
+  if (!isSd2 && !isChase2 && !isWxtCombo && sl !== Infinity && sl <= 0) {
     addLog("【" + s.name + "】释放次数已用尽。");
     render();
     return;
@@ -2221,6 +2461,7 @@ function useTalismanEffect(id, tr, tc) {
         statuses: {},
         lockUsed: !!rec.lockUsed,         // 锁血状态保留（每局一次）
         guixiongUsed: !!rec.guixiongUsed, // 鬼雄触发状态保留（每局一次）
+        wxtStage: 0,                      // 万象天引连招阶段：复活后从第一段重新开始
         sdStage: 0,
         dragonMoves: 0,
         empowerTurns: 0,
@@ -2700,6 +2941,11 @@ function updateHeroCard() {
       ? '<span class="chip guixiong">👹 鬼雄已触发：生命锁定 1 · 普通攻击伤害 +1（绝境）</span>'
       : '<span class="chip">👹 鬼雄：未触发（首次致命伤锁血为 1，并反击九宫格 2 点）</span>');
   }
+  if (u.heroId === "tiandao") {
+    const wst = u.wxtStage || 0;
+    chips.push('<span class="chip' + (wst ? " guixiong" : "") + '">🌀 万象天引：' +
+      (wst === 0 ? "第一段待执行" : wst === 1 ? "第二段待执行（已引力汇聚）" : "第三段待执行（已万象引渡）") + "</span>");
+  }
   if (u.statuses) {
     for (const k of Object.keys(u.statuses)) {
       chips.push('<span class="chip frozen">⛓ ' + (u.statuses[k].label || k) + (u.statuses[k].turns != null ? " 剩 " + u.statuses[k].turns : "") + "</span>");
@@ -2759,8 +3005,9 @@ function updateSkillBar() {
     } else {
       const isSd2 = s.type === "shuidiao" && (u.sdStage || 0) === 1;
       const isChase2 = s.type === "chase" && (u.chaseStage || 0) === 1;
+      const isWxtCombo = s.type === "wxt" && (u.wxtStage || 0) >= 1;
       const sl = skillUsesLeft(u, i);
-      if (!isSd2 && !isChase2 && sl !== Infinity && sl <= 0) {
+      if (!isSd2 && !isChase2 && !isWxtCombo && sl !== Infinity && sl <= 0) {
         disabled = true;
         label += " 已用尽";
       } else if (!canPaySwords(u, s)) {
@@ -2769,6 +3016,10 @@ function updateSkillBar() {
       } else {
         if (s.type === "shuidiao") label += (u.sdStage || 0) === 1 ? "·第二段待释放" : "·第一段";
         if (s.type === "duanlang") label += "·前进1格+九宫格";
+        if (s.type === "wxt") {
+          const wst = u.wxtStage || 0;
+          label += wst === 0 ? "·第一段待执行" : wst === 1 ? "·第二段待执行" : "·第三段待执行";
+        }
         if (s.type === "chase") {
           // 追猎状态：可用 / 选择方向 / 选择标记目标 / 选择闪身位置
           let st;
@@ -2776,9 +3027,9 @@ function updateSkillBar() {
           else st = (skillMode && activeSkillIdx === i) ? "选择方向" : "可用";
           label += "·" + st + (isChase2 ? "（不耗行动）" : "");
         }
-        if (!isChase2 && sl !== Infinity) label += "（剩 " + sl + "）";
+        if (!isChase2 && !isWxtCombo && sl !== Infinity) label += "（剩 " + sl + "）";
         if (skillMode && activeSkillIdx === i) {
-          label = (skillSub && skillSub.kind === "chase-blink" ? "✖ 取消选点 " : "✖ 取消 ") + label;
+          label = (skillSub && (skillSub.kind === "chase-blink" || skillSub.kind === "wxt-dir-set") ? "✖ 取消选点 " : "✖ 取消 ") + label;
         }
       }
     }
@@ -2852,6 +3103,10 @@ function renderDetailCard() {
   if (hasSuperArmor(u)) st.push("霸体：免疫抓取等负面效果");
   if (u.heroId === "xiangyu") {
     st.push(u.guixiongUsed ? "鬼雄已触发：生命锁定 1，普通攻击伤害 +1（绝境）" : "鬼雄：未触发（首次致命伤锁血为 1 并反击九宫格 2 点）");
+  }
+  if (u.heroId === "tiandao") {
+    const wst = u.wxtStage || 0;
+    st.push("万象天引：" + (wst === 0 ? "第一段待执行" : wst === 1 ? "第二段待执行（已引力汇聚）" : "第三段待执行（已万象引渡）"));
   }
   if (flankImmune(u)) st.push("免疫夹击加成");
   if (u.frozen > 0) st.push("冰封：跳过 " + u.frozen + " 个回合");
@@ -3247,6 +3502,13 @@ function aiSkillScore(u, s, pos, rr, cc, w) {
       for (const e of es) sc += w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0) + 6;
       return sc > 0 ? sc : null;
     }
+    case "shenluo": {
+      // 神罗天征：以自身为中心九宫格内敌人（无敌人则不空放，省次数）
+      const es = enemiesInBox3(pos.r, pos.c, u.player);
+      let sc = 0;
+      for (const e of es) sc += w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0) + 6;
+      return sc > 0 ? sc : null;
+    }
     case "bloodburst": {
       // 以自身为中心九宫格：按命中的敌人数量与是否击杀打分；范围内没敌人就不使用
       let sc = 0;
@@ -3492,6 +3754,27 @@ function aiEnumerate() {
         return;
       }
 
+      // 天道超·万象天引：三阶段连招（第一/二段需先选方向；落点必须合法）
+      if (s.type === "wxt") {
+        const wstage = u.wxtStage || 0;
+        if (wstage === 0 && sl !== Infinity && sl <= 0) return; // 整套次数已用尽
+        const dirs = wstage === 2 ? [[0, 0]] : DIRS;
+        for (const [dr, dc] of dirs) {
+          let landOk = true;
+          if (wstage === 0) { const lr = pos.r + dr * 2, lc = pos.c + dc * 2; landOk = inBounds(lr, lc) && !board[lr][lc]; }
+          else if (wstage === 1) { const lr = pos.r + dr, lc = pos.c + dc; landOk = inBounds(lr, lc) && !board[lr][lc]; }
+          if (!landOk) continue;
+          for (const [rr, cc] of wxtStageTargets(u, pos.r, pos.c, dr, dc, wstage)) {
+            const e = board[rr][cc];
+            if (!e || e.sword || e.player === u.player) continue;
+            let sc = w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0) + 6;
+            if (wstage === 1) sc += 8; // 抓取控制
+            acts.push({ type: "skill", u, pos, target: { r: rr, c: cc }, wxtDir: wstage === 2 ? undefined : { dr, dc }, skillIdx: si, score: sc * w.skillW });
+          }
+        }
+        return;
+      }
+
       activeSkillIdx = si;
       selected = { r: pos.r, c: pos.c };
       computeSkillTargets();
@@ -3536,7 +3819,7 @@ function aiApplyAction(act) {
     moveHero(act.target.r, act.target.c);
   } else {
     activeSkillIdx = act.skillIdx || 0;
-    skillSub = null;
+    skillSub = act.wxtDir ? { kind: "wxt-dir-set", dir: [act.wxtDir.dr, act.wxtDir.dc] } : null;
     computeSkillTargets();
     useSkill(act.target.r, act.target.c);
     // 刺客·追猎第二段：第 2 步选择闪身落点
@@ -3943,6 +4226,9 @@ window.GameAPI = {
   assassinInFlank,
   isGuixiongActive,
   guixiongCounter,
+  wxtStageTargets,
+  knockOutBoxAway,
+  pushAwayOne,
   computeChaseLine,
   chaseTargetsOf,
   chaseBlinkCells,
@@ -4026,6 +4312,7 @@ window.GameAPI = {
         chaseStage: spec.chaseStage || 0,
         chaseMark: spec.chaseMark || 0,
         guixiongUsed: !!spec.guixiongUsed,
+        wxtStage: spec.wxtStage || 0,
       };
       initUnitUses(unit, def);
       if (spec.uses != null) unit.usesLeft = spec.uses;

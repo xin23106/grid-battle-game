@@ -44,4 +44,9 @@ module.exports = [
     ] },
   { id: "xiangyu", name: "西楚霸王", hp: 6, sfx: "heavy",
     skill: { name: "鬼雄", type: "passive", uses: 0 } },
+  { id: "tiandao", name: "天道超", hp: 6, sfx: "magic",
+    skill: { name: "神罗天征", type: "shenluo", damage: 1, uses: 2 },
+    extraSkills: [
+      { name: "万象天引", type: "wxt", damage: 1, uses: 1 },
+    ] },
 ];
