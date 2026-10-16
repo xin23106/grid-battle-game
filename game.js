@@ -87,6 +87,8 @@ let phase = "placement";           // placement(布阵) / battle(对战) / over(
 let currentPlayer = 1;
 let toPlace = SOLDIERS_PER_PLAYER;
 let placedIds = { 1: [], 2: [] };  // 每方已选英雄 id（防重复）
+let onlinePool = null;             // 联机随机选将：本人的候选英雄池（服务端下发，客户端不可指定）
+let onlinePlacementDone = { 1: false, 2: false }; // 联机布阵：双方是否已完成（仅状态，不含具体选择）
 let pendingHero = null;            // 布阵阶段待放置的英雄 id
 let selected = null;               // { r, c }
 let moveTargets = [];
@@ -831,8 +833,11 @@ function resolveNormalAttack(attacker, target) {
 
 /* ============================ 初始化 / 布阵 ============================ */
 function firstAvailableHero(player) {
-  const used = placedIds[player];
-  const h = HEROES.find((x) => !used.includes(x.id));
+  const used = placedIds[player] || [];
+  const list = (gameMode === "online" && onlinePool && onlinePool.length)
+    ? onlinePool.map((id) => heroDef(id)).filter(Boolean)
+    : HEROES;
+  const h = list.find((x) => !used.includes(x.id));
   return h ? h.id : null;
 }
 
@@ -875,7 +880,16 @@ function init() {
 
 function handlePlacement(r, c) {
   if (gameMode === "online") {
-    if (pendingHero) onlineForward({ type: "place", heroId: pendingHero, r, c });
+    const me = mySide();
+    if (territoryOf(c) !== me) { addLog("只能在自己的半场放置英雄。"); render(); return; }
+    if (!pendingHero) { addLog("请先选择一名候选英雄。"); render(); return; }
+    if (onlinePool && onlinePool.length && onlinePool.indexOf(pendingHero) < 0) {
+      addLog("只能部署候选池中的英雄（本局由服务器随机抽取）。");
+      render();
+      return;
+    }
+    if (board[r][c]) { addLog("该格已被占用。"); render(); return; }
+    onlineForward({ type: "place", heroId: pendingHero, r, c });
     return;
   }
   if (territoryOf(c) !== currentPlayer) {
@@ -2774,7 +2788,7 @@ function render() {
       const cell = document.createElement("div");
       cell.className = "cell territory-p" + territoryOf(c);
 
-      if (phase === "placement" && territoryOf(c) === currentPlayer && !board[r][c]) {
+      if (phase === "placement" && territoryOf(c) === mySide() && !board[r][c]) {
         cell.classList.add("selectable");
       }
       if (selected && selected.r === r && selected.c === c) cell.classList.add("selected");
@@ -2881,9 +2895,20 @@ function updateRoster() {
     return;
   }
   heroRosterEl.classList.remove("hidden");
+  // 联机随机选将：只显示本人候选池中的英雄（服务端下发，客户端无法指定）
+  const online = gameMode === "online";
+  const pool = online && onlinePool && onlinePool.length ? onlinePool : null;
+  const me = mySide();
+  const titleEl = heroRosterEl.querySelector(".roster-title");
+  if (titleEl) {
+    titleEl.textContent = online
+      ? "你的候选英雄（本局由服务器随机抽取，仅你可部署）"
+      : "选择要放置的英雄（每方不可重复）";
+  }
   rosterListEl.innerHTML = "";
-  const used = placedIds[currentPlayer];
-  for (const h of HEROES) {
+  const used = placedIds[me] || [];
+  const list = pool ? pool.map((id) => heroDef(id)).filter(Boolean) : HEROES;
+  for (const h of list) {
     const card = document.createElement("button");
     card.type = "button";
     card.className = "hero-option";
@@ -3116,13 +3141,15 @@ function renderDetailCard() {
 
 function updateTalismanUI() {
   if (!talismanCardEl) return;
-  const id = talisman[currentPlayer];
+  // 联机：面板始终显示【本人】的锦囊（对手玩家的锦囊对本人不可见，服务端也不会下发）
+  const cardSide = gameMode === "online" ? mySide() : currentPlayer;
+  const id = talisman[cardSide];
   const t = id ? getTalismanById(id) : null;
   const isAI = gameMode === "ai" && currentPlayer === aiPlayer;
   tzIconEl.textContent = t ? t.icon : "🎴";
-  tzNameEl.textContent = t ? t.name : "（无）";
-  tzDescEl.textContent = t ? t.desc : "本局没有锦囊。";
-  const used = talismanUsed[currentPlayer];
+  tzNameEl.textContent = t ? t.name : (gameMode === "online" && cardSide !== currentPlayer ? "（对手的锦囊：不可见）" : "（无）");
+  tzDescEl.textContent = t ? t.desc : (gameMode === "online" && cardSide !== currentPlayer ? "对手的锦囊信息在开局前与对方回合中均不可见。" : "本局没有锦囊。");
+  const used = talismanUsed[cardSide];
   talismanCardEl.classList.toggle("used", used);
   talismanCardEl.classList.toggle("active", talismanMode === id && !used);
   if (!t) {
@@ -3133,6 +3160,11 @@ function updateTalismanUI() {
   if (used) {
     talismanBtn.disabled = true;
     talismanBtn.textContent = "已使用";
+    return;
+  }
+  if (gameMode === "online" && currentPlayer !== cardSide) {
+    talismanBtn.disabled = true;
+    talismanBtn.textContent = "轮到你时才能使用";
     return;
   }
   if (phase !== "battle") {
@@ -3164,8 +3196,18 @@ function updatePanel() {
   p2CountEl.textContent = aliveCount(2);
 
   if (phase === "placement") {
-    const side = currentPlayer === 1 ? "左" : "右";
-    turnHintEl.textContent = "请在" + side + "侧放置英雄（还剩 " + toPlace + " 名）";
+    if (gameMode === "online") {
+      const me = mySide();
+      const opp = me === 1 ? 2 : 1;
+      const mine = (placedIds[me] || []).length;
+      turnPlayerEl.textContent = "你的部署";
+      turnPlayerEl.className = "turn-player p" + me;
+      turnHintEl.textContent = "请从你的候选英雄中部署 " + Math.max(0, 3 - mine) + " 名　·　对手：" +
+        (onlinePlacementDone[opp] ? "已准备" : "部署中") + "（对手阵容保密）";
+    } else {
+      const side = currentPlayer === 1 ? "左" : "右";
+      turnHintEl.textContent = "请在" + side + "侧放置英雄（还剩 " + toPlace + " 名）";
+    }
   } else if (phase === "battle") {
     const actInfo = turnActionsMax > 1 ? "　【强化】剩余行动 " + turnActionsLeft + "/" + turnActionsMax : "";
     if (skillMode) {
@@ -3907,7 +3949,13 @@ function onlineForward(action) {
   return true;
 }
 function onlineBlocked() {
-  return gameMode === "online" && window.NET && window.NET.myPlayer && currentPlayer !== window.NET.myPlayer;
+  // 布阵阶段双方同时进行，不受 currentPlayer 限制
+  return gameMode === "online" && window.NET && window.NET.myPlayer && phase !== "placement" && currentPlayer !== window.NET.myPlayer;
+}
+/* 当前“我方”是哪个玩家：联机取 NET.myPlayer，本地/AI 取 currentPlayer */
+function mySide() {
+  if (gameMode === "online" && window.NET && window.NET.myPlayer) return window.NET.myPlayer;
+  return currentPlayer;
 }
 /* 用服务器权威状态替换本地棋盘 */
 function applyRemoteState(state) {
@@ -3919,7 +3967,10 @@ function applyRemoteState(state) {
   unitSeq = state.unitSeq || unitSeq;
   if (state.toPlace != null) toPlace = state.toPlace;
   if (state.placed) placedIds = { 1: state.placed[1].slice(), 2: state.placed[2].slice() };
-  // 锦囊状态同步
+  // 联机随机选将：候选池与双方部署完成状态（对手候选池不会下发）
+  onlinePool = state.pools && state.pools[mySide()] ? state.pools[mySide()].slice() : (gameMode === "online" ? onlinePool : null);
+  if (state.placementDone) onlinePlacementDone = { 1: !!state.placementDone[1], 2: !!state.placementDone[2] };
+  // 锦囊状态同步（对手的锦囊为 null=不可见）
   if (state.talisman) talisman = { 1: state.talisman[1], 2: state.talisman[2] };
   if (state.talismanUsed) talismanUsed = { 1: !!state.talismanUsed[1], 2: !!state.talismanUsed[2] };
   if (state.graveyard) graveyard = state.graveyard.slice();
@@ -3934,7 +3985,7 @@ function applyRemoteState(state) {
   if (state.turnActionsMax != null) turnActionsMax = state.turnActionsMax;
   talismanMode = null;
   talismanTargets = [];
-  if (phase === "placement") pendingHero = firstAvailableHero(currentPlayer); // 布阵时自动选下一个可用英雄
+  if (phase === "placement") pendingHero = firstAvailableHero(mySide()); // 布阵时自动选下一个“本人候选池内”的可用英雄
   if (gameMode !== "online") { gameMode = "online"; updateModeBadge(); }
   clearSelection();
   render();
@@ -3970,6 +4021,11 @@ window.onNetStatus = (NET) => {
 };
 window.onNetError = (m) => {
   if (onlineStatus) onlineStatus.textContent = "服务器：" + m;
+};
+window.onNetNotice = (m) => {
+  // 中立提示（例如“对手使用了一张锦囊”），不泄露具体名称
+  if (m) addLog("📣 " + m);
+  render();
 };
 
 /* ============================ 事件绑定 ============================ */

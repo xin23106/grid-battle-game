@@ -29,7 +29,7 @@ try {
   console.error("缺少依赖 ws，请先在 server/ 目录执行：npm install");
   process.exit(1);
 }
-const { createState, applyAction } = require("./rules");
+const { createState, applyAction, SIZE, PER_PLAYER } = require("./rules");
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 // 云平台（Render / Railway / Fly / Koyeb 等）会在环境里注入自己的标记；
@@ -52,6 +52,48 @@ function send(ws, obj) {
 }
 function broadcast(room, obj) {
   for (const p of room.players.values()) send(p, obj);
+}
+/* 按接收者身份生成「可见状态」：隐藏对手的候选池 / 部署 / 锦囊（服务端隔离，前端拿不到隐藏数据） */
+function publicStateFor(state, player) {
+  const s = JSON.parse(JSON.stringify(state)); // 深拷贝，绝不改动权威状态
+  const me = player === 1 ? 1 : 2;
+  const opp = me === 1 ? 2 : 1;
+  if (!player) { // 尚未入座的连接：不下发任何私密信息
+    s.pools = { 1: null, 2: null };
+    s.talisman = { 1: null, 2: null };
+    s.talismanUsed = { 1: false, 2: false };
+    return s;
+  }
+  // 1) 候选英雄池：只下发本人的
+  s.pools = { 1: null, 2: null };
+  s.pools[me] = state.pools && state.pools[me] ? state.pools[me].slice() : null;
+  // 2) 锦囊：只下发本人的（对手的既不知道名称也不知道是否已用）
+  s.talisman = { 1: null, 2: null };
+  s.talisman[me] = state.talisman ? state.talisman[me] : null;
+  s.talismanUsed = { 1: false, 2: false };
+  s.talismanUsed[me] = !!(state.talismanUsed && state.talismanUsed[me]);
+  // 3) 布阵阶段：对手的半场（英雄与位置）全部不可见
+  if (state.phase === "placement") {
+    for (let r = 0; r < SIZE; r++) {
+      for (let c = 0; c < SIZE; c++) {
+        const u = s.board[r][c];
+        if (u && !u.sword && u.player === opp) s.board[r][c] = null;
+      }
+    }
+    s.placed = { 1: [], 2: [] };
+    s.placed[me] = state.placed && state.placed[me] ? state.placed[me].slice() : [];
+  }
+  // 4) 双方部署完成状态（仅“是否完成”，不泄露选择）
+  s.placementDone = { 1: false, 2: false };
+  if (state.placed) {
+    s.placementDone[1] = state.placed[1].length >= PER_PLAYER;
+    s.placementDone[2] = state.placed[2].length >= PER_PLAYER;
+  }
+  return s;
+}
+/* 给房间内每位玩家分别发送“按身份过滤”的消息 */
+function sendEach(room, make) {
+  for (const [p, ws] of room.players) send(ws, make(p));
 }
 function publicRoom(room) {
   return {
@@ -158,10 +200,10 @@ function handle(ws, msg) {
       const room = rooms.get(ws.room);
       if (!room) return send(ws, { type: "error", message: "不在房间中" });
       room.ready[ws.player] = true;
-      broadcast(room, { type: "joined", code: room.code, state: room.state, ready: room.ready, players: room.players.size });
+      sendEach(room, (p) => ({ type: "joined", code: room.code, player: p, state: publicStateFor(room.state, p), ready: room.ready, players: room.players.size }));
       if (room.ready[1] && room.ready[2] && !room.started) {
         room.started = true;
-        broadcast(room, { type: "start", state: room.state });
+        sendEach(room, (p) => ({ type: "start", state: publicStateFor(room.state, p) }));
       }
       break;
     }
@@ -169,15 +211,22 @@ function handle(ws, msg) {
       const room = rooms.get(ws.room);
       if (!room) return send(ws, { type: "error", message: "不在房间中" });
       if (!room.started) return send(ws, { type: "error", message: "对局尚未开始" });
+      const talBefore = !!(room.state.talismanUsed && room.state.talismanUsed[ws.player]);
       const res = applyAction(room.state, ws.player, msg.action || {});
       if (!res.ok) return send(ws, { type: "error", message: res.error || "非法行动" });
       room.state = res.state; // 服务器权威状态
-      broadcast(room, { type: "state", state: room.state });
+      sendEach(room, (p) => ({ type: "state", state: publicStateFor(room.state, p) }));
+      // 锦囊使用：只通知对手“用了一张锦囊”，不泄露具体名称
+      const talAfter = !!(room.state.talismanUsed && room.state.talismanUsed[ws.player]);
+      if (!talBefore && talAfter) {
+        const ows = room.players.get(ws.player === 1 ? 2 : 1);
+        if (ows) send(ows, { type: "notice", message: "对手使用了一张锦囊" });
+      }
       break;
     }
     case "state?": {
       const room = rooms.get(ws.room);
-      if (room) send(ws, { type: "state", state: room.state });
+      if (room) send(ws, { type: "state", state: publicStateFor(room.state, ws.player) });
       break;
     }
     default:
@@ -190,7 +239,7 @@ function joinRoom(ws, room) {
   ws.room = room.code;
   ws.player = player;
   room.players.set(player, ws);
-  send(ws, { type: "joined", code: room.code, player, state: room.state, ready: room.ready, players: room.players.size });
+  send(ws, { type: "joined", code: room.code, player, state: publicStateFor(room.state, player), ready: room.ready, players: room.players.size });
   broadcast(room, { type: "peer", status: "joined", players: room.players.size });
 }
 

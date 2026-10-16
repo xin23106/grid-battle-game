@@ -108,7 +108,7 @@
         notifyStatus();
       } else if (msg.type === "joined") {
         this.code = msg.code;
-        this.myPlayer = msg.player;
+        if (msg.player) this.myPlayer = msg.player; // 仅在服务端明确下发时更新，避免被广播消息清空
         this.ready = msg.ready || { 1: false, 2: false };
         this.players = msg.players || 1;
         if (window.onNetState && msg.state) window.onNetState(msg.state);
@@ -123,6 +123,8 @@
         if (window.onNetStart) window.onNetStart();
       } else if (msg.type === "error") {
         if (window.onNetError) window.onNetError(msg.message);
+      } else if (msg.type === "notice") {
+        if (window.onNetNotice) window.onNetNotice(msg.message);
       }
     },
   };

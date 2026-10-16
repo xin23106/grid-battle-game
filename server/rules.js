@@ -110,11 +110,25 @@ function tickStatuses(s, player) {
 const isSword = (cell) => !!cell && cell.sword === true;
 const isUnit = (cell) => !!cell && !cell.sword;
 
+/* 联机随机选将：双方各抽 3 名不重复英雄（英雄足够时双方池不重复） */
+function drawPools() {
+  const ids = HEROES.map((h) => h.id);
+  const shuffled = ids.slice();
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const t = shuffled[i]; shuffled[i] = shuffled[j]; shuffled[j] = t;
+  }
+  const pool1 = shuffled.slice(0, PER_PLAYER);
+  const pool2 = shuffled.slice(PER_PLAYER, PER_PLAYER * 2);
+  // 英雄总数不足时允许跨玩家重复，但各自池内仍不重复
+  while (pool2.length < PER_PLAYER && shuffled.length) pool2.push(shuffled[pool2.length % shuffled.length]);
+  return { 1: pool1, 2: pool2 };
+}
 function createState() {
   const board = [];
   for (let r = 0; r < SIZE; r++) board.push(new Array(SIZE).fill(null));
   return { board, phase: "placement", currentPlayer: 1, winner: 0, unitSeq: 1,
-           toPlace: PER_PLAYER, placed: { 1: [], 2: [] }, turnActionUsed: false,
+           toPlace: PER_PLAYER, placed: { 1: [], 2: [] }, pools: drawPools(), turnActionUsed: false,
            turnActionsMax: 1, turnActionsLeft: 1, turnActorUid: 0, empowerTurnActive: false,
            talisman: { 1: drawTalismanId(), 2: drawTalismanId() }, talismanUsed: { 1: false, 2: false },
            assaultPlayer: 0, guardPlayer: 0, extraMoves: 0, extraTurnPending: false, graveyard: [] };
@@ -582,13 +596,17 @@ function applyAction(state, player, action) {
     return { ok: true, state: s };
   }
 
-  if (player !== s.currentPlayer) return err("不是你的回合");
+  // 布阵阶段双方同时进行（隐藏式部署），因此不检查 currentPlayer
+  if (player !== s.currentPlayer && s.phase !== "placement") return err("不是你的回合");
 
   if (s.phase === "placement") {
     if (action.type !== "place") return err("布阵阶段只能放置英雄");
+    // 隐藏式部署：双方同时进行，因此不限制 currentPlayer，只校验半场与候选池
     const { r, c, heroId } = action;
     if (!inB(r, c) || (c < SIDE_COLS ? 1 : 2) !== player) return err("只能放在自己的半场");
     if (s.board[r][c]) return err("该格已被占用");
+    if (s.placed[player].length >= PER_PLAYER) return err("你已经完成部署");
+    if (s.pools && s.pools[player] && s.pools[player].indexOf(heroId) < 0) return err("该英雄不在你的候选池中（本局由服务器随机抽取）");
     if (s.placed[player].includes(heroId)) return err("同阵营不可重复英雄");
     const def = heroDef(heroId);
     if (!def) return err("未知英雄");
@@ -599,10 +617,12 @@ function applyAction(state, player, action) {
                       chaseStage: 0, chaseMark: 0, guixiongUsed: false, wxtStage: 0,
                       usesArr: heroSkills(def).map((sk) => (sk.uses == null ? 9999 : sk.uses)) };
     s.placed[player].push(heroId);
-    s.toPlace--;
-    if (s.toPlace === 0) {
-      if (player === 1) { s.currentPlayer = 2; s.toPlace = PER_PLAYER; }
-      else { s.phase = "battle"; s.currentPlayer = 1; beginTurn(s); }
+    s.toPlace = Math.max(0, PER_PLAYER - s.placed[player].length);
+    // 双方都完成部署后才正式开战
+    if (s.placed[1].length >= PER_PLAYER && s.placed[2].length >= PER_PLAYER) {
+      s.phase = "battle";
+      s.currentPlayer = 1;
+      beginTurn(s);
     }
     return { ok: true, state: s };
   }
