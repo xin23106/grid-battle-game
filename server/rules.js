@@ -88,9 +88,13 @@ function applyNegativeStatus(s, target, kind, opts) {
   let dmg = 0;
   if (opts.damage) dmg = applyDamage(s, target, opts.damage);
   if (!findPos(s, target)) return { applied: false, immune: false, damage: dmg, dead: true };
-  if (hasSuperArmor(s, target)) return { applied: false, immune: true, damage: dmg };
+  if (hasSuperArmor(s, target)) {
+    slog(s, "🛡 霸体：" + uname(s, target) + " 抵抗了【" + (opts.label || kind) + "】");
+    return { applied: false, immune: true, damage: dmg };
+  }
   target.statuses = target.statuses || {};
   target.statuses[kind] = Object.assign({ kind, label: opts.label || kind }, opts);
+  slog(s, "⛓ " + uname(s, target) + " 被施加【" + (opts.label || kind) + "】（" + (opts.turns != null ? opts.turns : 1) + " 回合内无法行动）");
   return { applied: true, immune: false, damage: dmg };
 }
 function tickStatuses(s, player) {
@@ -124,6 +128,19 @@ function drawPools() {
   while (pool2.length < PER_PLAYER && shuffled.length) pool2.push(shuffled[pool2.length % shuffled.length]);
   return { 1: pool1, 2: pool2 };
 }
+/* 对战日志：由权威服务端在事件成功结算后写入；每条带唯一 id，供客户端去重 */
+function slog(s, text) {
+  if (!s.log) { s.log = []; s.logSeq = 0; }
+  s.logSeq = (s.logSeq || 0) + 1;
+  s.log.push({ id: s.logSeq, text });
+  if (s.log.length > 200) s.log.splice(0, s.log.length - 200);
+  return s.logSeq;
+}
+function uname(s, u) {
+  if (!u) return "？";
+  const d = heroDef(u.heroId);
+  return "玩家" + u.player + "·" + ((d && d.name) || u.heroId);
+}
 function createState() {
   const board = [];
   for (let r = 0; r < SIZE; r++) board.push(new Array(SIZE).fill(null));
@@ -131,7 +148,8 @@ function createState() {
            toPlace: PER_PLAYER, placed: { 1: [], 2: [] }, pools: drawPools(), turnActionUsed: false,
            turnActionsMax: 1, turnActionsLeft: 1, turnActorUid: 0, empowerTurnActive: false,
            talisman: { 1: drawTalismanId(), 2: drawTalismanId() }, talismanUsed: { 1: false, 2: false },
-           assaultPlayer: 0, guardPlayer: 0, extraMoves: 0, extraTurnPending: false, graveyard: [] };
+           assaultPlayer: 0, guardPlayer: 0, extraMoves: 0, extraTurnPending: false, graveyard: [],
+           log: [], logSeq: 0 };
 }
 const clone = (s) => JSON.parse(JSON.stringify(s));
 const findPos = (s, u) => {
@@ -310,17 +328,19 @@ function spawnSword(s, r, c) {
 function applyDamage(s, target, amount, source) {
   const pos = findPos(s, target);
   let dmg = amount;
-  if (s.guardPlayer === target.player && dmg > 0) dmg = Math.max(0, dmg - 1); // 坚守令
-  if (target.shield > 0) { const a = Math.min(target.shield, dmg); target.shield -= a; dmg -= a; }
+  if (s.guardPlayer === target.player && dmg > 0) { const before = dmg; dmg = Math.max(0, dmg - 1); if (before > dmg) slog(s, "🛡 坚守令为 " + uname(s, target) + " 减免 1 点伤害"); }
+  if (target.shield > 0) { const a = Math.min(target.shield, dmg); target.shield -= a; dmg -= a; if (a > 0) slog(s, uname(s, target) + " 的护盾抵挡了 " + a + " 点伤害"); }
   // 龙魂：龙人 1/2 概率闪避（护盾等前置处理之后、完全抵消则不触发）
   if (dmg > 0 && target.heroId === "longren" && Math.random() < 1 / 2) {
     dmg = 0;
     target.dragonMoves = (target.dragonMoves || 0) + 1;
+    slog(s, "🐉 龙魂：" + uname(s, target) + " 闪避了本次伤害（并积累 1 次龙胆）");
   }
   // 孤胆侠·霸体：首次致命伤害锁血到 1
   if (dmg > 0 && target.hp - dmg <= 0 && target.heroId === "lone" && hasSuperArmor(s, target) && !target.lockUsed) {
     target.lockUsed = true;
     dmg = Math.max(0, target.hp - 1);
+    slog(s, "🛡 霸体：" + uname(s, target) + " 抵挡致命伤害，生命锁定为 1（本局一次）");
   }
   // 西楚霸王·鬼雄：首次致命伤害锁血到 1（每局一次），随后反击九宫格并进入绝境
   let guixiongTriggered = false;
@@ -328,8 +348,9 @@ function applyDamage(s, target, amount, source) {
     target.guixiongUsed = true;
     guixiongTriggered = true;
     dmg = Math.max(0, target.hp - 1);
+    slog(s, "👹 鬼雄：" + uname(s, target) + " 生命锁定为 1，并对九宫格内敌人反击 2 点");
   }
-  if (dmg > 0) target.hp -= dmg;
+  if (dmg > 0) { target.hp -= dmg; slog(s, uname(s, target) + " 受到 " + dmg + " 点伤害（余 " + target.hp + "）"); }
   if (guixiongTriggered && findPos(s, target)) guixiongCounter(s, target);
   if (target.hp <= 0 && pos) {
     // 追猎标记清理：目标阵亡 → 清自身标记；刺客阵亡 → 清其遗留标记
@@ -338,6 +359,7 @@ function applyDamage(s, target, amount, source) {
     // 记录阵亡（供还魂令），先于清空棋盘 / 生成剑刃
     s.graveyard.push({ player: target.player, heroId: target.heroId, r: pos.r, c: pos.c, usesLeft: target.usesLeft || 0, swords: target.swords || 0, lockUsed: !!target.lockUsed, guixiongUsed: !!target.guixiongUsed });
     s.board[pos.r][pos.c] = null;
+    slog(s, "☠ " + uname(s, target) + " 阵亡！");
     spawnSword(s, pos.r, pos.c);
     // 击杀刷新：刺客·追猎 / 吸血鬼·血崩（同一次击杀只刷新一次）
     if (source && !source.sword && source.player !== target.player && findPos(s, source)) {
@@ -510,6 +532,7 @@ function beginTurn(s) {
   s.turnActorUid = emp ? emp.uid : 0;
   if (s.assaultPlayer && s.assaultPlayer !== s.currentPlayer) s.assaultPlayer = 0;
   if (s.guardPlayer === s.currentPlayer) s.guardPlayer = 0;
+  if (s.phase === "battle") slog(s, "—— 轮到 玩家" + s.currentPlayer + " ——");
 }
 /* 「不耗步」技能：perTurn / free / dash 不占用行动机会 */
 function isFreeSkillS(sk) {
@@ -520,10 +543,12 @@ function heroHasFreeUses(s, u) {
   const skills = heroSkills(heroDef(u.heroId));
   return skills.some((sk, i) => sk.perTurn && skillUsesLeft(s, u, i) > 0);
 }
-/* 是否还有可执行行动（用于“不能直接跳过回合”） */
+/* 是否还有可执行行动（用于“不能直接跳过回合”与“无行动自动跳过”）
+ * 被抓取 / 冰封的单位不能行动，因此不计入 */
 function hasAnyActionState(s, player) {
   for (const u of unitsOf(s, player)) {
     if (u.frozen > 0) continue;
+    if (isGrabbed(u)) continue; // 抓取：本回合无法移动/攻击/用技能
     const pos = findPos(s, u);
     if (!pos) continue;
     const sk = heroDef(u.heroId).skill;
@@ -549,7 +574,8 @@ function finish(s, u, isFree, keepOpen) {
   s.turnActionsLeft -= 1;
   s.turnActionUsed = s.turnActionsLeft <= 0;
 }
-function endTurn(s) {
+function endTurnOnce(s) {
+  const ended = s.currentPlayer;
   for (const u of unitsOf(s, s.currentPlayer)) if (u.frozen > 0) u.frozen--;
   tickStatuses(s, s.currentPlayer);
   // 雷电之主：强化按自身回合递减，归零清除护盾
@@ -566,11 +592,29 @@ function endTurn(s) {
   const samePlayer = !!s.extraTurnPending;
   s.extraTurnPending = false;
   if (!samePlayer) s.currentPlayer = s.currentPlayer === 1 ? 2 : 1;
+  slog(s, "玩家" + ended + " 结束回合");
   beginTurn(s);
+}
+/* 统一结束回合：结束当前玩家回合并交给对手；
+ * 若接手的一方没有任何合法行动（全被冰封 / 被抓取等），自动继续推进（带上限防死循环）。 */
+function endTurn(s) {
+  endTurnOnce(s);
+  settleStuckTurns(s);
+}
+function settleStuckTurns(s) {
+  let guard = 0;
+  while (guard++ < 4 && s.phase === "battle" && !hasAnyActionState(s, s.currentPlayer)) {
+    slog(s, "⏭ 玩家" + s.currentPlayer + " 没有可执行的行动（被冰封/抓取等），自动结束回合");
+    endTurnOnce(s);
+  }
 }
 function checkVictory(s) {
   const p1 = unitsOf(s, 1).length, p2 = unitsOf(s, 2).length;
-  if (p1 === 0 || p2 === 0) { s.phase = "over"; s.winner = p1 === 0 ? 2 : 1; return true; }
+  if (p1 === 0 || p2 === 0) {
+    s.phase = "over"; s.winner = p1 === 0 ? 2 : 1;
+    slog(s, "🏆 玩家" + s.winner + " 获胜，对局结束！");
+    return true;
+  }
   return false;
 }
 
@@ -618,6 +662,7 @@ function applyAction(state, player, action) {
                       usesArr: heroSkills(def).map((sk) => (sk.uses == null ? 9999 : sk.uses)) };
     s.placed[player].push(heroId);
     s.toPlace = Math.max(0, PER_PLAYER - s.placed[player].length);
+    slog(s, "玩家" + player + " 完成一次部署（" + s.placed[player].length + "/" + PER_PLAYER + "）");
     // 双方都完成部署后才正式开战
     if (s.placed[1].length >= PER_PLAYER && s.placed[2].length >= PER_PLAYER) {
       s.phase = "battle";
@@ -642,9 +687,9 @@ function applyAction(state, player, action) {
     const to = action.to || {};
     const hasTo = to.r != null && to.c != null;
     switch (t.effect) {
-      case "assault": s.assaultPlayer = player; break;
-      case "march": s.extraTurnPending = true; break;
-      case "guard": s.guardPlayer = player; break;
+      case "assault": s.assaultPlayer = player; slog(s, "🔥 本回合玩家" + player + " 造成的伤害 +1"); break;
+      case "march": s.extraTurnPending = true; slog(s, "🐎 玩家" + player + " 本回合结束后获得一个额外回合"); break;
+      case "guard": s.guardPlayer = player; slog(s, "🛡 玩家" + player + " 的英雄在下个对手回合受到的伤害 -1"); break;
       case "refresh": {
         const u = hasTo && inB(to.r, to.c) ? s.board[to.r][to.c] : null;
         if (!isUnit(u) || u.player !== player) return err("请选择一名己方存活英雄");
@@ -655,12 +700,15 @@ function applyAction(state, player, action) {
           if (skillUsesLeft(s, u, i) !== max) { setSkillUses(s, u, i, max); n++; }
         });
         if (n === 0) return err("该英雄没有可刷新的技能次数");
+        slog(s, "♻️ 刷新了 " + uname(s, u) + " 的技能次数至上限");
         break;
       }
       case "heal": {
         const u = hasTo && inB(to.r, to.c) ? s.board[to.r][to.c] : null;
         if (!isUnit(u) || u.player !== player || u.hp >= u.maxHp) return err("目标不合法");
-        u.hp += Math.max(0, Math.min(t.heal || 2, u.maxHp - u.hp));
+        const healed = Math.max(0, Math.min(t.heal || 2, u.maxHp - u.hp));
+        u.hp += healed;
+        slog(s, "➕ " + uname(s, u) + " 恢复 " + healed + " 点生命（余 " + u.hp + "）");
         break;
       }
       case "revive": {
@@ -673,11 +721,14 @@ function applyAction(state, player, action) {
                                 shield: 0, frozen: 0, swords: rec.swords || 0, usesLeft: rec.usesLeft || 0,
                                 statuses: {}, lockUsed: !!rec.lockUsed, sdStage: 0, dragonMoves: 0, empowerTurns: 0, chaseStage: 0, chaseMark: 0, guixiongUsed: !!rec.guixiongUsed, wxtStage: 0 };
         s.graveyard.splice(idx, 1);
+        slog(s, "💫 " + uname(s, s.board[to.r][to.c]) + " 在原位置复活（3 点生命）");
         break;
       }
       default: return err("未知锦囊");
     }
     s.talismanUsed[player] = true;
+    // 锦囊成功使用：向双方公开“本次使用的具体名称”（未使用的锦囊与部署阶段仍保密）
+    slog(s, "🎴 玩家" + player + " 使用了【" + t.name + "】");
     return { ok: true, state: s }; // 锦囊不结束回合，也不消耗行动
   }
 
@@ -697,6 +748,7 @@ function applyAction(state, player, action) {
     if (isSword(t) && u.heroId !== "asura") return err("剑刃阻挡");
     if (isSword(t) && u.heroId === "asura") { u.swords = (u.swords || 0) + 1; }
     s.board[r][c] = u; s.board[from.r][from.c] = null;
+    slog(s, uname(s, u) + (isExtra ? " 额外移动" : " 移动") + "到 (" + (r + 1) + "," + (c + 1) + ")");
     if (isExtra) {
       s.extraMoves -= 1; // 行军令额外移动：不消耗行动机会、不自动结束回合
       checkVictory(s);
@@ -713,6 +765,8 @@ function applyAction(state, player, action) {
     const t = inB(r, c) ? s.board[r][c] : null;
     if (!isUnit(t) || t.player === player) return err("无效的攻击目标");
     if (Math.abs(r - from.r) + Math.abs(c - from.c) !== 1) return err("只能攻击相邻目标");
+    const fi = flankInfo(s).get(t.uid);
+    slog(s, uname(s, u) + " 攻击 " + uname(s, t) + (fi && fi.flanked ? "（触发夹击×" + fi.count + "）" : ""));
     applyDamage(s, t, normalDamage(s, u, t), u);
     finish(s, u, false);
     return { ok: true, state: s };
@@ -731,6 +785,7 @@ function applyAction(state, player, action) {
     if (!isSd2 && !isChase2 && !isWxtCombo && skillUsesLeft(s, u, idx) <= 0) return err("技能次数不足");
     if (sk.costSwords && (u.swords || 0) < sk.costSwords) return err("没有剑，无法发动剑圣");
     if (!skillFreeForS(u, sk) && !canActNow(s, u)) return err("本回合已经行动过了");
+    slog(s, uname(s, u) + " 释放【" + sk.name + "】");
     const freeAction = skillFreeForS(u, sk); // 结算前判定：追猎会改动 chaseStage，放到最后会翻转结果
     let consumedHere = false; // 追猎第一段在分支内「先扣次数再结算」
     const { r, c } = action.to || {};

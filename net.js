@@ -111,6 +111,7 @@
         if (msg.player) this.myPlayer = msg.player; // 仅在服务端明确下发时更新，避免被广播消息清空
         this.ready = msg.ready || { 1: false, 2: false };
         this.players = msg.players || 1;
+        if (window.onNetJoined) window.onNetJoined(); // 新房间/重连：重置日志去重游标，随后由 onNetState 按权威状态重建
         if (window.onNetState && msg.state) window.onNetState(msg.state);
         notifyStatus();
       } else if (msg.type === "peer") {

@@ -88,6 +88,7 @@ let currentPlayer = 1;
 let toPlace = SOLDIERS_PER_PLAYER;
 let placedIds = { 1: [], 2: [] };  // 每方已选英雄 id（防重复）
 let onlinePool = null;             // 联机随机选将：本人的候选英雄池（服务端下发，客户端不可指定）
+let onlineLogSeq = 0;              // 联机：已合并的服务端日志最大 id（去重，避免重连/重复广播刷屏）
 let onlinePlacementDone = { 1: false, 2: false }; // 联机布阵：双方是否已完成（仅状态，不含具体选择）
 let pendingHero = null;            // 布阵阶段待放置的英雄 id
 let selected = null;               // { r, c }
@@ -987,8 +988,8 @@ function beginTurn() {
   if (window.SFX) window.SFX.unlock();
 }
 
-/* 结束当前玩家回合：先结算其冰封回合数，再交给对方 */
-function endTurn() {
+/* 结束当前玩家回合并交给对手（含行军令额外回合）。不含“自动跳过无行动玩家”。 */
+function endTurnOnce() {
   for (const u of unitsOf(currentPlayer)) if (u.frozen > 0) u.frozen -= 1;
   tickStatuses(currentPlayer); // 负面状态（如抓取）在本回合结束时递减/结算
   // 雷电之主：强化按“自身回合”计算，本回合若为强化回合则递减；归零时清除护盾
@@ -1013,6 +1014,21 @@ function endTurn() {
   render();
   // 回合交接后触发 AI（此前 AI 依赖“行动时自动结束回合”的棋盘点击回调，改为手动结束后必须在这里补上）
   aiKick();
+}
+
+/* 统一结束回合：结束当前玩家回合；若接手的一方没有任何合法行动（全被冰封 / 被抓取等），
+ * 自动继续推进（带上限防止双方连续无行动时死循环）。联机由服务端权威处理，客户端只在单机 / AI 执行。 */
+function endTurn() {
+  endTurnOnce();
+  settleStuckTurns();
+}
+function settleStuckTurns() {
+  if (gameMode === "online") return;
+  let guard = 0;
+  while (guard++ < 4 && phase === "battle" && !hasAnyAction(currentPlayer)) {
+    addLog("⏭ 玩家" + currentPlayer + " 没有可执行的行动（被冰封 / 抓取等），自动结束回合。");
+    endTurnOnce();
+  }
 }
 
 /* 一次行动后的收尾。
@@ -3957,9 +3973,24 @@ function mySide() {
   if (gameMode === "online" && window.NET && window.NET.myPlayer) return window.NET.myPlayer;
   return currentPlayer;
 }
+/* 联机：合并服务端权威日志（按 id 去重；重连 / 重复广播不会重复显示） */
+function mergeServerLog(state) {
+  if (!state || !state.log || !state.log.length) return;
+  let added = false;
+  for (const e of state.log) {
+    if (e && typeof e.id === "number" && e.id > onlineLogSeq) {
+      logs.push(e.text);
+      onlineLogSeq = e.id;
+      added = true;
+    }
+  }
+  if (logs.length > 300) logs = logs.slice(-200);
+  return added;
+}
 /* 用服务器权威状态替换本地棋盘 */
 function applyRemoteState(state) {
   if (!state) return;
+  mergeServerLog(state);
   board = state.board.map((row) => row.map((cell) => (cell ? Object.assign({}, cell) : null)));
   phase = state.phase;
   currentPlayer = state.currentPlayer;
@@ -3991,6 +4022,11 @@ function applyRemoteState(state) {
   render();
 }
 window.onNetState = applyRemoteState;
+/* 新房间 / 断线重连：清空本地日志并重置去重游标；随后 onNetState 会按服务端权威 log 重建（不重复刷屏） */
+window.onNetJoined = () => {
+  logs = [];
+  onlineLogSeq = 0;
+};
 window.onNetStart = () => {
   hideMenu();
   readyRow.classList.remove("hidden");

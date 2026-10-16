@@ -212,15 +212,20 @@ function handle(ws, msg) {
       if (!room) return send(ws, { type: "error", message: "不在房间中" });
       if (!room.started) return send(ws, { type: "error", message: "对局尚未开始" });
       const talBefore = !!(room.state.talismanUsed && room.state.talismanUsed[ws.player]);
+      const seqBefore = room.state.logSeq || 0;
       const res = applyAction(room.state, ws.player, msg.action || {});
       if (!res.ok) return send(ws, { type: "error", message: res.error || "非法行动" });
       room.state = res.state; // 服务器权威状态
       sendEach(room, (p) => ({ type: "state", state: publicStateFor(room.state, p) }));
-      // 锦囊使用：只通知对手“用了一张锦囊”，不泄露具体名称
+      // 锦囊使用：向对手发送公开通知（含本次使用的具体名称；未使用的锦囊仍保密）
       const talAfter = !!(room.state.talismanUsed && room.state.talismanUsed[ws.player]);
       if (!talBefore && talAfter) {
+        let name = "";
+        for (const e of (room.state.log || [])) {
+          if (e.id > seqBefore) { const m = /使用了【(.+?)】/.exec(e.text); if (m) name = m[1]; }
+        }
         const ows = room.players.get(ws.player === 1 ? 2 : 1);
-        if (ows) send(ows, { type: "notice", message: "对手使用了一张锦囊" });
+        if (ows) send(ows, { type: "notice", message: "对手使用了【" + (name || "锦囊") + "】" });
       }
       break;
     }
