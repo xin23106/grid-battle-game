@@ -22,5 +22,5 @@ echo.
 echo  提示: 隧道地址每次重启都会变; 关掉本窗口隧道即断开。
 echo  另外请确保另开了「游戏服务器」(启动游戏.bat 或 node server.js)。
 echo.
-"%CF%" tunnel --url http://localhost:3000 --no-autoupdate
+"%CF%" tunnel --url http://localhost:3000 --no-autoupdate --protocol http2
 pause
