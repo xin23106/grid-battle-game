@@ -1,0 +1,12 @@
+{
+  "name": "hero-chess-server",
+  "version": "1.0.0",
+  "description": "英雄战棋 · 在线对战的权威服务器（房间管理 + 回合同步 + 规则校验）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

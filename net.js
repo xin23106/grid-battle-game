@@ -1,0 +1,113 @@
+/* =========================================================================
+ * net.js —— 在线对战客户端（WebSocket）
+ * -------------------------------------------------------------------------
+ * 连接 server/server.js（默认同主机 3000 端口）。
+ * 服务器是权威：客户端只提交行动请求，收到 {type:"state"} 后整体替换本地棋盘。
+ * 若未启动服务器，则 NET.available=false，在线模式会提示未连接（不影响单机/AI）。
+ * ========================================================================= */
+(function () {
+  const KEY = "herochess.net.url";
+  function defaultUrl() {
+    const proto = location.protocol === "https:" ? "wss://" : "ws://";
+    return proto + (location.hostname || "localhost") + ":3000";
+  }
+  let SERVER_URL = "";
+  try { SERVER_URL = localStorage.getItem(KEY) || ""; } catch (e) {}
+  if (!SERVER_URL) SERVER_URL = defaultUrl();
+
+  const NET = {
+    available: false,
+    connected: false,
+    code: null,
+    myPlayer: 0,
+    ready: { 1: false, 2: false },
+    players: 0,
+    addresses: [],          // 服务器报告的局域网地址
+    _ws: null,
+    _queue: [],
+
+    get serverUrl() { return SERVER_URL; },
+    defaultUrl,
+    /* 设置服务器地址（留空恢复默认）；会保存并在重连后生效 */
+    setUrl(u) {
+      const val = (u && u.trim()) ? u.trim() : "";
+      SERVER_URL = val || defaultUrl();
+      try { localStorage.setItem(KEY, val); } catch (e) {}
+      this.available = false;
+      this.connected = false;
+      this.code = null;
+      this.myPlayer = 0;
+      if (this._ws) { try { this._ws.close(); } catch (e) {} }
+      this._ws = null;
+      notifyStatus();
+      this.connect();
+      return SERVER_URL;
+    },
+
+    connect() {
+      if (this._ws) return;
+      try {
+        const ws = new WebSocket(SERVER_URL);
+        this._ws = ws;
+        // 用守卫避免旧 socket 的回调干扰新连接的状态
+        ws.onopen = () => { if (this._ws !== ws) return; this.connected = true; this.available = true; notifyStatus(); };
+        ws.onclose = () => { if (this._ws !== ws) return; this.connected = false; this.available = false; this._ws = null; notifyStatus(); };
+        ws.onerror = () => { if (this._ws !== ws) return; this.connected = false; this.available = false; };
+        ws.onmessage = (ev) => {
+          if (this._ws !== ws) return;
+          let msg;
+          try { msg = JSON.parse(ev.data); } catch (e) { return; }
+          this._onMessage(msg);
+        };
+      } catch (e) {
+        this.available = false;
+      }
+    },
+    createRoom() { this._send({ type: "create" }); },
+    joinRoom(code) { this._send({ type: "join", code }); },
+    markReady() { this._send({ type: "ready" }); },
+    sendAction(action) { this._send({ type: "action", action }); },
+    requestState() { this._send({ type: "state?" }); },
+
+    _send(obj) {
+      if (this._ws && this._ws.readyState === WebSocket.OPEN) this._ws.send(JSON.stringify(obj));
+      else { this._queue.push(obj); this.connect(); }
+    },
+    _flush() {
+      const q = this._queue.slice();
+      this._queue.length = 0;
+      q.forEach((o) => this._send(o));
+    },
+    _onMessage(msg) {
+      if (msg.type === "hello") {
+        this.addresses = msg.addresses || [];
+        notifyStatus();
+      } else if (msg.type === "joined") {
+        this.code = msg.code;
+        this.myPlayer = msg.player;
+        this.ready = msg.ready || { 1: false, 2: false };
+        this.players = msg.players || 1;
+        if (window.onNetState && msg.state) window.onNetState(msg.state);
+        notifyStatus();
+      } else if (msg.type === "peer") {
+        this.players = msg.players || this.players;
+        notifyStatus();
+      } else if (msg.type === "state") {
+        if (window.onNetState) window.onNetState(msg.state);
+      } else if (msg.type === "start") {
+        if (window.onNetState) window.onNetState(msg.state);
+        if (window.onNetStart) window.onNetStart();
+      } else if (msg.type === "error") {
+        if (window.onNetError) window.onNetError(msg.message);
+      }
+    },
+  };
+
+  function notifyStatus() {
+    if (window.onNetStatus) window.onNetStatus(NET);
+  }
+
+  // 页面加载后尝试连接（连不上也不影响离线游玩）
+  NET.connect();
+  window.NET = NET;
+})();

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>英雄战棋 · 夹击战术</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <h1>英雄战棋 <span>6 × 6 · 夹击战术</span></h1>
+      <div class="top-actions">
+        <span id="mode-badge" class="mode-badge hidden">本地双人</span>
+        <span id="conn-badge" class="conn-badge hidden">未连接</span>
+        <button id="menu-btn" class="restart">☰ 菜单</button>
+        <button id="bgm-btn" class="bgm-btn" title="背景音乐（内置原创中国风；若放入 bgm.mp3 则优先播放该文件）">🎵 音乐</button>
+        <button id="restart" class="restart">重新开始</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <!-- ===== 左栏：回合 / 数量 / 锦囊 / 日志 / 规则 ===== -->
+      <aside class="panel panel-left">
+        <div id="turn-card" class="turn-card">
+          <div class="turn-label">当前回合</div>
+          <div id="turn-player" class="turn-player">玩家 1</div>
+          <div id="turn-hint" class="turn-hint">请在左侧放置英雄</div>
+        </div>
+
+        <div class="score">
+          <div class="score-row">
+            <span class="dot p1"></span>
+            <span class="score-name">玩家 1 英雄</span>
+            <span id="p1-count" class="score-count">3</span>
+          </div>
+          <div class="score-row">
+            <span class="dot p2"></span>
+            <span class="score-name">玩家 2 英雄</span>
+            <span id="p2-count" class="score-count">3</span>
+          </div>
+          <div id="ready-row" class="ready-row hidden">
+            <span id="ready-p1" class="ready-tag">玩家1 未准备</span>
+            <span id="ready-p2" class="ready-tag">玩家2 未准备</span>
+          </div>
+        </div>
+
+        <div id="hero-roster" class="hero-roster hidden">
+          <div class="roster-title">选择要放置的英雄（每方不可重复）</div>
+          <div id="roster-list" class="roster-list"></div>
+        </div>
+
+        <div id="talisman-card" class="talisman-card">
+          <div class="tz-title">我的锦囊</div>
+          <div class="tz-body">
+            <span id="tz-icon" class="tz-icon">🎴</span>
+            <div class="tz-info">
+              <div id="tz-name" class="tz-name">—</div>
+              <div id="tz-desc" class="tz-desc"></div>
+            </div>
+          </div>
+          <button id="talisman-btn" class="talisman-btn" disabled>使用锦囊</button>
+        </div>
+
+        <div class="log-card">
+          <div class="log-title">战斗日志</div>
+          <div id="log" class="log"></div>
+        </div>
+
+        <div class="rules">
+          <h2>规则</h2>
+          <ul>
+            <li>双方各在自己的半场放置 <b>3</b> 名英雄，同一阵营不可重复选择同一名英雄。</li>
+            <li>生命值档位为 <b>5 / 6 / 7 / 8</b>，游戏开始时等于最大生命。</li>
+            <li>每回合操作 <b>一名</b> 己方英雄：先完成 <b>1 次正常行动</b>（移动一格 / 普通攻击 / 技能），<b>不能直接跳过回合</b>。</li>
+            <li>普通攻击基础 <b>1</b> 点；触发 <b>夹击</b> 时额外加伤。</li>
+            <li><b>夹击（只看上下左右）：</b>目标每个相邻敌人、以及紧贴的棋盘边界（墙）各算 1 个「夹击方向」；相邻至少 1 名敌人且方向总数 <b>≥ 2</b> 即触发（正相对、直角、靠墙都算）。</li>
+            <li><b>夹击加伤：</b>额外 =（夹击方向数 − 1）。2 个方向 <b>+1</b>、3 个 <b>+2</b>、4 个 <b>+3</b>。<b>技能不受夹击加成。</b></li>
+            <li><b>队友保护：</b>目标相邻存在未被夹击的队友时，夹击无效。</li>
+            <li>技能没有冷却，只有<b>释放次数</b>限制。</li>
+            <li><b>不耗步技能（阿修罗·剑圣）：</b>不占用本回合的正常行动——移动或普攻后，仍可在同一回合继续突进（每回合最多 2 次，前 3 格全为敌人时原地斩击）。<b>每次消耗 1 把剑，没有剑时无法发动。</b></li>
+            <li><b>阿修罗·锻剑：</b>阿修罗存活时，英雄阵亡处会留下剑刃；阿修罗踩上即可回收（携带剑数 +1）。</li>
+            <li>消灭对方全部英雄即获胜。</li>
+          </ul>
+        </div>
+      </aside>
+
+      <!-- ===== 中栏：棋盘 ===== -->
+      <div class="board-wrap">
+        <div class="side-tag left">玩家 1</div>
+        <div class="side-tag right">玩家 2</div>
+        <div id="board" class="board"></div>
+        <div class="legend">
+          <span><i class="lg flank"></i>夹击</span>
+          <span><i class="lg guarded"></i>队友保护</span>
+          <span><i class="lg move"></i>可移动</span>
+          <span><i class="lg atk"></i>可攻击</span>
+          <span><i class="lg skill"></i>技能范围</span>
+          <span><i class="lg sword">🗡</i>剑刃</span>
+        </div>
+      </div>
+
+      <!-- ===== 右栏：英雄详情 / 技能 / 结束回合 ===== -->
+      <aside class="panel panel-right">
+        <div id="hero-card" class="hero-card empty">
+          <div class="muted">点击己方英雄查看属性与技能</div>
+        </div>
+
+        <div id="detail-card" class="detail-card hidden">
+          <button id="detail-close" class="detail-close" title="关闭">✕</button>
+          <div class="dc-head">
+            <span id="dc-icon" class="dc-icon">🎴</span>
+            <div>
+              <div id="dc-name" class="dc-name"></div>
+              <div id="dc-hp" class="dc-hp"></div>
+            </div>
+          </div>
+          <div id="dc-skills" class="dc-skills"></div>
+          <div id="dc-status" class="dc-status"></div>
+        </div>
+
+        <div id="skill-bar" class="skill-bar"></div>
+        <button id="skip-btn" class="skip-btn hidden">结束回合</button>
+      </aside>
+    </main>
+
+    <!-- 主菜单 -->
+    <div id="menu" class="overlay">
+      <div class="menu-card">
+        <button id="menu-close" class="menu-close" title="关闭菜单（返回对局）" aria-label="关闭菜单">✕</button>
+        <div class="menu-title">英雄战棋</div>
+        <div class="menu-sub">夹击战术 · 双人对战 · 人机对战</div>
+
+        <div id="menu-home">
+          <button class="menu-btn" data-mode="local">👥　本地双人对战</button>
+          <button class="menu-btn" id="menu-ai-open">🤖　AI 人机对战</button>
+          <button class="menu-btn" id="menu-online-open">🌐　在线真人对战 <span class="tag-warn">开发中</span></button>
+          <button class="menu-btn" id="menu-settings-open">⚙️　游戏设置</button>
+        </div>
+
+        <div id="menu-ai" class="menu-section hidden">
+          <div class="menu-row"><span class="menu-label">难度</span>
+            <label><input type="radio" name="ai-diff" value="easy"> 简单</label>
+            <label><input type="radio" name="ai-diff" value="normal" checked> 普通</label>
+            <label><input type="radio" name="ai-diff" value="hard"> 困难</label>
+          </div>
+          <div class="menu-row"><span class="menu-label">你的阵营</span>
+            <label><input type="radio" name="ai-side" value="1" checked> 玩家1(左)</label>
+            <label><input type="radio" name="ai-side" value="2"> 玩家2(右)</label>
+          </div>
+          <button id="ai-start" class="menu-primary">开始 AI 对战</button>
+          <button class="menu-mini menu-back">返回</button>
+        </div>
+
+        <div id="menu-online" class="menu-section hidden">
+          <div class="menu-note" id="online-status">
+            在线真人对战需要 Node.js 服务器。请先双击 <b>启动游戏.bat</b>（或进入 <b>server</b> 目录运行 <code>node server.js</code>），
+            再在此连接。当前：未连接。
+          </div>
+          <div class="menu-row">
+            <span class="menu-label">服务器</span>
+            <input id="server-input" class="menu-input" placeholder="ws://主机:3000（留空=自动）" />
+            <button id="server-connect" class="menu-mini">连接</button>
+          </div>
+          <div class="menu-row"><span class="muted" id="server-hint"></span></div>
+          <div class="menu-row">
+            <input id="room-input" class="menu-input" maxlength="8" placeholder="输入房间号" />
+            <button id="join-room" class="menu-mini">加入房间</button>
+          </div>
+          <button id="create-room" class="menu-primary">创建房间</button>
+          <div class="menu-row hidden" id="share-row">
+            <input id="share-input" class="menu-input" readonly placeholder="分享链接（发给对方点开即可）" />
+            <button id="share-copy" class="menu-mini">复制</button>
+          </div>
+          <div class="menu-row hidden" id="share-host-row">
+            <span class="menu-label">分享地址</span>
+            <select id="share-host" class="menu-input"></select>
+          </div>
+          <div class="menu-note hidden" id="share-hint"></div>
+          <div class="menu-row hidden" id="phone-row">
+            <span class="menu-label">手机打开</span>
+            <input id="phone-input" class="menu-input" readonly placeholder="手机浏览器里打开这个地址" />
+            <button id="phone-copy" class="menu-mini">复制</button>
+          </div>
+          <div class="menu-note hidden" id="phone-hint"></div>
+          <button id="ready-btn" class="menu-primary hidden">我准备好了</button>
+          <button class="menu-mini menu-back">返回</button>
+        </div>
+
+        <div id="menu-settings" class="menu-section hidden">
+          <div class="menu-row"><label><input type="checkbox" id="set-sfx" checked> 战斗音效</label></div>
+          <div class="menu-row"><span class="menu-label">音效音量</span><input type="range" id="set-vol" min="0" max="100" value="60"></div>
+          <div class="menu-row"><button id="set-sfx-test" class="menu-mini">试听音效</button></div>
+          <div class="menu-row"><span class="muted" id="settings-hint">设置会自动保存，刷新后保留。</span></div>
+          <button class="menu-mini menu-back">返回</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="overlay" class="overlay hidden">
+      <div class="overlay-card">
+        <div id="overlay-title" class="overlay-title">玩家 1 获胜！</div>
+        <div id="overlay-sub" class="overlay-sub"></div>
+        <button id="overlay-btn" class="restart big">再来一局</button>
+        <button id="overlay-menu" class="restart big">返回主菜单</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 背景音乐：优先播放本目录的 bgm.mp3；若无则播放 bgm.js 的原创合成音乐 -->
+  <audio id="bgm" src="bgm.mp3" loop preload="none"></audio>
+
+  <script src="heroes.js"></script>
+  <script src="talismans.js"></script>
+  <script src="sfx.js"></script>
+  <script src="bgm.js"></script>
+  <script src="net.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

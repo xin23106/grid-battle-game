@@ -1,0 +1,32 @@
+# 与本游戏无关的本地内容（不属于本仓库，请勿提交）
+dafeiyu-pet/
+assets/
+preview/
+gen_ppt.py
+*.pptx
+*.zip
+
+# 依赖与构建产物
+node_modules/
+server/node_modules/
+dist/
+build/
+
+# 环境变量 / 密钥（切勿提交）
+.env
+.env.*
+*.local
+secrets.json
+
+# 缓存与日志
+__pycache__/
+*.pyc
+*.log
+npm-debug.log*
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
