@@ -1544,6 +1544,9 @@ function normalAttack(attacker, target) {
     render();
     return;
   }
+  // 记录攻击前的位置：普通攻击若最终击杀目标，攻击者需占据目标原先所在的格子
+  const atkBefore = findPos(attacker);
+  const tgtBefore = findPos(target);
   const res = resolveNormalAttack(attacker, target);
   const aBonus = attackerBonus(attacker); // 猛攻令 +1 / 孤胆 +1
   const total = res.damage + aBonus;
@@ -1561,6 +1564,16 @@ function normalAttack(attacker, target) {
   if (window.SFX) window.SFX.play("attack", { sfx: sfxOf(attacker) });
   if (res.flank && window.SFX) window.SFX.play("flank", { sfx: sfxOf(attacker) });
   applyDamage(target, total, res.flank ? "flank" : "normal", attacker);
+  // 普通攻击击杀 → 攻击者占据目标原先所在的格子
+  // 仅在「伤害 / 护盾 / 闪避 / 锁血 / 死亡」全部结算完成后判定；夹击击杀同样生效
+  if (tgtBefore && atkBefore && target.hp <= 0 && !findPos(target) && !board[tgtBefore.r][tgtBefore.c]) {
+    const ap = findPos(attacker);
+    if (ap && ap.r === atkBefore.r && ap.c === atkBefore.c) {
+      board[ap.r][ap.c] = null;
+      board[tgtBefore.r][tgtBefore.c] = attacker;
+      addLog("➡ " + label(attacker) + " 击败目标后占据 (" + (tgtBefore.r + 1) + "," + (tgtBefore.c + 1) + ")。");
+    }
+  }
   turnActionUsed = true;
   afterAction(attacker);
 }

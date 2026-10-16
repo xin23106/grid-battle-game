@@ -768,6 +768,16 @@ function applyAction(state, player, action) {
     const fi = flankInfo(s).get(t.uid);
     slog(s, uname(s, u) + " 攻击 " + uname(s, t) + (fi && fi.flanked ? "（触发夹击×" + fi.count + "）" : ""));
     applyDamage(s, t, normalDamage(s, u, t), u);
+    // 普通攻击击杀 → 攻击者占据目标原先所在的格子
+    // 仅在「伤害 / 护盾 / 闪避 / 锁血 / 死亡」全部结算完成后判定；夹击击杀同样生效
+    if (t.hp <= 0 && !findPos(s, t) && !s.board[r][c]) {
+      const upos = findPos(s, u);
+      if (upos && upos.r === from.r && upos.c === from.c) {
+        s.board[from.r][from.c] = null;
+        s.board[r][c] = u;
+        slog(s, "➡ " + uname(s, u) + " 击败目标后占据 (" + (r + 1) + "," + (c + 1) + ")");
+      }
+    }
     finish(s, u, false);
     return { ok: true, state: s };
   }
