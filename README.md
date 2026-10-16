@@ -209,6 +209,25 @@ node server.js             # 默认 ws://0.0.0.0:3000
 - **内网穿透**（cloudflared / ngrok）：把网页与服务器各开一条隧道，网页用网页隧道地址打开，游戏内填 `wss://<ws隧道域名>`。
 - **公网部署**：把前端与 `server/` 放到有公网 IP 的机器，用 HTTPS + `wss://`。
 
+### 部署联机服务器到公网（免费，推荐 Render）
+
+部署后**任何人点开分享链接就能联机**（不必在同一局域网）。仓库里已经准备好了部署配置，基本是"点几下"：
+
+1. 用 **GitHub 账号登录** <https://render.com>（免费，不需要信用卡）。
+2. 控制台 → **New → Blueprint** → 选择本仓库 `grid-battle-game` → **Apply**。
+   （仓库根目录已有 `render.yaml`，会自动读取 `server/` 作为服务、`node server.js` 启动、健康检查 `/`。）
+3. 等构建完成，得到形如 **`https://grid-battle-server-xxxx.onrender.com`** 的地址。
+4. 打开游戏 →「在线真人对战」→「**服务器**」填入该地址（填 `https://…` 或 `wss://…` 都行，会自动换算）→「连接」→「创建房间」→ 复制**分享链接**发给好友。
+5. 好友点开链接即自动连接并入房，双方点「我准备好了」即可开打。
+
+其他平台也可：
+- **Railway / Heroku 类**：`server/Procfile` 已写好（`web: node server.js`）。
+- **Fly.io / 任意容器平台**：`server/Dockerfile` 已写好（`docker build -t grid-battle-server ./server`）。
+- 平台的端口由环境变量 `PORT` 注入，服务器已自动适配（默认 3000）。
+
+> ⚠️ Render **免费实例闲置约 15 分钟会休眠**，好友首次连接需要等 ~30–60 秒唤醒，属正常现象。
+> ⚠️ 页面是 HTTPS 时，联机地址必须是 **`wss://`**（游戏会自动把 `ws://` 升级为 `wss://`）。
+
 ---
 
 ## 十一、音效与设置

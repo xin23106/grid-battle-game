@@ -1,0 +1,16 @@
+# Render 蓝图（Blueprint）——一键部署联机服务器
+# 用法：Render 控制台 → New → Blueprint → 选择本仓库 → Apply
+# 部署完成后会得到一个 https://xxxx.onrender.com 地址，对应的 WebSocket 地址是 wss://xxxx.onrender.com
+services:
+  - type: web
+    name: grid-battle-server
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"

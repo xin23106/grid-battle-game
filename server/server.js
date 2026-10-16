@@ -21,6 +21,7 @@
  * ========================================================================= */
 const path = require("path");
 const os = require("os");
+const http = require("http");
 let WebSocketServer;
 try {
   ({ WebSocketServer } = require("ws"));
@@ -31,6 +32,10 @@ try {
 const { createState, applyAction } = require("./rules");
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
+// 云平台（Render / Railway / Fly / Koyeb 等）会在环境里注入自己的标记；
+// 此时“本机局域网地址”对客户端没有意义，hello 里就不再下发。
+const IS_CLOUD = !!(process.env.RENDER || process.env.FLY_APP_NAME || process.env.RAILWAY_ENVIRONMENT ||
+  process.env.KOYEB_APP_NAME || process.env.DEPLOY_ENV === "cloud");
 const rooms = new Map(); // code -> room
 
 function makeCode() {
@@ -74,12 +79,26 @@ function lanAddresses() {
   return out;
 }
 
-// 显式绑定 0.0.0.0（IPv4 全部网卡）：
-// 只写 { port } 时 Node 会绑到 `::`（IPv6 双栈），在部分 Windows 环境下
-// IPv4 客户端（好友的浏览器）连不上本机的局域网 IP，只能走 localhost。
-const wss = new WebSocketServer({ host: "0.0.0.0", port: PORT });
-console.log("英雄战棋服务器已启动：ws://0.0.0.0:" + PORT + "（局域网/联机可用）");
-console.log("本机自测：ws://localhost:" + PORT);
+// 用一层 HTTP 服务器承载 WebSocket：
+// - 云平台（Render / Railway / Fly 等）需要对 HTTP 端口做健康检查，纯 WS 服务器会判为不健康；
+// - 顺便提供一个 /health 探针。
+// 显式绑定 0.0.0.0（IPv4 全部网卡）：只写 { port } 时 Node 会绑到 `::`（IPv6 双栈），
+// 在部分 Windows 环境下 IPv4 客户端（好友浏览器）连不上主机的局域网 IP，只能走 localhost。
+const httpServer = http.createServer((req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  if (req.url === "/" || req.url === "/health" || req.url === "/healthz") {
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify({ ok: true, service: "grid-battle-game", rooms: rooms.size, uptime: Math.round(process.uptime()) }));
+    return;
+  }
+  res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+  res.end("grid-battle-game websocket server");
+});
+const wss = new WebSocketServer({ server: httpServer });
+httpServer.listen(PORT, "0.0.0.0", () => {
+  console.log("英雄战棋服务器已启动：" + (IS_CLOUD ? "云端 " : "") + "0.0.0.0:" + PORT);
+  if (!IS_CLOUD) console.log("本机自测：ws://localhost:" + PORT);
+});
 
 wss.on("connection", (ws) => {
   ws.isAlive = true;
@@ -89,8 +108,8 @@ wss.on("connection", (ws) => {
   ws.room = null;
   ws.player = 0;
 
-  // 告诉客户端本机可用的局域网地址（用于生成分享链接）
-  send(ws, { type: "hello", addresses: lanAddresses(), port: PORT, webPort: 8765 });
+  // 告诉客户端可用地址（本机时用于生成分享链接；云端下发空数组，链接会自动改用网页域名）
+  send(ws, { type: "hello", addresses: IS_CLOUD ? [] : lanAddresses(), port: PORT, webPort: 8765, cloud: IS_CLOUD });
 
   ws.on("pong", () => { ws.isAlive = true; });
 

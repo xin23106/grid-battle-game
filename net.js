@@ -11,6 +11,17 @@
     const proto = location.protocol === "https:" ? "wss://" : "ws://";
     return proto + (location.hostname || "localhost") + ":3000";
   }
+  /* 规范化服务器地址：
+   * - 允许填 https://… / http://…，自动换算成 wss://… / ws://…
+   * - HTTPS 页面下必须用 wss://（浏览器会拦截 ws:// 混合内容），自动升级 */
+  function normalizeUrl(u) {
+    let s = (u || "").trim();
+    if (!s) return "";
+    if (/^https:\/\//i.test(s)) s = "wss://" + s.slice(8);
+    else if (/^http:\/\//i.test(s)) s = "ws://" + s.slice(7);
+    if (location.protocol === "https:" && /^ws:\/\//i.test(s)) s = "wss://" + s.slice(5);
+    return s;
+  }
   let SERVER_URL = "";
   try { SERVER_URL = localStorage.getItem(KEY) || ""; } catch (e) {}
   if (!SERVER_URL) SERVER_URL = defaultUrl();
@@ -30,7 +41,7 @@
     defaultUrl,
     /* 设置服务器地址（留空恢复默认）；会保存并在重连后生效 */
     setUrl(u) {
-      const val = (u && u.trim()) ? u.trim() : "";
+      const val = normalizeUrl(u);
       SERVER_URL = val || defaultUrl();
       try { localStorage.setItem(KEY, val); } catch (e) {}
       this.available = false;
