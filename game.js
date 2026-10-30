@@ -589,13 +589,22 @@ function attackerBonus(u) {
   if (!u || u.sword) return 0;
   return assaultBonus(u.player) + (isLoneActive(u) ? 1 : 0);
 }
-/* 技能是否被负面状态禁止（如被抓取） */
+/* 技能是否被负面状态禁止（抓取 / 眩晕） */
 function skillBlockedByStatus(u) {
-  return !!(u && u.statuses && u.statuses.grab && u.statuses.grab.turns > 0);
+  return !!(u && u.statuses && ((u.statuses.grab && u.statuses.grab.turns > 0) || (u.statuses.stun && u.statuses.stun.turns > 0)));
 }
 /* 被抓取：该单位在其回合内不能做任何动作（移动 / 普攻 / 技能） */
 function isGrabbed(u) {
-  return skillBlockedByStatus(u);
+  return !!(u && u.statuses && u.statuses.grab && u.statuses.grab.turns > 0);
+}
+/* 被眩晕：不能移动 / 普攻 / 使用技能；按目标自身行动回合计时 */
+function isStunned(u) {
+  return !!(u && u.statuses && u.statuses.stun && u.statuses.stun.turns > 0);
+}
+function actionBlockReason(u) {
+  if (isGrabbed(u)) return "抓取";
+  if (isStunned(u)) return "眩晕";
+  return "";
 }
 /* 雷电之主：本方的强化英雄（empowerTurns>0） */
 function empoweredActorFor(player) {
@@ -627,13 +636,13 @@ function applyNegativeStatus(target, kind, opts) {
   }
   target.statuses = target.statuses || {};
   target.statuses[kind] = Object.assign({ kind, label: opts.label || kind }, opts);
-  addLog(label(target) + " 被施加【" + (opts.label || kind) + "】（持续 " + (opts.turns != null ? opts.turns : 1) + " 个其回合）。");
+  if (!opts.silent) addLog(label(target) + " 被施加【" + (opts.label || kind) + "】（持续 " + (opts.turns != null ? opts.turns : 1) + " 个其回合）。");
   {
     const p = findPos(target);
     if (p && window.BFX) {
       window.BFX.grab({ from: opts.from || p, to: p, color: kind === "grab" ? "#38bdf8" : "#a5f3fc" });
     }
-    if (window.SFX) window.SFX.play("grab", { hero: target.heroId });
+    if (window.SFX && kind === "grab") window.SFX.play("grab", { hero: target.heroId });
   }
   return { applied: true, immune: false, damage: dmg };
 }
@@ -711,7 +720,7 @@ function talismanTargetsFor(id, player) {
 function hasAnyAction(player) {
   for (const u of unitsOf(player)) {
     if (u.frozen > 0) continue;
-    if (isGrabbed(u)) continue; // 被抓取：本回合无法行动
+    if (isGrabbed(u) || isStunned(u)) continue; // 被抓取 / 眩晕：本回合无法行动
     const pos = findPos(u);
     if (!pos) continue;
     const s = heroDef(u.heroId).skill;
@@ -1187,7 +1196,7 @@ function computeTargets() {
   if (!selected) return;
   const u = board[selected.r][selected.c];
   if (!u || u.sword) return;
-  if (isGrabbed(u)) return; // 被抓取：不能移动或攻击
+  if (isGrabbed(u) || isStunned(u)) return; // 被抓取 / 眩晕：不能移动或攻击
   for (const [dr, dc] of DIRS) {
     const nr = selected.r + dr;
     const nc = selected.c + dc;
@@ -1505,6 +1514,23 @@ function computeSkillTargets() {
       }
       break;
     }
+
+    case "charge": {
+      // 目标：普通攻击范围（相邻）内的敌方英雄；冲锋/击退方向 = 由自身指向目标
+      for (const [rr, cc] of chargeTargets(u, r, c)) {
+        skillTargets.push([rr, cc]);
+        // 预览：目标身后最多两格（预计击退方向）
+        const dr = rr - r, dc = cc - c;
+        const path = [];
+        for (let st = 1; st <= 2; st++) {
+          const nr = rr + dr * st, nc = cc + dc * st;
+          if (!inBounds(nr, nc)) break;
+          path.push([nr, nc]);
+        }
+        if (path.length) dashOptions.push({ kind: "charge-preview", path });
+      }
+      break;
+    }
   }
 }
 
@@ -1516,8 +1542,8 @@ function moveHero(r, c) {
   }
   const { r: fr, c: fc } = selected;
   const u = board[fr][fc];
-  if (isGrabbed(u)) {
-    addLog(label(u) + " 处于【抓取】状态，无法移动。");
+  if (isGrabbed(u) || isStunned(u)) {
+    addLog(label(u) + " 处于【" + actionBlockReason(u) + "】状态，无法移动。");
     clearSelection();
     render();
     return;
@@ -1698,8 +1724,8 @@ function normalAttack(attacker, target) {
     render();
     return;
   }
-  if (isGrabbed(attacker)) {
-    addLog(label(attacker) + " 处于【抓取】状态，无法攻击。");
+  if (isGrabbed(attacker) || isStunned(attacker)) {
+    addLog(label(attacker) + " 处于【" + actionBlockReason(attacker) + "】状态，无法攻击。");
     clearSelection();
     render();
     return;
@@ -1766,6 +1792,73 @@ function skillStageLabel(a, s) {
   if (s.type === "wxt") return ["第一段 → 第二段", "第二段 → 第三段", "第三段"][a.wxtStage || 0] || "";
   if (s.type === "chase") return (a.chaseStage || 0) === 1 ? "第二段·闪身" : "第一段 → 第二段";
   return "";
+}
+
+/* ============================ 花木兰·所向披靡 ============================ */
+/* 所向披靡：目标必须是花木兰「普通攻击范围（相邻）」内的敌方英雄 */
+function chargeTargets(u, r, c) {
+  const out = [];
+  for (const [dr, dc] of DIRS) {
+    const t = unitAt(r + dr, c + dc);
+    if (t && !t.sword && t.player !== u.player) out.push([r + dr, c + dc]);
+  }
+  return out;
+}
+/* 击退最多 2 格；路径上的英雄向侧方推开。
+ * 返回 { moved, pushed, stun }：纯棋盘结算，伤害/眩晕/表现由调用方按实际事件处理。 */
+function chargeKnockback(tgt, dr, dc) {
+  const pushed = [];
+  let moved = 0;
+  for (let step = 0; step < 2; step++) {
+    const p = findPos(tgt);
+    if (!p) break;
+    const nr = p.r + dr, nc = p.c + dc;
+    if (!inBounds(nr, nc)) break;              // 棋盘边界 = 墙
+    const cell = board[nr][nc];
+    if (!cell) {
+      board[nr][nc] = tgt; board[p.r][p.c] = null; moved++;
+      continue;
+    }
+    if (cell.sword) break;                     // 剑刃阻挡
+    // 垂直于击退方向的两侧（左/右相对冲锋方向）
+    const perp = [[-dc, dr], [dc, -dr]];
+    const opts = [];
+    for (const [pr, pc] of perp) {
+      const sr = nr + pr, sc = nc + pc;
+      if (inBounds(sr, sc) && !board[sr][sc]) opts.push({ r: sr, c: sc });
+    }
+    if (!opts.length) break;                   // 两侧都无法推开 → 直线被阻挡
+    const dest = opts[Math.floor(Math.random() * opts.length)];
+    board[dest.r][dest.c] = cell;
+    board[nr][nc] = null;
+    pushed.push({ unit: cell, from: { r: nr, c: nc }, to: dest });
+    const p2 = findPos(tgt);
+    if (!p2) break;
+    board[nr][nc] = tgt; board[p2.r][p2.c] = null; moved++;
+  }
+  return { moved, pushed, stun: moved < 2 };
+}
+/* AI 预估（只读棋盘）：最多 2 格击退的落点、侧推数量、是否撞墙 */
+function chargePreview(u, tr, tc, dr, dc) {
+  let moved = 0, sidePush = 0;
+  let r = tr, c = tc;
+  for (let step = 0; step < 2; step++) {
+    const nr = r + dr, nc = c + dc;
+    if (!inBounds(nr, nc)) break;
+    const cell = board[nr][nc];
+    if (!cell) { r = nr; c = nc; moved++; continue; }
+    if (cell.sword) break;
+    const perp = [[-dc, dr], [dc, -dr]];
+    let ok = false;
+    for (const [pr, pc] of perp) {
+      const sr = nr + pr, sc = nc + pc;
+      if (inBounds(sr, sc) && !board[sr][sc]) { ok = true; break; }
+    }
+    if (!ok) break;
+    if (cell.player !== u.player) sidePush++;
+    r = nr; c = nc; moved++;
+  }
+  return { moved, sidePush, stun: moved < 2 };
 }
 
 function useSkill(tr, tc) {
@@ -1877,6 +1970,7 @@ function useSkill(tr, tc) {
     return; // 尚未结算，等待目标
   }
 
+  // 花木兰·所向披靡：直接选择普通攻击范围内的相邻敌人（方向由目标位置决定）
   if (gameMode === "online") {
     onlineForward({
       type: "skill",
@@ -1897,7 +1991,7 @@ function useSkill(tr, tc) {
     return;
   }
   if (skillBlockedByStatus(a)) {
-    addLog(label(a) + " 处于【抓取】状态，无法使用技能。");
+    addLog(label(a) + " 处于【" + actionBlockReason(a) + "】状态，无法使用技能。");
     clearSelection();
     render();
     return;
@@ -2080,6 +2174,60 @@ function useSkill(tr, tc) {
         }
       }
       addLog("🌊 " + label(a) + " 释放【" + s.name + "】，前进到 (" + (ddest.r + 1) + "," + (ddest.c + 1) + ")，九宫格命中 " + dhit + " 名敌人。");
+      break;
+    }
+
+    case "charge": {
+      const tgt = unitAt(tr, tc);
+      if (!tgt || tgt.sword || tgt.player === a.player) {
+        addLog("所向披靡：请选择普通攻击范围内的敌方目标。");
+        render();
+        return;
+      }
+      const dr = tr - r, dc = tc - c;
+      if (Math.abs(dr) + Math.abs(dc) !== 1) {
+        addLog("所向披靡：只能对相邻（普通攻击范围）的敌人释放。");
+        render();
+        return;
+      }
+      const dirTxt = dr === -1 ? "上" : dr === 1 ? "下" : dc === -1 ? "左" : "右";
+      addLog("🌺 " + label(a) + " 发动【" + s.name + "】，向" + dirTxt + "冲锋，目标 " + label(tgt) + "。");
+      if (window.BFX) {
+        window.BFX.cast({
+          type: "charge", heroId: a.heroId,
+          caster: { r, c }, target: { r: tr, c: tc }, dir: [dr, dc],
+          distance: Math.max(0, Math.abs(tr - r) + Math.abs(tc - c)),
+        });
+      }
+      const before = findPos(tgt);
+      applyDamage(tgt, s.damage, "skill", a); // 统一伤害结算（护盾 / 闪避 / 锁血 / 阵亡）
+      if (!findPos(tgt)) {
+        addLog("💥 " + label(tgt) + " 被冲锋击倒，未发生击退与眩晕。");
+        break;
+      }
+      const res = chargeKnockback(tgt, dr, dc);
+      // 路径上的英雄被侧向推开：先移动，再按实际位置结算伤害
+      for (const p of res.pushed) {
+        if (window.BFX) window.BFX.knockback({ from: p.from, to: p.to, color: window.BFX.heroColor(p.unit.heroId) });
+        if (window.SFX) window.SFX.play("knockback", { hero: p.unit.heroId });
+        addLog("↔ " + label(p.unit) + " 被向侧方推开到 (" + (p.to.r + 1) + "," + (p.to.c + 1) + ")，受到 " + s.damage + " 点伤害。");
+        applyDamage(p.unit, s.damage, "skill", a);
+      }
+      const np = findPos(tgt);
+      if (res.moved > 0 && np) {
+        addLog("➡ " + label(tgt) + " 被击退 " + res.moved + " 格到 (" + (np.r + 1) + "," + (np.c + 1) + ")。");
+        if (window.BFX && before) window.BFX.knockback({ from: before, to: np, color: window.BFX.heroColor(tgt.heroId) });
+      }
+      if (res.stun && findPos(tgt)) {
+        const st = applyNegativeStatus(tgt, "stun", { damage: 0, turns: 2, label: "眩晕", silent: true });
+        if (st.applied) {
+          if (window.BFX) window.BFX.cast({ type: "stun", heroId: a.heroId, caster: np || { r: tr, c: tc }, target: np || { r: tr, c: tc } });
+          if (window.SFX) window.SFX.play("stun", { hero: a.heroId });
+          addLog("💫 " + label(tgt) + " 撞上阻挡，被眩晕 2 个自身行动回合。");
+        } else {
+          addLog("🛡 " + label(tgt) + " 抵抗了眩晕。");
+        }
+      }
       break;
     }
 
@@ -2556,7 +2704,7 @@ function activateSkill(idx) {
     return;
   }
   if (skillBlockedByStatus(u)) {
-    addLog(label(u) + " 处于【抓取】状态，无法使用技能。");
+    addLog(label(u) + " 处于【" + actionBlockReason(u) + "】状态，无法使用技能。");
     render();
     return;
   }
@@ -2819,8 +2967,8 @@ function handleBattle(r, c) {
       render();
       return;
     }
-    if (isGrabbed(clicked)) {
-      addLog(label(clicked) + " 处于【抓取】状态，本回合无法行动。");
+    if (isGrabbed(clicked) || isStunned(clicked)) {
+      addLog(label(clicked) + " 处于【" + actionBlockReason(clicked) + "】状态，本回合无法行动。");
       render();
       return;
     }
@@ -3048,6 +3196,13 @@ function buildUnit(u) {
     b.className = "badge guixiong";
     b.title = "鬼雄已触发：生命锁定 1 · 普通攻击伤害 +1（绝境）";
     b.textContent = "👹";
+    el.appendChild(b);
+  }
+  if (isStunned(u)) {
+    const b = document.createElement("span");
+    b.className = "badge stun";
+    b.title = "眩晕：无法移动 / 攻击 / 使用技能（剩余 " + (u.statuses.stun.turns || 1) + " 个自身回合）";
+    b.textContent = "💫";
     el.appendChild(b);
   }
   return el;
@@ -4040,7 +4195,7 @@ function aiEnumerate() {
   const w = AI_DIFF[aiDifficulty] || AI_DIFF.normal;
   for (const u of unitsOf(aiPlayer)) {
     if (u.frozen > 0) continue;
-    if (isGrabbed(u)) continue; // 被抓取：本回合无法行动
+    if (isGrabbed(u) || isStunned(u)) continue; // 被抓取 / 眩晕：本回合无法行动
     if (turnActorUid && u.uid !== turnActorUid) continue; // 强化回合：只能由同一英雄行动
     const pos = findPos(u);
     if (!pos) continue;
@@ -4135,6 +4290,22 @@ function aiEnumerate() {
             if (wstage === 1) sc += 8; // 抓取控制
             acts.push({ type: "skill", u, pos, target: { r: rr, c: cc }, wxtDir: wstage === 2 ? undefined : { dr, dc }, skillIdx: si, score: sc * w.skillW });
           }
+        }
+        return;
+      }
+
+      // 花木兰·所向披靡：只对相邻敌人释放；评估击退落点、撞墙眩晕与侧推收益
+      if (s.type === "charge") {
+        for (const [dr, dc] of DIRS) {
+          const rr = pos.r + dr, cc = pos.c + dc;
+          const e = inBounds(rr, cc) ? board[rr][cc] : null;
+          if (!e || e.sword || e.player === u.player) continue;
+          const pv = chargePreview(u, e, rr, cc, dr, dc);
+          let sc = w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0) + 6;
+          sc += pv.moved * (w.distW / 3);
+          sc += pv.sidePush * (w.dmgW * s.damage);
+          if (pv.stun) sc += 10; // 眩晕控制价值
+          acts.push({ type: "skill", u, pos, target: { r: rr, c: cc }, skillIdx: si, score: sc * w.skillW });
         }
         return;
       }

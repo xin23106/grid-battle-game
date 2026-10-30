@@ -49,4 +49,6 @@ module.exports = [
     extraSkills: [
       { name: "万象天引", type: "wxt", damage: 1, uses: 1 },
     ] },
+  { id: "huamulan", name: "花木兰", hp: 8, sfx: "heavy",
+    skill: { name: "所向披靡", type: "charge", damage: 2, uses: 1, knockback: 2 } },
 ];

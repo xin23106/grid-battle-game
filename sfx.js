@@ -672,6 +672,15 @@
         recipeBuffUp(h, o, L);
         break;
 
+      case "charge": // 花木兰·所向披靡：蓄势 → 破空冲锋 → 重击
+        HP(L, { at: 0, dur: 0.20, f0: 140, f1: 92, peak: 0.16, attack: 0.02 });
+        N(L, { at: 0.04, dur: 0.28, bp: 900, q: 1.1, sweepTo: 2600, peak: 0.09, attack: 0.03 });
+        N(L, { at: 0.18, dur: 0.26, bp: 2400, q: 0.9, sweepTo: 700, peak: 0.15 });
+        HP(L, { at: 0.30, dur: 0.34, f0: 130, f1: 40, peak: 0.34 });
+        N(L, { at: 0.30, dur: 0.22, lp: 700, peak: 0.15 });
+        M(L, { at: 0.32, base: 1400, dur: 0.22, peak: 0.07, partials: [1, 2.4, 4.6] });
+        break;
+
       default:
         // 未知技能：用英雄音色做一个通用的“施法”层（仍然区分英雄）
         S(L, { at: 0, f0: h.base * 0.6, f1: h.base * 1.8, dur: 0.22, peak: 0.07, wave: h.wave });
@@ -716,6 +725,11 @@
       case "grab": recipeGrab(h, o, L); break;
       case "knockback": recipeKnockback(h, o, L); break;
       case "mark": recipeMark(h, o, L); break;
+      case "stun":
+        HP(L, { at: 0, dur: 0.18, f0: 180, f1: 70, peak: 0.18 });
+        M(L, { at: 0.02, base: 1800, dur: 0.35, peak: 0.06, partials: [1, 2.7, 5.1] });
+        for (let i = 0; i < 3; i++) T(L, { at: 0.06 + i * 0.05, dur: 0.18, wave: "triangle", f0: 1200 + i * 220, peak: 0.04 });
+        break;
       case "swordSpawn": recipeSwordSpawn(h, o, L); break;
       case "swordPickup": recipeSwordPickup(h, o, L); break;
       case "talisman": recipeTalisman(h, o, L); break;
@@ -749,7 +763,7 @@
   const MIN_GAP = {
     attack: 55, hit: 40, hurt: 60, shieldHit: 55, shieldBreak: 90, shieldUp: 80,
     dodge: 80, flank: 70, death: 120, revive: 200, heal: 90, buffUp: 120, buffDown: 120,
-    grab: 90, knockback: 60, mark: 60, swordSpawn: 80, swordPickup: 60,
+    grab: 90, knockback: 60, mark: 60, swordSpawn: 80, swordPickup: 60, stun: 140,
     talisman: 120, dash: 90, dashHit: 60, skill: 60, skillHit: 45, win: 500, lose: 500,
     turnEnd: 220, turnSweep: 200, turnStart: 260, extraTurn: 400,
   };

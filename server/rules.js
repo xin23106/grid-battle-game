@@ -38,6 +38,15 @@ function setSkillUses(s, u, idx, v) {
 function isGrabbed(u) {
   return !!(u && u.statuses && u.statuses.grab && u.statuses.grab.turns > 0);
 }
+/* 被眩晕：不能移动 / 普攻 / 使用技能；按目标自身行动回合计时 */
+function isStunned(u) {
+  return !!(u && u.statuses && u.statuses.stun && u.statuses.stun.turns > 0);
+}
+function actionBlockReason(u) {
+  if (isGrabbed(u)) return "抓取";
+  if (isStunned(u)) return "眩晕";
+  return "";
+}
 /* 雷电之主：本方的强化英雄 */
 function empoweredActorFor(s, player) {
   for (const u of unitsOf(s, player)) {
@@ -50,6 +59,38 @@ function canActNow(s, u) {
   if (s.turnActionUsed) return false;
   if (s.turnActionsLeft < s.turnActionsMax && s.turnActorUid && u && u.uid !== s.turnActorUid) return false;
   return true;
+}
+/* 花木兰·所向披靡：沿 (dr,dc) 击退最多 2 格；路径上的英雄向侧方推开（服务端权威） */
+function chargeKnockbackS(s, tgt, dr, dc) {
+  const pushed = [];
+  let moved = 0;
+  for (let step = 0; step < 2; step++) {
+    const p = findPos(s, tgt);
+    if (!p) break;
+    const nr = p.r + dr, nc = p.c + dc;
+    if (!inB(nr, nc)) break;
+    const cell = s.board[nr][nc];
+    if (!cell) {
+      s.board[nr][nc] = tgt; s.board[p.r][p.c] = null; moved++;
+      continue;
+    }
+    if (cell.sword) break;
+    const perp = [[-dc, dr], [dc, -dr]];
+    const opts = [];
+    for (const [pr, pc] of perp) {
+      const sr = nr + pr, sc = nc + pc;
+      if (inB(sr, sc) && !s.board[sr][sc]) opts.push({ r: sr, c: sc });
+    }
+    if (!opts.length) break;
+    const dest = opts[Math.floor(Math.random() * opts.length)];
+    s.board[dest.r][dest.c] = cell;
+    s.board[nr][nc] = null;
+    pushed.push({ unit: cell, from: { r: nr, c: nc }, to: dest });
+    const p2 = findPos(s, tgt);
+    if (!p2) break;
+    s.board[nr][nc] = tgt; s.board[p2.r][p2.c] = null; moved++;
+  }
+  return { moved, pushed, stun: moved < 2 };
 }
 /* 雷电之主：随机击退到四周一个合法格 */
 function randomKnockback(s, t) {
@@ -94,7 +135,7 @@ function applyNegativeStatus(s, target, kind, opts) {
   }
   target.statuses = target.statuses || {};
   target.statuses[kind] = Object.assign({ kind, label: opts.label || kind }, opts);
-  slog(s, "⛓ " + uname(s, target) + " 被施加【" + (opts.label || kind) + "】（" + (opts.turns != null ? opts.turns : 1) + " 回合内无法行动）");
+  if (!opts.silent) slog(s, "⛓ " + uname(s, target) + " 被施加【" + (opts.label || kind) + "】（" + (opts.turns != null ? opts.turns : 1) + " 回合内无法行动）");
   return { applied: true, immune: false, damage: dmg };
 }
 function tickStatuses(s, player) {
@@ -568,7 +609,7 @@ function heroHasFreeUses(s, u) {
 function hasAnyActionState(s, player) {
   for (const u of unitsOf(s, player)) {
     if (u.frozen > 0) continue;
-    if (isGrabbed(u)) continue; // 抓取：本回合无法移动/攻击/用技能
+    if (isGrabbed(u) || isStunned(u)) continue; // 抓取 / 眩晕：本回合无法移动/攻击/用技能
     const pos = findPos(s, u);
     if (!pos) continue;
     const sk = heroDef(u.heroId).skill;
@@ -782,6 +823,7 @@ function applyAction(state, player, action) {
   const u = inB(from.r, from.c) ? s.board[from.r][from.c] : null;
   if (!isUnit(u) || u.player !== player) return err("无效的单位");
   if (u.frozen > 0) return err("该英雄被冰封");
+  if (isStunned(u)) return err("该英雄处于【眩晕】状态，无法行动");
 
   if (act === "move") {
     if (isGrabbed(u)) return err("该英雄处于【抓取】状态，无法行动");
@@ -1085,6 +1127,31 @@ function applyAction(state, player, action) {
           if (findPos(s, wt)) applyNegativeStatus(s, wt, "grab", { damage: 0, turns: 1, label: "万象天引·抓取" });
           u.wxtStage = 2;
         }
+      }
+    } else if (sk.type === "charge") {
+      // 花木兰·所向披靡：只能对相邻（普攻范围）敌人释放；方向由目标位置决定
+      if (!isUnit(t) || t.player === player) return err("所向披靡：请选择普通攻击范围内的敌方目标");
+      const dr = r - from.r, dc = c - from.c;
+      if (Math.abs(dr) + Math.abs(dc) !== 1) return err("所向披靡：只能对相邻敌人释放");
+      slog(s, "🌺 " + uname(s, u) + " 发动【" + sk.name + "】，目标 " + uname(s, t));
+      applyDamage(s, t, sk.damage, u);
+      if (findPos(s, t)) {
+        const res = chargeKnockbackS(s, t, dr, dc);
+        for (const pd of res.pushed) {
+          const pname = uname(s, pd.unit);
+          const ps = { r: pd.to.r + 1, c: pd.to.c + 1 };
+          applyDamage(s, pd.unit, sk.damage, u);
+          slog(s, "↔ " + pname + " 被向侧方推开到 (" + ps.r + "," + ps.c + ")，受到 " + sk.damage + " 点伤害");
+        }
+        const np = findPos(s, t);
+        if (res.moved > 0 && np) slog(s, "➡ " + uname(s, t) + " 被击退 " + res.moved + " 格到 (" + (np.r + 1) + "," + (np.c + 1) + ")");
+        if (res.stun && findPos(s, t)) {
+          const st = applyNegativeStatus(s, t, "stun", { damage: 0, turns: 2, label: "眩晕", silent: true });
+          if (st.applied) slog(s, "💫 " + uname(s, t) + " 撞上阻挡，被眩晕 2 个自身行动回合");
+          else slog(s, "🛡 " + uname(s, t) + " 抵抗了眩晕");
+        }
+      } else {
+        slog(s, "💥 " + uname(s, t) + " 被冲锋击倒，未发生击退");
       }
     } else return err("未知技能");
 

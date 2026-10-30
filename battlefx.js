@@ -45,7 +45,7 @@
     assassin: "#22d3ee", warlock: "#a5f3fc", cleric: "#86efac", guardian: "#93c5fd",
     asura: "#e2e8f0", lone: "#facc15", cang: "#38bdf8", longren: "#fbbf24",
     thunder: "#c084fc", vampire: "#e11d48", jade: "#a78bfa", xiangyu: "#f87171",
-    tiandao: "#c084fc",
+    tiandao: "#c084fc", huamulan: "#f43f5e",
   };
   function heroColor(id) { return HERO_COLOR[id] || "#93c5fd"; }
 
@@ -736,7 +736,7 @@
     const strong = !!m.flank;
     const id = m.heroId || "";
     /* 每个英雄有自己的“出手语言”：重击宽而慢、快攻细而急 */
-    const heavy = /^(berserker|xiangyu|guardian|knight|jade)$/.test(id);
+    const heavy = /^(berserker|xiangyu|guardian|knight|jade|huamulan)$/.test(id);
     const fast = /^(assassin|ranger|cang|longren|tiandao)$/.test(id);
     const d = m.reduce == null ? (fast ? 90 : heavy ? 150 : 120) : m.reduce;
     const width = strong ? 7 : heavy ? 6 : fast ? 3.2 : 4.5;
@@ -772,7 +772,7 @@
 
   /* 每个英雄的“命中语言”：同样是 1 点伤害，刀是刀、水是水、雷是雷 */
   function hitStyle(heroId) {
-    if (/^(asura|assassin|knight|ranger|berserker|xiangyu)$/.test(heroId || "")) return "blade";
+    if (/^(asura|assassin|knight|ranger|berserker|xiangyu|huamulan)$/.test(heroId || "")) return "blade";
     if (heroId === "cang") return "water";
     if (heroId === "longren") return "flame";
     if (/^(thunder|tiandao|jade|warlock)$/.test(heroId || "")) return "arcane";
@@ -1165,6 +1165,32 @@
           addMark("space", tg.r, tg.c, "#c084fc");
         }
         break;
+      case "charge": {
+        // 花木兰·所向披靡：蓄势 → 沿目标方向冲锋残影 → 命中冲击
+        const d0 = m.dir || [0, 1];
+        const tx2 = tg.c !== undefined ? px(tg.c) : x + d0[1] * geo.cell * 2;
+        const ty2 = tg.r !== undefined ? py(tg.r) : y + d0[0] * geo.cell * 2;
+        const ang = Math.atan2(ty2 - y, tx2 - x);
+        push({ kind: "ring", x, y, r0: geo.cell * 0.5, r1: geo.cell * 0.18, color: "#fbbf24", width: 3, dur: dur(320) });
+        push({ kind: "line", x, y, x2: tx2, y2: ty2, color: "#f43f5e", width: 9, dur: dur(240), alpha: 0.55 });
+        for (let i = 0; i <= 3; i++) {
+          const q = (i / 3) * 0.72;
+          push({ kind: "ghost", x: x + (tx2 - x) * q, y: y + (ty2 - y) * q, r: geo.cell * 0.24, color: "#f43f5e", dur: dur(230), delay: dur(i * 26) });
+        }
+        push({ kind: "slash", x: tx2, y: ty2, angle: ang + Math.PI / 2, len: geo.cell * 0.95, width: 6, color: "#fde68a", dur: dur(280), delay: dur(40) });
+        push({ kind: "ring", x: tx2, y: ty2, r0: 4, r1: geo.cell * 0.6, color: "#fbbf24", width: 3, dur: dur(300), delay: dur(40) });
+        spawn(tx2, ty2, 18, { color: "#fbbf24", speed: 3.2, life: 420, size: 2.2, angle: ang, spread: 1.2 });
+        if (tg.r !== undefined) addMark("impact", tg.r, tg.c, "#f43f5e");
+        break;
+      }
+      case "stun": {
+        const sx = tx !== null ? tx : x, sy = ty !== null ? ty : y;
+        push({ kind: "rune", x: sx, y: sy, r: geo.cell * 0.4, color: "#fbbf24", sides: 5, dur: dur(700) });
+        push({ kind: "ring", x: sx, y: sy, r0: geo.cell * 0.5, r1: geo.cell * 0.18, color: "#fbbf24", width: 2.5, dur: dur(600) });
+        push({ kind: "swords", x: sx, y: sy, count: 3, r: geo.cell * 0.42, color: "#fde68a", dur: dur(700), alpha: 0.7, dir: -1 });
+        push({ kind: "text", x: sx, y: sy - geo.cell * 0.5, text: "眩晕 2 回合", color: "#fbbf24", size: 14, dur: dur(900), rise: 20 });
+        break;
+      }
       case "passive":
         push({ kind: "ring", x, y, r0: geo.cell * 0.5, r1: geo.cell * 0.3, color: col, width: 3, dur: 520 });
         break;
