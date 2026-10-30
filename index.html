@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>英雄战棋 · 夹击战术</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=2" />
 </head>
 <body>
   <div class="app">
@@ -100,8 +100,12 @@
         </div>
       </div>
 
-      <!-- ===== 右栏：英雄详情 / 技能 / 结束回合 ===== -->
+      <!-- ===== 右栏：行动按钮（技能 / 结束回合）→ 英雄介绍 ===== -->
       <aside class="panel panel-right">
+        <!-- 行动优先：技能按钮与结束回合放在英雄介绍之上，避免介绍很长时按钮被挤到最底部 -->
+        <div id="skill-bar" class="skill-bar"></div>
+        <button id="skip-btn" class="skip-btn hidden">结束回合</button>
+
         <div id="hero-card" class="hero-card empty">
           <div class="muted">点击己方英雄查看属性与技能</div>
         </div>
@@ -118,9 +122,6 @@
           <div id="dc-skills" class="dc-skills"></div>
           <div id="dc-status" class="dc-status"></div>
         </div>
-
-        <div id="skill-bar" class="skill-bar"></div>
-        <button id="skip-btn" class="skip-btn hidden">结束回合</button>
       </aside>
     </main>
 

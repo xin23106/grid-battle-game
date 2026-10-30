@@ -768,3 +768,7 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   .unit.fx-hit, .unit.fx-dodge, .unit.fx-guard { animation: none; }
 }
+
+/* 右栏顺序：技能 / 结束回合 → 英雄介绍；未选英雄时技能栏为空，避免多余间距 */
+.skill-bar:empty { display: none; }
+.panel-right > .skill-bar { margin-bottom: 2px; }
