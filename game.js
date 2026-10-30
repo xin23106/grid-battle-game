@@ -89,6 +89,8 @@ let toPlace = SOLDIERS_PER_PLAYER;
 let placedIds = { 1: [], 2: [] };  // 每方已选英雄 id（防重复）
 let onlinePool = null;             // 联机随机选将：本人的候选英雄池（服务端下发，客户端不可指定）
 let onlineLogSeq = 0;              // 联机：已合并的服务端日志最大 id（去重，避免重连/重复广播刷屏）
+let bfxPrevSnap = null;            // 联机：上一份权威棋盘快照（用于派生表现事件，不改变任何状态）
+let bfxOnlineLogSeq = 0;           // 联机：表现层已消费的日志 id（横幅去重）
 let onlinePlacementDone = { 1: false, 2: false }; // 联机布阵：双方是否已完成（仅状态，不含具体选择）
 let pendingHero = null;            // 布阵阶段待放置的英雄 id
 let selected = null;               // { r, c }
@@ -100,6 +102,7 @@ let winner = 0;
 let logs = [];
 let unitSeq = 1;
 let fx = [];                       // 一次性飘字特效（渲染后清空）
+let inputLockUntil = 0;            // 表现层输入锁（防止动画期间连点重复行动）
 let dashOptions = [];              // 阿修罗·剑圣：本次可选的突进方向
 
 /* 游戏模式 / AI */
@@ -196,6 +199,7 @@ function spawnSword(r, c) {
   if (!hasAsuraAlive()) return false;
   if (!inBounds(r, c) || board[r][c]) return false;
   board[r][c] = { sword: true, uid: unitSeq++ };
+  if (window.BFX) window.BFX.swordSpawn(r, c);
   return true;
 }
 function collectSwordAt(r, c, unit) {
@@ -439,6 +443,7 @@ function knockOutOfBox3(v, boxR, boxC) {
   const dest = cand[0];
   board[dest.r][dest.c] = v;
   board[p.r][p.c] = null;
+  if (window.BFX) window.BFX.knockback({ from: p, to: dest, color: window.BFX.heroColor(v.heroId) });
   return dest;
 }
 
@@ -468,6 +473,7 @@ function knockOutBoxAway(t, boxR, boxC, fromR, fromC) {
     if (!ok(nr, nc)) continue;
     board[nr][nc] = t;
     board[p.r][p.c] = null;
+    if (window.BFX) window.BFX.knockback({ from: p, to: { r: nr, c: nc }, color: window.BFX.heroColor(t.heroId) });
     return { r: nr, c: nc };
   }
   const far = [];
@@ -479,6 +485,7 @@ function knockOutBoxAway(t, boxR, boxC, fromR, fromC) {
   const dest = far[0];
   board[dest.r][dest.c] = t;
   board[p.r][p.c] = null;
+  if (window.BFX) window.BFX.knockback({ from: p, to: dest, color: window.BFX.heroColor(t.heroId) });
   return dest;
 }
 /* 万象天引第三段：沿远离 (fromR,fromC) 的方向击退 1 格 */
@@ -496,6 +503,7 @@ function pushAwayOne(t, fromR, fromC) {
     if (!ok(nr, nc)) continue;
     board[nr][nc] = t;
     board[p.r][p.c] = null;
+    if (window.BFX) window.BFX.knockback({ from: p, to: { r: nr, c: nc }, color: window.BFX.heroColor(t.heroId) });
     return { r: nr, c: nc };
   }
   return null;
@@ -589,11 +597,18 @@ function applyNegativeStatus(target, kind, opts) {
     addLog("🛡 霸体：抵抗了【" + (opts.label || kind) + "】的负面效果（伤害仍已结算）。");
     const p = findPos(target);
     if (p) fx.push({ r: p.r, c: p.c, text: "霸体", kind: "shield" });
+    if (p && window.BFX) window.BFX.immune({ r: p.r, c: p.c, text: "霸体·抵抗" });
     return { applied: false, immune: true, damage: dmg };
   }
   target.statuses = target.statuses || {};
   target.statuses[kind] = Object.assign({ kind, label: opts.label || kind }, opts);
   addLog(label(target) + " 被施加【" + (opts.label || kind) + "】（持续 " + (opts.turns != null ? opts.turns : 1) + " 个其回合）。");
+  {
+    const p = findPos(target);
+    if (p && window.BFX) {
+      window.BFX.grab({ from: opts.from || p, to: p, color: kind === "grab" ? "#38bdf8" : "#a5f3fc" });
+    }
+  }
   return { applied: true, immune: false, damage: dmg };
 }
 /* 回合结束时递减负面状态；到期结算尾段伤害并解除 */
@@ -861,6 +876,8 @@ function init() {
   skillMode = false;
   winner = 0;
   logs = [];
+  if (window.BFX) window.BFX.clear(); // 新开一局：清空上一局的战场痕迹与粒子
+  inputLockUntil = 0;
   unitSeq = 1;
   fx = [];
   // 锦囊：重新随机抽取，并清空所有临时效果
@@ -986,6 +1003,7 @@ function beginTurn() {
   if (talismanBuff.guardPlayer === currentPlayer) talismanBuff.guardPlayer = 0; // 坚守令持续到本方下个回合开始
   clearSelection();
   if (window.SFX) window.SFX.unlock();
+  if (window.BFX && phase === "battle") window.BFX.banner("玩家 " + currentPlayer + " 的回合", "");
 }
 
 /* 结束当前玩家回合并交给对手（含行军令额外回合）。不含“自动跳过无行动玩家”。 */
@@ -1037,6 +1055,7 @@ function settleStuckTurns() {
  * - isFree=true（不耗步技能）不消耗行动机会；
  * - 普通行动消耗 1 次行动机会（雷电之主强化回合为 2 次）。 */
 function afterAction(actor, isFree, keepOpen) {
+  inputLockUntil = Date.now() + 160; // 表现层：极短输入锁，防止连点造成重复行动（规则本身也会校验）
   clearSelection();
   if (checkVictory()) return;
   if (!isFree) {
@@ -1056,6 +1075,10 @@ function checkVictory() {
     addLog("玩家" + winner + " 获胜！");
     clearSelection();
     render();
+    if (window.BFX) {
+      window.BFX.banner("对局结束", "玩家" + winner + " 获胜");
+      window.BFX.flash(winner === 1 ? "#60a5fa" : "#f87171", 0.22);
+    }
     return true;
   }
   return false;
@@ -1410,6 +1433,13 @@ function moveHero(r, c) {
     return;
   }
   const picked = collectSwordAt(r, c, u); // 阿修罗进入剑格：回收
+  if (window.BFX) {
+    window.BFX.move({
+      from: { r: fr, c: fc }, to: { r, c },
+      color: window.BFX.heroColor(u.heroId),
+      dash: u.heroId === "asura",
+    });
+  }
   board[r][c] = u;
   board[fr][fc] = null;
   if (picked) {
@@ -1440,10 +1470,12 @@ function applyDamage(target, amount, kind, source) {
     addLog("🛡 坚守令为 " + label(target) + " 减免 1 点伤害。");
   }
 
+  let absorbedTotal = 0;
   if (target.shield > 0) {
     const absorbed = Math.min(target.shield, dmg);
     target.shield -= absorbed;
     dmg -= absorbed;
+    absorbedTotal += absorbed;
     if (absorbed > 0) addLog(label(target) + " 的护盾抵挡了 " + absorbed + " 点伤害。");
   }
   // 孤胆侠·霸体：首次致命伤害 → 锁血到 1（每局一次，规则层判定，非致命伤害不消耗）
@@ -1488,6 +1520,18 @@ function applyDamage(target, amount, kind, source) {
     window.SFX.play(kind === "skill" ? "skillHit" : "hit", { sfx: sfxOf(target) });
   }
 
+  // 表现层：护盾吸收 / 闪避 / 命中（纯视觉，不影响结算）
+  if (pos && window.BFX) {
+    const hcol = window.BFX.heroColor(target.heroId);
+    if (dodged) {
+      window.BFX.dodge({ r: pos.r, c: pos.c, heroId: target.heroId, uid: target.uid });
+    } else {
+      if (absorbedTotal > 0) window.BFX.shieldAbsorb({ r: pos.r, c: pos.c, amount: absorbedTotal, uid: target.uid });
+      if (dmg > 0) window.BFX.hit({ r: pos.r, c: pos.c, amount: dmg, kind: kind || "normal", color: hcol, heroId: target.heroId, uid: target.uid });
+    }
+    if (dmg >= 3 || kind === "flank") window.BFX.hitstop(60);
+  }
+
   if (target.hp <= 0 && pos) {
     // 追猎标记清理：目标阵亡 → 清除其标记；若阵亡者是刺客本人 → 清除其遗留的全部标记
     target.chaseMark = 0;
@@ -1507,6 +1551,7 @@ function applyDamage(target, amount, kind, source) {
     board[pos.r][pos.c] = null;
     addLog(label(target) + " 阵亡！");
     if (window.SFX) window.SFX.play("death", { sfx: sfxOf(target) });
+    if (window.BFX) window.BFX.death({ r: pos.r, c: pos.c, color: window.BFX.heroColor(target.heroId) });
     // 阿修罗·锻剑：阿修罗存活时，阵亡位置留下一把剑
     if (spawnSword(pos.r, pos.c)) {
       addLog("⚔ 锻剑：" + label(target) + " 的阵亡处留下了一把剑。");
@@ -1563,6 +1608,13 @@ function normalAttack(attacker, target) {
 
   if (window.SFX) window.SFX.play("attack", { sfx: sfxOf(attacker) });
   if (res.flank && window.SFX) window.SFX.play("flank", { sfx: sfxOf(attacker) });
+  // 表现层：突进 + 挥击轨迹（近战手感；不改变结算）
+  if (window.BFX && atkBefore && tgtBefore) {
+    window.BFX.attack({
+      from: atkBefore, to: tgtBefore, flank: !!res.flank,
+      color: window.BFX.heroColor(attacker.heroId), heroId: attacker.heroId,
+    });
+  }
   applyDamage(target, total, res.flank ? "flank" : "normal", attacker);
   // 普通攻击击杀 → 攻击者占据目标原先所在的格子
   // 仅在「伤害 / 护盾 / 闪避 / 锁血 / 死亡」全部结算完成后判定；夹击击杀同样生效
@@ -1572,6 +1624,11 @@ function normalAttack(attacker, target) {
       board[ap.r][ap.c] = null;
       board[tgtBefore.r][tgtBefore.c] = attacker;
       addLog("➡ " + label(attacker) + " 击败目标后占据 (" + (tgtBefore.r + 1) + "," + (tgtBefore.c + 1) + ")。");
+      if (window.BFX) {
+        window.BFX.move({ from: atkBefore, to: tgtBefore, dash: true, color: window.BFX.heroColor(attacker.heroId) });
+        window.BFX.mark("sword", tgtBefore.r, tgtBefore.c, window.BFX.heroColor(attacker.heroId), 12000);
+        window.BFX.hitstop(90);
+      }
     }
   }
   turnActionUsed = true;
@@ -1582,6 +1639,15 @@ function normalAttack(attacker, target) {
 function resolveSkillDamage(attacker, target, skill) {
   const ab = attackerBonus(attacker);
   return { damage: skill.damage + ab, assault: ab };
+}
+
+/* 多段技能的阶段文案（仅用于战斗表现层，不影响规则） */
+function skillStageLabel(a, s) {
+  if (!s) return "";
+  if (s.type === "shuidiao") return (a.sdStage || 0) === 1 ? "第二段" : "第一段 → 第二段";
+  if (s.type === "wxt") return ["第一段 → 第二段", "第二段 → 第三段", "第三段"][a.wxtStage || 0] || "";
+  if (s.type === "chase") return (a.chaseStage || 0) === 1 ? "第二段·闪身" : "第一段 → 第二段";
+  return "";
 }
 
 function useSkill(tr, tc) {
@@ -1739,10 +1805,16 @@ function useSkill(tr, tc) {
   const freeAction = skillFreeFor(a, s);
   let consumedHere = false; // 追猎第一段在分支内「先扣次数再结算」，避免击杀刷新被尾部扣次数覆盖
 
+  // 表现层：技能发动横幅 + 阶段提示（仅在校验通过后播放，失败/取消不会触发）
+  if (window.BFX) {
+    window.BFX.banner(heroDef(a.heroId).name, s.name, skillStageLabel(a, s));
+  }
+
   switch (s.type) {
     case "damage_single": {
       const rd = resolveSkillDamage(a, target, s);
       addLog(label(a) + " 释放【" + s.name + "】，对 " + label(target) + " 造成 " + rd.damage + " 点伤害" + (rd.assault ? "（猛攻令 +1）" : "") + "。");
+      if (window.BFX) window.BFX.cast({ type: "damage_single", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc } });
       applyDamage(target, rd.damage, "skill");
       break;
     }
@@ -1750,6 +1822,7 @@ function useSkill(tr, tc) {
     case "freeze": {
       const rd = resolveSkillDamage(a, target, s);
       addLog(label(a) + " 释放【" + s.name + "】，对 " + label(target) + " 造成 " + rd.damage + " 点伤害" + (rd.assault ? "（猛攻令 +1）" : "") + "。");
+      if (window.BFX) window.BFX.cast({ type: "freeze", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc } });
       applyDamage(target, rd.damage, "skill", a);
       if (findPos(target)) {
         if (hasSuperArmor(target)) {
@@ -1768,6 +1841,7 @@ function useSkill(tr, tc) {
       const healed = Math.max(0, Math.min(s.heal, target.maxHp - target.hp));
       target.hp += healed;
       addLog("✨ " + label(a) + " 释放【" + s.name + "】，为 " + label(target) + " 恢复 " + healed + " 点生命（" + target.hp + "/" + target.maxHp + "）。");
+      if (window.BFX) window.BFX.cast({ type: "heal", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc }, amount: healed });
       fx.push({ r: tr, c: tc, text: "+" + healed, kind: "heal" });
       break;
     }
@@ -1775,6 +1849,7 @@ function useSkill(tr, tc) {
     case "damage_adjacent_all": {
       let hit = 0;
       let assault = 0;
+      if (window.BFX) window.BFX.cast({ type: "damage_adjacent_all", heroId: a.heroId, caster: { r, c } });
       for (const [dr, dc] of DIRS) {
         const t = unitAt(r + dr, c + dc);
         if (t && !t.sword && t.player !== a.player) {
@@ -1791,6 +1866,7 @@ function useSkill(tr, tc) {
     case "damage_line": {
       const rd = resolveSkillDamage(a, target, s);
       addLog(label(a) + " 释放【" + s.name + "】，穿透 " + label(target) + "，造成 " + rd.damage + " 点伤害" + (rd.assault ? "（猛攻令 +1）" : "") + "。");
+      if (window.BFX) window.BFX.cast({ type: "damage_line", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc } });
       applyDamage(target, rd.damage, "skill");
       break;
     }
@@ -1798,10 +1874,12 @@ function useSkill(tr, tc) {
     case "shield_self":
       a.shield += s.shield;
       addLog("🛡 " + label(a) + " 释放【" + s.name + "】，获得 " + s.shield + " 点护盾。");
+      if (window.BFX) window.BFX.cast({ type: "shield_self", heroId: a.heroId, caster: { r, c }, amount: s.shield });
       fx.push({ r, c, text: "+" + s.shield, kind: "shield" });
       break;
 
     case "blink":
+      if (window.BFX) window.BFX.cast({ type: "blink", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc } });
       board[tr][tc] = a;
       board[r][c] = null;
       addLog(label(a) + " 释放【" + s.name + "】，瞬移到 (" + (tr + 1) + "," + (tc + 1) + ")。");
@@ -1819,6 +1897,7 @@ function useSkill(tr, tc) {
       if (window.SFX) window.SFX.play("dash", { sfx: sfxOf(a) });
       const dashDmg = s.damage + attackerBonus(a); // 剑圣伤害 + 猛攻令/孤胆
       const fr = computeDashPath(a, r, c, opt.dir[0], opt.dir[1], 3); // 按实际路径重新判定
+      if (window.BFX) window.BFX.cast({ type: "dash", heroId: a.heroId, caster: { r, c }, from: { r, c }, to: fr.dest || { r, c } });
       let hitCount = 0;
       for (const h of fr.hits) {
         const t = board[h.r][h.c];
@@ -1866,6 +1945,7 @@ function useSkill(tr, tc) {
         return;
       }
       const ddest = { r: tr, c: tc };
+      if (window.BFX) window.BFX.cast({ type: "duanlang", heroId: a.heroId, caster: { r, c }, target: ddest });
       board[ddest.r][ddest.c] = a;
       board[r][c] = null;
       let dhit = 0;
@@ -1889,6 +1969,7 @@ function useSkill(tr, tc) {
         if (!opt2) { addLog("突进方向无效。"); clearSelection(); render(); return; }
         if (window.SFX) window.SFX.play("dash", { sfx: sfxOf(a) });
         const fr = computeDashPath(a, r, c, opt2.dir[0], opt2.dir[1], 2);
+        if (window.BFX) window.BFX.cast({ type: "shuidiao", heroId: a.heroId, caster: { r, c }, from: { r, c }, to: fr.dest || { r, c }, stage: 1 });
         let grabbed = null;
         for (const h of fr.hits) {
           const t = board[h.r][h.c];
@@ -1896,7 +1977,7 @@ function useSkill(tr, tc) {
         }
         if (fr.dest) { board[fr.dest.r][fr.dest.c] = a; board[r][c] = null; }
         if (grabbed) {
-          const gres = applyNegativeStatus(grabbed, "grab", { damage: 0, turns: 1, endDamage: s.grabDamage || 2, label: "擒拿", source: "水调歌头" });
+          const gres = applyNegativeStatus(grabbed, "grab", { damage: 0, turns: 1, endDamage: s.grabDamage || 2, label: "擒拿", source: "水调歌头", from: { r, c } });
           addLog("🌊 " + label(a) + " 水调歌头·第二段：擒拿 " + label(grabbed) +
             (gres.applied ? "（其下回合不能使用技能；结束时受 " + (s.grabDamage || 2) + " 点伤害）" : "——被霸体抵抗") + "。");
         } else {
@@ -1915,6 +1996,7 @@ function useSkill(tr, tc) {
           board[r][c] = null;
         }
         const fr = computeDashPath(a, rp.r, rp.c, opt1.dir[0], opt1.dir[1], 3);
+        if (window.BFX) window.BFX.cast({ type: "shuidiao", heroId: a.heroId, caster: { r: rp.r, c: rp.c }, from: { r: rp.r, c: rp.c }, to: fr.dest || { r: rp.r, c: rp.c }, stage: 0 });
         let hit1 = 0;
         for (const h of fr.hits) {
           const t = board[h.r][h.c];
@@ -1936,6 +2018,14 @@ function useSkill(tr, tc) {
         if (dragonBreathArea(a, r, c, dr, dc).some(([rr, cc]) => rr === tr && cc === tc)) { brDir = [dr, dc]; break; }
       }
       if (!brDir) { addLog("龙息方向无效。"); clearSelection(); render(); return; }
+      if (window.BFX) {
+        const _seen = new Set(); const _cells = [];
+        for (const [rr, cc] of dragonBreathArea(a, r, c, brDir[0], brDir[1])) {
+          const k = rr + "_" + cc;
+          if (!_seen.has(k)) { _seen.add(k); _cells.push([rr, cc]); }
+        }
+        window.BFX.cast({ type: "dragonbreath", heroId: a.heroId, caster: { r, c }, cells: _cells, dir: brDir });
+      }
       let bhit = 0;
       const seen = new Set();
       for (const [rr, cc] of dragonBreathArea(a, r, c, brDir[0], brDir[1])) {
@@ -1966,6 +2056,7 @@ function useSkill(tr, tc) {
         render();
         return;
       }
+      if (window.BFX) window.BFX.cast({ type: "thunder", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc }, moved: false });
       if (tt && !tt.sword && tt.player !== a.player) {
         // 敌人：先造成伤害
         applyDamage(tt, s.damage + attackerBonus(a), "skill");
@@ -2006,6 +2097,7 @@ function useSkill(tr, tc) {
       }
       ally.shield += s.shield; // 进入现有护盾系统，可与已有护盾叠加
       addLog("🛡 " + label(a) + " 释放【" + s.name + "】，为 " + label(ally) + " 增加 " + s.shield + " 点护盾（当前护盾 " + ally.shield + "）。");
+      if (window.BFX) window.BFX.cast({ type: "shield_ally", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc }, amount: s.shield });
       fx.push({ r: tr, c: tc, text: "+" + s.shield, kind: "shield" });
       break;
     }
@@ -2025,6 +2117,7 @@ function useSkill(tr, tc) {
         }
         board[tr][tc] = a;
         board[r][c] = null;
+        if (window.BFX) window.BFX.cast({ type: "chase", heroId: a.heroId, caster: { r, c }, from: { r, c }, to: { r: tr, c: tc }, target: { r: skillSub.tR, c: skillSub.tC }, stage: 1 });
         fx.push({ r: tr, c: tc, text: "闪身", kind: "skill" });
         addLog("🗡 " + label(a) + " 追猎·闪身到 (" + (tr + 1) + "," + (tc + 1) + ")，对 " + label(tgt) + " 造成 " + s.damage + " 点伤害。");
         applyDamage(tgt, s.damage, "skill", a); // 统一伤害结算（击杀 → 触发追猎刷新）
@@ -2041,6 +2134,7 @@ function useSkill(tr, tc) {
         return;
       }
       const hitUnits = [];
+      if (window.BFX) window.BFX.cast({ type: "chase", heroId: a.heroId, caster: { r, c }, path: opt.path || [], stage: 0 });
       for (const h of opt.hits) {
         const t = board[h.r][h.c];
         if (!t || t.sword || t.player === a.player) continue;
@@ -2079,12 +2173,17 @@ function useSkill(tr, tc) {
       }
       let totalDealt = 0;
       let kills = 0;
+      if (window.BFX) window.BFX.cast({ type: "bloodburst", heroId: a.heroId, caster: { r, c } });
       for (const t of victims) {
         const aliveBefore = !!findPos(t);
         // 统一伤害结算：护盾吸收 / 减伤 / 闪避 / 阵亡都在 applyDamage 内完成；
         // 返回值 = 实际扣掉的生命值（被护盾完全吸收或闪避时为 0）
         const dealt = applyDamage(t, s.damage, "skill", a);
         if (dealt > 0) totalDealt += dealt;
+        if (window.BFX && dealt > 0) {
+          const vp = findPos(t);
+          if (vp) window.BFX.drain({ from: vp, to: { r, c }, color: "#e11d48" });
+        }
         if (aliveBefore && !findPos(t)) kills++;
       }
       fx.push({ r, c, text: "血崩", kind: "skill" });
@@ -2111,6 +2210,7 @@ function useSkill(tr, tc) {
         render();
         return;
       }
+      if (window.BFX) window.BFX.cast({ type: "ziwei", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc } });
       const beforeU = enemiesInBox3(r, c, a.player);   // 位移前的九宫格
       board[tr][tc] = a;
       board[r][c] = null;
@@ -2141,6 +2241,7 @@ function useSkill(tr, tc) {
         return;
       }
       const from = findPos(tgt);
+      if (window.BFX) window.BFX.cast({ type: "exile", heroId: a.heroId, caster: { r, c }, target: { r: from.r, c: from.c }, from: { r: from.r, c: from.c }, to: { r: cn.corner.r, c: cn.corner.c } });
       board[cn.corner.r][cn.corner.c] = tgt;
       board[from.r][from.c] = null;
       skillSub = null;
@@ -2156,6 +2257,7 @@ function useSkill(tr, tc) {
         render();
         return;
       }
+      if (window.BFX) window.BFX.cast({ type: "tianwei", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc } });
       board[tr][tc] = a;
       board[r][c] = null;
       // 落点九宫格内的敌人：按位置排序，逐个「1 伤 + 尝试击飞出九宫格」
@@ -2180,6 +2282,7 @@ function useSkill(tr, tc) {
 
     case "shenluo": {
       const victims = sortUnitsByPos(enemiesInBox3(r, c, a.player));
+      if (window.BFX) window.BFX.cast({ type: "shenluo", heroId: a.heroId, caster: { r, c } });
       let sHit = 0, sPushed = 0;
       for (const t of victims) {
         if (!findPos(t)) continue;
@@ -2208,6 +2311,7 @@ function useSkill(tr, tc) {
           render();
           return;
         }
+        if (window.BFX) window.BFX.cast({ type: "wxt", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc }, stage: 2 });
         applyDamage(wt, s.damage, "skill", a);
         let pushed = false;
         if (findPos(wt)) pushed = !!pushAwayOne(wt, r, c);
@@ -2239,6 +2343,7 @@ function useSkill(tr, tc) {
           return;
         }
         const from = findPos(wt);
+        if (window.BFX) window.BFX.cast({ type: "wxt", heroId: a.heroId, caster: { r, c }, target: { r: lr, c: lc }, stage: 0 });
         if (from.r !== lr || from.c !== lc) {
           board[lr][lc] = wt;
           board[from.r][from.c] = null;
@@ -2257,6 +2362,7 @@ function useSkill(tr, tc) {
           return;
         }
         const from = findPos(wt);
+        if (window.BFX) window.BFX.cast({ type: "wxt", heroId: a.heroId, caster: { r, c }, target: { r: lr, c: lc }, stage: 1 });
         if (from.r !== lr || from.c !== lc) {
           board[lr][lc] = wt;
           board[from.r][from.c] = null;
@@ -2264,7 +2370,7 @@ function useSkill(tr, tc) {
         applyDamage(wt, s.damage, "skill", a);
         let grabbed = false;
         if (findPos(wt)) {
-          applyNegativeStatus(wt, "grab", { damage: 0, turns: 1, label: "万象天引·抓取" });
+          applyNegativeStatus(wt, "grab", { damage: 0, turns: 1, label: "万象天引·抓取", from: { r, c } });
           grabbed = true;
         }
         a.wxtStage = 2; // 进入第三段
@@ -2482,6 +2588,7 @@ function useTalismanEffect(id, tr, tc) {
       }
       const healed = Math.max(0, Math.min(t.heal || 2, u.maxHp - u.hp));
       u.hp += healed;
+      if (window.BFX) window.BFX.heal({ r: tr, c: tc, amount: healed });
       fx.push({ r: tr, c: tc, text: "+" + healed, kind: "heal" });
       addLog("➕ 玩家" + player + " 使用【战地急救令】：" + label(u) + " 恢复 " + healed + " 点生命（" + u.hp + "/" + u.maxHp + "）。");
       break;
@@ -2512,6 +2619,7 @@ function useTalismanEffect(id, tr, tc) {
         chaseMark: 0,
       };
       graveyard = graveyard.filter((g) => g !== rec);
+      if (window.BFX) window.BFX.revive({ r: tr, c: tc });
       fx.push({ r: tr, c: tc, text: "复活", kind: "heal" });
       addLog("💫 玩家" + player + " 使用【还魂令】：" + def.name + " 在 (" + (tr + 1) + "," + (tc + 1) + ") 复活，恢复至 3 点生命（技能剩余 " + (rec.usesLeft || 0) + " 次，携带剑 " + (rec.swords || 0) + "）。");
       break;
@@ -2667,10 +2775,13 @@ function randomKnockback(t) {
   const pick = opts[Math.floor(Math.random() * opts.length)];
   board[pick.r][pick.c] = t;
   board[p.r][p.c] = null;
+  if (window.BFX) window.BFX.knockback({ from: p, to: pick, color: window.BFX.heroColor(t.heroId) });
   return pick;
 }
 
 function onCellClick(r, c) {
+  // 表现层保护：刚完成一次行动后的极短输入锁，防止连续点击重复施法/重复攻击（不影响规则与 AI）
+  if (Date.now() < inputLockUntil) return;
   // 龙胆额外移动优先处理（即使当前是对方回合也可用）
   if (dragonMoveUnit) {
     performDragonMove(r, c);
@@ -2707,6 +2818,7 @@ function buildUnit(u) {
   const def = heroDef(u.heroId);
   const el = document.createElement("div");
   el.className = "unit p" + u.player;
+  el.dataset.uid = u.uid;
   el.title =
     def.name +
     " · 生命 " +
@@ -2916,6 +3028,8 @@ function render() {
 
   fx = []; // 飘字为一次性特效，渲染后清空
   updatePanel(info);
+  // 表现层：棋盘重建后校正画布尺寸/坐标（仅尺寸变化时才真正重置，不会打断正在播放的特效）
+  if (window.BFX) window.BFX.sync();
 }
 
 function updateRoster() {
@@ -4000,10 +4114,63 @@ function mergeServerLog(state) {
   if (logs.length > 300) logs = logs.slice(-200);
   return added;
 }
+/* 联机表现层：把权威棋盘压成可比较的快照 */
+function bfxSnapshot(st) {
+  const m = new Map();
+  if (!st || !st.board) return m;
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const u = st.board[r][c];
+      if (!u || u.sword) continue;
+      m.set(u.uid, {
+        r, c, hp: u.hp, shield: u.shield || 0, frozen: u.frozen || 0,
+        heroId: u.heroId, player: u.player,
+        grab: !!(u.statuses && u.statuses.grab && u.statuses.grab.turns > 0),
+        empower: (u.empowerTurns || 0) > 0,
+      });
+    }
+  }
+  return m;
+}
+/* 联机表现层：由“服务端确认后的状态差异”派生战斗事件；只播放，不结算、不改状态 */
+function bfxOnlineDerive(prev, next, st) {
+  if (!window.BFX || !st || st.phase !== "battle") return;
+  if (st.log) {
+    for (const e of st.log) {
+      if (typeof e.id !== "number" || e.id <= bfxOnlineLogSeq) continue;
+      bfxOnlineLogSeq = e.id;
+      const m = /^(.+?) 释放【(.+?)】/.exec(e.text || "");
+      if (m) window.BFX.banner(m[1].replace(/^玩家\d+·/, ""), m[2], "");
+    }
+  }
+  for (const [uid, n] of next) {
+    const p = prev.get(uid);
+    if (!p) { window.BFX.revive({ r: n.r, c: n.c }); continue; }
+    const hpDrop = Math.max(0, p.hp - n.hp);
+    const shDrop = Math.max(0, p.shield - n.shield);
+    if (p.r !== n.r || p.c !== n.c) {
+      window.BFX.move({
+        from: { r: p.r, c: p.c }, to: { r: n.r, c: n.c },
+        blink: Math.abs(p.r - n.r) + Math.abs(p.c - n.c) > 1,
+        color: window.BFX.heroColor(n.heroId),
+      });
+    }
+    if (shDrop > 0 && hpDrop === 0) window.BFX.shieldAbsorb({ r: n.r, c: n.c, amount: shDrop });
+    if (hpDrop > 0) window.BFX.hit({ r: n.r, c: n.c, amount: hpDrop, kind: "skill", color: window.BFX.heroColor(n.heroId), uid: uid });
+    if (!p.grab && n.grab) window.BFX.grab({ from: { r: n.r, c: n.c }, to: { r: n.r, c: n.c }, color: "#38bdf8" });
+    if (!p.empower && n.empower) window.BFX.cast({ type: "thunder", heroId: "thunder", caster: { r: n.r, c: n.c }, target: { r: n.r, c: n.c } });
+    if (n.hp > p.hp) window.BFX.heal({ r: n.r, c: n.c, amount: n.hp - p.hp });
+  }
+  for (const [uid, p] of prev) {
+    if (!next.has(uid)) window.BFX.death({ r: p.r, c: p.c, color: window.BFX.heroColor(p.heroId) });
+  }
+}
+
 /* 用服务器权威状态替换本地棋盘 */
 function applyRemoteState(state) {
   if (!state) return;
   mergeServerLog(state);
+  const prevSnap = bfxPrevSnap;      // 上一份快照（首个状态 / 重连后为 null → 不重播历史）
   board = state.board.map((row) => row.map((cell) => (cell ? Object.assign({}, cell) : null)));
   phase = state.phase;
   currentPlayer = state.currentPlayer;
@@ -4032,6 +4199,9 @@ function applyRemoteState(state) {
   if (phase === "placement") pendingHero = firstAvailableHero(mySide()); // 布阵时自动选下一个“本人候选池内”的可用英雄
   if (gameMode !== "online") { gameMode = "online"; updateModeBadge(); }
   clearSelection();
+  // 联机表现层：根据“服务端确认后的状态变化”播放动画（纯视觉，不重复结算）
+  bfxPrevSnap = bfxSnapshot(state);
+  if (prevSnap) bfxOnlineDerive(prevSnap, bfxPrevSnap, state);
   render();
 }
 window.onNetState = applyRemoteState;
@@ -4039,6 +4209,8 @@ window.onNetState = applyRemoteState;
 window.onNetJoined = () => {
   logs = [];
   onlineLogSeq = 0;
+  bfxPrevSnap = null;      // 重连/新房间：不重播历史动画
+  bfxOnlineLogSeq = 0;
 };
 window.onNetStart = () => {
   hideMenu();
@@ -4183,6 +4355,32 @@ function copyText(val, done) {
 if (document.getElementById("phone-copy")) {
   document.getElementById("phone-copy").addEventListener("click", () => copyText(phoneInputEl ? phoneInputEl.value : "", null));
 }
+
+/* ===== 战斗表现层：初始化 + 设置（自动保存；只影响画面，不影响判定） ===== */
+(function initBattleFX() {
+  if (!window.BFX) return;
+  const wrapEl = document.querySelector(".board-wrap");
+  const boardDom = document.getElementById("board");
+  window.BFX.init({ wrap: wrapEl, board: boardDom });
+  const o = window.BFX.options;
+  const bind = (id, key, isCheck) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (isCheck) el.checked = !!o[key]; else el.value = String(o[key]);
+    el.addEventListener("change", () => {
+      const patch = {};
+      patch[key] = isCheck ? !!el.checked : parseFloat(el.value);
+      window.BFX.setOptions(patch);
+    });
+  };
+  bind("set-fx", "enabled", true);
+  bind("set-fx-traces", "traces", true);
+  bind("set-fx-shake", "shake", true);
+  bind("set-fx-reduce", "reduce", true);
+  bind("set-fx-speed", "speed", false);
+  // 字体/布局稳定后校正一次画布几何
+  setTimeout(() => { if (window.BFX) window.BFX.sync(); }, 80);
+})();
 
 /* 设置：音效开关 / 音量（自动保存到 localStorage） */
 document.getElementById("set-sfx").addEventListener("change", (e) => {
@@ -4389,6 +4587,8 @@ window.GameAPI = {
     winner = 0;
     unitSeq = 1;
     logs = [];
+    if (window.BFX) window.BFX.clear(); // 新开一局：清空战场痕迹
+    inputLockUntil = 0;
     fx = [];
     turnActionUsed = false;
     talismanMode = null;
