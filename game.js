@@ -376,6 +376,8 @@ function refreshSkillOnKill(a) {
   if (refreshed) {
     chaseRefreshSeq++; // 记录一次刷新，供“先结算后扣次数”的流程校正
     addLog("♻ " + label(a) + " 击杀了敌人，【" + name + "】使用次数已刷新。");
+    const p = findPos(a);
+    if (p) fx.push({ r: p.r, c: p.c, text: "刷新!", kind: "skill" });
   }
   return refreshed;
 }
@@ -643,6 +645,22 @@ function guardOn(player) {
 function drawTalismanId() {
   return TALISMANS[Math.floor(Math.random() * TALISMANS.length)].id;
 }
+/* 还魂令落点：优先原位置；若被占据（例如击杀者已站上目标格），退回最近的空格 */
+function reviveCellFor(g) {
+  if (!g) return null;
+  if (inBounds(g.r, g.c) && !board[g.r][g.c]) return { r: g.r, c: g.c };
+  let best = null;
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (board[r][c]) continue;
+      const d = Math.abs(r - g.r) + Math.abs(c - g.c);
+      if (!best || d < best.d || (d === best.d && (r < best.r || (r === best.r && c < best.c)))) {
+        best = { r, c, d };
+      }
+    }
+  }
+  return best ? { r: best.r, c: best.c } : null;
+}
 /* 某锦囊对某玩家的合法目标格 */
 function talismanTargetsFor(id, player) {
   const t = getTalismanById(id);
@@ -663,7 +681,8 @@ function talismanTargetsFor(id, player) {
   } else if (t.target === "deadAlly") {
     for (const g of graveyard) {
       if (g.player !== player) continue;
-      if (inBounds(g.r, g.c) && !board[g.r][g.c]) res.push([g.r, g.c]);
+      const cell = reviveCellFor(g);
+      if (cell && !res.some(([r, c]) => r === cell.r && c === cell.c)) res.push([cell.r, cell.c]);
     }
   }
   return res;
@@ -1857,7 +1876,7 @@ function useSkill(tr, tc) {
       const rd = resolveSkillDamage(a, target, s);
       addLog(label(a) + " 释放【" + s.name + "】，对 " + label(target) + " 造成 " + rd.damage + " 点伤害" + (rd.assault ? "（猛攻令 +1）" : "") + "。");
       if (window.BFX) window.BFX.cast({ type: "damage_single", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc } });
-      applyDamage(target, rd.damage, "skill");
+      applyDamage(target, rd.damage, "skill", a);
       break;
     }
 
@@ -1897,7 +1916,7 @@ function useSkill(tr, tc) {
         if (t && !t.sword && t.player !== a.player) {
           const rd = resolveSkillDamage(a, t, s);
           if (rd.assault) assault = rd.assault;
-          applyDamage(t, rd.damage, "skill");
+          applyDamage(t, rd.damage, "skill", a);
           hit++;
         }
       }
@@ -1909,7 +1928,7 @@ function useSkill(tr, tc) {
       const rd = resolveSkillDamage(a, target, s);
       addLog(label(a) + " 释放【" + s.name + "】，穿透 " + label(target) + "，造成 " + rd.damage + " 点伤害" + (rd.assault ? "（猛攻令 +1）" : "") + "。");
       if (window.BFX) window.BFX.cast({ type: "damage_line", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc } });
-      applyDamage(target, rd.damage, "skill");
+      applyDamage(target, rd.damage, "skill", a);
       break;
     }
 
@@ -1943,7 +1962,7 @@ function useSkill(tr, tc) {
       for (const h of fr.hits) {
         const t = board[h.r][h.c];
         if (t && !t.sword && t.player !== a.player) {
-          applyDamage(t, dashDmg, "skill"); // 阿修罗·剑圣的伤害（技能，不吃夹击加成）
+          applyDamage(t, dashDmg, "skill", a); // 阿修罗·剑圣的伤害（技能，不吃夹击加成）
           hitCount++;
         }
       }
@@ -1993,7 +2012,7 @@ function useSkill(tr, tc) {
         for (let dc = -1; dc <= 1; dc++) {
           const t = unitAt(ddest.r + dr, ddest.c + dc);
           if (t && !t.sword && t.player !== a.player) {
-            applyDamage(t, s.damage + attackerBonus(a), "skill");
+            applyDamage(t, s.damage + attackerBonus(a), "skill", a);
             dhit++;
           }
         }
@@ -2038,7 +2057,7 @@ function useSkill(tr, tc) {
         let hit1 = 0;
         for (const h of fr.hits) {
           const t = board[h.r][h.c];
-          if (t && !t.sword && t.player !== a.player) { applyDamage(t, s.damage + attackerBonus(a), "skill"); hit1++; }
+          if (t && !t.sword && t.player !== a.player) { applyDamage(t, s.damage + attackerBonus(a), "skill", a); hit1++; }
         }
         const dist1 = fr.dest ? Math.abs(fr.dest.r - rp.r) + Math.abs(fr.dest.c - rp.c) : 0;
         if (fr.dest) { board[fr.dest.r][fr.dest.c] = a; board[rp.r][rp.c] = null; }
@@ -2071,7 +2090,7 @@ function useSkill(tr, tc) {
         if (seen.has(key)) continue;
         seen.add(key);
         const t = unitAt(rr, cc);
-        if (t && !t.sword && t.player !== a.player) { applyDamage(t, s.damage + attackerBonus(a), "skill"); bhit++; }
+        if (t && !t.sword && t.player !== a.player) { applyDamage(t, s.damage + attackerBonus(a), "skill", a); bhit++; }
       }
       addLog("🐉 " + label(a) + " 释放【" + s.name + "】，向" + dirName(brDir) + "喷吐 3×2 区域，命中 " + bhit + " 名敌人。");
       break;
@@ -2097,7 +2116,7 @@ function useSkill(tr, tc) {
       if (window.BFX) window.BFX.cast({ type: "thunder", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc }, moved: false });
       if (tt && !tt.sword && tt.player !== a.player) {
         // 敌人：先造成伤害
-        applyDamage(tt, s.damage + attackerBonus(a), "skill");
+        applyDamage(tt, s.damage + attackerBonus(a), "skill", a);
         if (findPos(tt)) {
           // 未阵亡 → 随机击退
           const kb = randomKnockback(tt);
@@ -2238,7 +2257,10 @@ function useSkill(tr, tc) {
       } else {
         addLog("🩸 " + label(a) + " 释放【" + s.name + "】，命中 " + victims.length + " 名敌人，但没有造成实际伤害，未回血。");
       }
-      if (kills > 0) addLog("🩸 血崩击杀 " + kills + " 名敌人，【" + s.name + "】使用次数已刷新。");
+      if (kills > 0) {
+        const nowUses = skillUsesLeft(a, activeSkillIdx);
+        if (nowUses > 0) addLog("🩸 血崩击杀 " + kills + " 名敌人，【" + s.name + "】使用次数已刷新（当前 " + nowUses + " 次）。");
+      }
       break;
     }
 
@@ -2638,9 +2660,20 @@ function useTalismanEffect(id, tr, tc) {
       break;
     }
     case "revive": {
-      const rec = graveyard.find((g) => g.player === player && g.r === tr && g.c === tc);
+      // 落点：原位置优先；若被占据（例如击杀者已占据目标格），使用最近的空格
+      let rec = null;
+      let recAtOrigin = false;
+      for (const g of graveyard) {
+        if (g.player !== player) continue;
+        const cell = reviveCellFor(g);
+        if (cell && cell.r === tr && cell.c === tc) {
+          rec = g;
+          recAtOrigin = (g.r === tr && g.c === tc);
+          break;
+        }
+      }
       if (!rec) { addLog("该位置没有可复活的己方阵亡英雄。"); ok = false; break; }
-      if (!inBounds(tr, tc) || board[tr][tc]) { addLog("原位置已被占用，无法复活。"); ok = false; break; }
+      if (!inBounds(tr, tc) || board[tr][tc]) { addLog("该位置已被占用，无法复活。"); ok = false; break; }
       const def = heroDef(rec.heroId);
       board[tr][tc] = {
         uid: unitSeq++,
@@ -2666,7 +2699,9 @@ function useTalismanEffect(id, tr, tc) {
       if (window.SFX) window.SFX.play("revive", { hero: def.id });
       if (window.BFX) window.BFX.revive({ r: tr, c: tc });
       fx.push({ r: tr, c: tc, text: "复活", kind: "heal" });
-      addLog("💫 玩家" + player + " 使用【还魂令】：" + def.name + " 在 (" + (tr + 1) + "," + (tc + 1) + ") 复活，恢复至 3 点生命（技能剩余 " + (rec.usesLeft || 0) + " 次，携带剑 " + (rec.swords || 0) + "）。");
+      addLog("💫 玩家" + player + " 使用【还魂令】：" + def.name + " 在 (" + (tr + 1) + "," + (tc + 1) + ") 复活" +
+        (recAtOrigin ? "" : "（原位置已被占据，改在最近的空格）") +
+        "，恢复至 3 点生命（技能剩余 " + (rec.usesLeft || 0) + " 次，携带剑 " + (rec.swords || 0) + "）。");
       break;
     }
     default:

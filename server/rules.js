@@ -290,6 +290,7 @@ function refreshSkillOnKill(s, a) {
   if (!a || a.sword) return false;
   const skills = heroSkills(heroDef(a.heroId));
   let refreshed = false;
+  let name = "";
   for (let i = 0; i < skills.length; i++) {
     const skk = skills[i];
     if (!skk || !skk.refreshOnKill) continue;
@@ -298,8 +299,12 @@ function refreshSkillOnKill(s, a) {
     if (cur === Infinity || cur >= max) continue; // 已满 → 不重复触发刷新事件
     setSkillUses(s, a, i, max);
     refreshed = true;
+    name = skk.name;
   }
-  if (refreshed) s.chaseRefreshSeq = (s.chaseRefreshSeq || 0) + 1; // 供“先结算后扣次数”的流程校正
+  if (refreshed) {
+    s.chaseRefreshSeq = (s.chaseRefreshSeq || 0) + 1; // 供“先结算后扣次数”的流程校正
+    slog(s, "♻ " + uname(s, a) + " 击杀了敌人，【" + name + "】使用次数已刷新。");
+  }
   return refreshed;
 }
 /* 兼容旧名（刺客·追猎） */
@@ -618,6 +623,23 @@ function checkVictory(s) {
   return false;
 }
 
+/* 还魂令落点（服务端镜像）：原位置优先，被占据则退回最近空格 */
+function reviveCellForS(s, g) {
+  if (!g) return null;
+  if (inB(g.r, g.c) && !s.board[g.r][g.c]) return { r: g.r, c: g.c, origin: true };
+  let best = null;
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (s.board[r][c]) continue;
+      const d = Math.abs(r - g.r) + Math.abs(c - g.c);
+      if (!best || d < best.d || (d === best.d && (r < best.r || (r === best.r && c < best.c)))) {
+        best = { r, c, d };
+      }
+    }
+  }
+  return best ? { r: best.r, c: best.c, origin: false } : null;
+}
+
 /* ---------------- 行动校验与执行（服务器权威） ---------------- */
 function applyAction(state, player, action) {
   const s = clone(state);
@@ -712,16 +734,24 @@ function applyAction(state, player, action) {
         break;
       }
       case "revive": {
-        const idx = hasTo ? s.graveyard.findIndex((g) => g.player === player && g.r === to.r && g.c === to.c) : -1;
+        let idx = -1, cell = null;
+        if (hasTo) {
+          for (let i = 0; i < s.graveyard.length; i++) {
+            const g = s.graveyard[i];
+            if (g.player !== player) continue;
+            const c2 = reviveCellForS(s, g);
+            if (c2 && c2.r === to.r && c2.c === to.c) { idx = i; cell = c2; break; }
+          }
+        }
         if (idx < 0) return err("该位置没有可复活的己方英雄");
-        if (!inB(to.r, to.c) || s.board[to.r][to.c]) return err("原位置已被占用，无法复活");
+        if (!inB(to.r, to.c) || s.board[to.r][to.c]) return err("该位置已被占用，无法复活");
         const rec = s.graveyard[idx];
         const def = heroDef(rec.heroId);
         s.board[to.r][to.c] = { uid: s.unitSeq++, heroId: def.id, player, hp: Math.min(3, def.hp), maxHp: def.hp,
                                 shield: 0, frozen: 0, swords: rec.swords || 0, usesLeft: rec.usesLeft || 0,
                                 statuses: {}, lockUsed: !!rec.lockUsed, sdStage: 0, dragonMoves: 0, empowerTurns: 0, chaseStage: 0, chaseMark: 0, guixiongUsed: !!rec.guixiongUsed, wxtStage: 0 };
         s.graveyard.splice(idx, 1);
-        slog(s, "💫 " + uname(s, s.board[to.r][to.c]) + " 在原位置复活（3 点生命）");
+        slog(s, "💫 " + uname(s, s.board[to.r][to.c]) + " 复活（3 点生命）" + (cell && !cell.origin ? "，原位置被占据，改在最近空格" : ""));
         break;
       }
       default: return err("未知锦囊");
@@ -805,7 +835,7 @@ function applyAction(state, player, action) {
 
     if (sk.type === "damage_single") {
       if (!isUnit(t) || t.player === player || dist > sk.range) return err("技能目标不合法");
-      applyDamage(s, t, sk.damage + av);
+      applyDamage(s, t, sk.damage + av, u);
     } else if (sk.type === "freeze") {
       if (!isUnit(t) || t.player === player || dist > sk.range) return err("技能目标不合法");
       applyDamage(s, t, sk.damage + av, u);
@@ -818,7 +848,7 @@ function applyAction(state, player, action) {
       let any = false;
       for (const [dr, dc] of DIRS) {
         const e = inB(from.r + dr, from.c + dc) ? s.board[from.r + dr][from.c + dc] : null;
-        if (isUnit(e) && e.player !== player) { applyDamage(s, e, sk.damage + av); any = true; }
+        if (isUnit(e) && e.player !== player) { applyDamage(s, e, sk.damage + av, u); any = true; }
       }
       if (!any) return err("相邻没有敌人");
     } else if (sk.type === "damage_line") {
@@ -832,7 +862,7 @@ function applyAction(state, player, action) {
         }
       }
       if (!found) return err("射线目标不合法");
-      applyDamage(s, t, sk.damage + av);
+      applyDamage(s, t, sk.damage + av, u);
     } else if (sk.type === "shield_self") {
       u.shield += sk.shield;
     } else if (sk.type === "blink") {
@@ -844,7 +874,7 @@ function applyAction(state, player, action) {
       if (!opt) return err("突进方向不合法");
       for (const h of opt.hits) {
         const e = s.board[h.r][h.c];
-        if (isUnit(e) && e.player !== player) applyDamage(s, e, sk.damage + av);
+        if (isUnit(e) && e.player !== player) applyDamage(s, e, sk.damage + av, u);
       }
       const d = Math.abs(opt.dest.r - from.r) + Math.abs(opt.dest.c - from.c);
       for (let k = 1; k <= d; k++) {
@@ -858,7 +888,7 @@ function applyAction(state, player, action) {
       s.board[r][c] = u; s.board[from.r][from.c] = null;
       for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
         const e = inB(r + dr, c + dc) ? s.board[r + dr][c + dc] : null;
-        if (isUnit(e) && e.player !== player) applyDamage(s, e, sk.damage + av);
+        if (isUnit(e) && e.player !== player) applyDamage(s, e, sk.damage + av, u);
       }
     } else if (sk.type === "shuidiao") {
       const findOpt = (steps, base) => DIRS.map(([dr, dc]) => computeDash(s, u, base.r, base.c, dr, dc, steps))
@@ -878,7 +908,7 @@ function applyAction(state, player, action) {
         if (!(rp.r === from.r && rp.c === from.c)) { s.board[rp.r][rp.c] = u; s.board[from.r][from.c] = null; }
         const opt = findOpt(3, rp);
         if (!opt) return err("突进方向不合法");
-        for (const h of opt.hits) { const e = s.board[h.r][h.c]; if (isUnit(e) && e.player !== player) applyDamage(s, e, sk.damage + av); }
+        for (const h of opt.hits) { const e = s.board[h.r][h.c]; if (isUnit(e) && e.player !== player) applyDamage(s, e, sk.damage + av, u); }
         if (opt.dest) { s.board[opt.dest.r][opt.dest.c] = u; s.board[rp.r][rp.c] = null; }
         u.sdStage = 1;
       }
@@ -894,7 +924,7 @@ function applyAction(state, player, action) {
         if (seen.has(key)) continue;
         seen.add(key);
         const e = s.board[ar][ac];
-        if (isUnit(e) && e.player !== player) applyDamage(s, e, sk.damage + av);
+        if (isUnit(e) && e.player !== player) applyDamage(s, e, sk.damage + av, u);
       }
     } else if (sk.type === "thunder") {
       const inRange = (Math.abs(r - from.r) <= 1 && Math.abs(c - from.c) <= 1 && !(r === from.r && c === from.c)) ||
@@ -902,7 +932,7 @@ function applyAction(state, player, action) {
       if (!inRange || !inB(r, c)) return err("雷霆万钧目标不合法");
       if (t && (t.sword || t.player === player)) return err("目标格不可选");
       if (t && !t.sword && t.player !== player) {
-        applyDamage(s, t, sk.damage + av);
+        applyDamage(s, t, sk.damage + av, u);
         if (findPos(s, t)) randomKnockback(s, t); // 未阵亡才击退
       }
       if (!s.board[r][c]) { s.board[r][c] = u; s.board[from.r][from.c] = null; } // 目标格空出则位移进去

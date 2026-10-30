@@ -528,13 +528,14 @@
         for (let i = 0; i < 5; i++) N(L, { at: 0.30 + i * 0.06, dur: 0.05, bp: 3200, q: 2.0, peak: 0.035, pan: (Math.random() - 0.5) * 0.5 });
         break;
 
-      case "thunder": // 雷电：蓄电 → 落雷 → 电弧
-        S(L, { at: 0, f0: 80, f1: 900, dur: 0.26, peak: 0.07, wave: "sawtooth" });
-        N(L, { at: 0, dur: 0.22, bp: 5200, q: 2.2, peak: 0.06, attack: 0.02 });
-        N(L, { at: 0.24, dur: 0.10, hp: 1800, peak: 0.30, attack: 0.001 });     // 爆裂
-        HP(L, { at: 0.24, dur: 0.36, f0: 110, f1: 34, peak: 0.36 });            // 雷鸣
-        N(L, { at: 0.26, dur: 0.55, lp: 700, peak: 0.18, attack: 0.004 });     // 余响
-        for (let i = 0; i < 4; i++) N(L, { at: 0.30 + i * 0.04, dur: 0.05, bp: 6000 + i * 600, q: 3.0, peak: 0.05, pan: (i - 1.5) * 0.25 });
+      case "thunder": // 雷电：蓄电 → 落雷 → 电弧（压低高频，避免刺耳）
+        S(L, { at: 0, f0: 80, f1: 760, dur: 0.26, peak: 0.06, wave: "sawtooth" });
+        N(L, { at: 0, dur: 0.22, bp: 3600, q: 1.4, peak: 0.045, attack: 0.02 });
+        N(L, { at: 0.24, dur: 0.10, hp: 1200, peak: 0.22, attack: 0.001 });     // 爆裂（收敛）
+        HP(L, { at: 0.24, dur: 0.38, f0: 105, f1: 32, peak: 0.38 });           // 雷鸣
+        N(L, { at: 0.26, dur: 0.55, lp: 620, peak: 0.16, attack: 0.004 });      // 余响
+        N(L, { at: 0.30, dur: 0.05, bp: 4200, q: 1.8, peak: 0.028, pan: -0.2 }); // 少量电弧碎响
+        N(L, { at: 0.36, dur: 0.05, bp: 5200, q: 1.8, peak: 0.024, pan: 0.2 });
         break;
 
       case "chase": // 刺客：飞镖 / 瞬步
@@ -709,29 +710,25 @@
 
   /* ---------------- 持续音 ---------------- */
   const LOOP_DEF = {
-    empower: { // 雷电之主强化：极轻的电流底音
+    empower: { // 雷电之主强化：极轻的低频呼吸音（无高频嘶声，避免刺耳）
       build(t0) {
         const g = ctx.createGain();
         g.gain.setValueAtTime(0.0001, t0);
-        g.gain.exponentialRampToValueAtTime(0.045, t0 + 0.4);
-        const osc = ctx.createOscillator();
-        osc.type = "sawtooth";
-        osc.frequency.value = 62;
-        const osc2 = ctx.createOscillator();
-        osc2.type = "sine";
-        osc2.frequency.value = 124;
+        g.gain.exponentialRampToValueAtTime(0.020, t0 + 0.6);
         const lp = ctx.createBiquadFilter();
-        lp.type = "lowpass"; lp.frequency.value = 320;
-        const src = ctx.createBufferSource();
-        src.buffer = getNoise(); src.loop = true;
-        const bp = ctx.createBiquadFilter();
-        bp.type = "bandpass"; bp.frequency.value = 2400; bp.Q.value = 2.2;
-        const ng = ctx.createGain(); ng.gain.value = 0.28;
-        osc.connect(g); osc2.connect(g);
-        src.connect(bp); bp.connect(ng); ng.connect(g);
-        g.connect(busLoop);
-        osc.start(t0); osc2.start(t0); src.start(t0);
-        return { g, nodes: [osc, osc2, src] };
+        lp.type = "lowpass"; lp.frequency.value = 170; lp.Q.value = 0.6;
+        const osc = ctx.createOscillator();
+        osc.type = "sine"; osc.frequency.value = 55;
+        const osc2 = ctx.createOscillator();
+        osc2.type = "triangle"; osc2.frequency.value = 82.5;
+        const lfo = ctx.createOscillator();
+        lfo.type = "sine"; lfo.frequency.value = 0.22;         // 慢速呼吸，不是持续电流
+        const lfoGain = ctx.createGain();
+        lfoGain.gain.value = 0.010;
+        lfo.connect(lfoGain); lfoGain.connect(g.gain);
+        osc.connect(lp); osc2.connect(lp); lp.connect(g); g.connect(busLoop);
+        osc.start(t0); osc2.start(t0); lfo.start(t0);
+        return { g, nodes: [osc, osc2, lfo] };
       },
     },
   };
