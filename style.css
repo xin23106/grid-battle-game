@@ -1053,3 +1053,172 @@ html, body {
   0%, 100% { box-shadow: 0 0 6px rgba(251, 191, 36, .6); }
   50% { box-shadow: 0 0 12px rgba(251, 191, 36, 1); }
 }
+
+/* =======================================================================
+   胜负结算演出
+   ======================================================================= */
+.bfx-victory {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+}
+.bfx-victory.show { animation: bfxVicWrap 2s ease-out forwards; }
+.bfx-victory.lose.show { animation-duration: 1.6s; }
+
+.bfx-victory-scrim {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(ellipse at 50% 50%, rgba(2, 6, 23, .05) 20%, rgba(2, 6, 23, .45) 72%, rgba(2, 6, 23, .62) 100%);
+}
+.bfx-victory.win .bfx-victory-scrim { background: radial-gradient(ellipse at 50% 50%, rgba(120, 53, 15, 0) 18%, rgba(2, 6, 23, .40) 70%, rgba(2, 6, 23, .58) 100%); }
+.bfx-victory.show .bfx-victory-scrim { animation: bfxVicScrim 2s ease-out forwards; }
+
+.bfx-victory-rays {
+  position: absolute;
+  width: 150%;
+  height: 150%;
+  opacity: 0;
+  background: conic-gradient(from 0deg,
+    rgba(251, 191, 36, 0) 0deg, rgba(251, 191, 36, .16) 12deg, rgba(251, 191, 36, 0) 24deg,
+    rgba(251, 191, 36, 0) 60deg, rgba(253, 230, 138, .13) 72deg, rgba(251, 191, 36, 0) 84deg,
+    rgba(251, 191, 36, 0) 120deg, rgba(251, 191, 36, .15) 132deg, rgba(251, 191, 36, 0) 144deg,
+    rgba(251, 191, 36, 0) 180deg, rgba(253, 230, 138, .12) 192deg, rgba(251, 191, 36, 0) 204deg,
+    rgba(251, 191, 36, 0) 240deg, rgba(251, 191, 36, .14) 252deg, rgba(251, 191, 36, 0) 264deg,
+    rgba(251, 191, 36, 0) 300deg, rgba(253, 230, 138, .12) 312deg, rgba(251, 191, 36, 0) 324deg);
+  filter: blur(2px);
+}
+.bfx-victory.win.show .bfx-victory-rays { animation: bfxVicRays 2s ease-out forwards; }
+.bfx-victory.lose .bfx-victory-rays { display: none; }
+.bfx-victory.draw .bfx-victory-rays { display: none; }
+
+.bfx-victory-main {
+  position: relative;
+  font-size: clamp(40px, 8.5vw, 78px);
+  font-weight: 900;
+  letter-spacing: 12px;
+  line-height: 1;
+}
+.bfx-victory-sub {
+  position: relative;
+  margin-top: 14px;
+  font-size: clamp(12px, 1.8vw, 15px);
+  letter-spacing: 3px;
+  opacity: .9;
+}
+
+.bfx-victory.win .bfx-victory-main {
+  color: #fde68a;
+  text-shadow: 0 0 34px rgba(251, 191, 36, .95), 0 0 80px rgba(245, 158, 11, .55), 0 4px 18px rgba(0, 0, 0, .9);
+  background: linear-gradient(180deg, #fffbeb, #fbbf24 60%, #f59e0b);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 18px rgba(251, 191, 36, .55));
+}
+.bfx-victory.win .bfx-victory-sub { color: #fde68a; text-shadow: 0 1px 6px rgba(0, 0, 0, .8); }
+
+.bfx-victory.lose .bfx-victory-main {
+  color: #cbd5e1;
+  letter-spacing: 16px;
+  text-shadow: 0 0 22px rgba(127, 29, 29, .85), 0 4px 16px rgba(0, 0, 0, .9);
+  filter: grayscale(.25);
+}
+.bfx-victory.lose .bfx-victory-sub { color: #94a3b8; }
+
+.bfx-victory.draw .bfx-victory-main {
+  color: #e2e8f0;
+  text-shadow: 0 0 20px rgba(148, 163, 184, .8), 0 4px 14px rgba(0, 0, 0, .9);
+}
+.bfx-victory.draw .bfx-victory-sub { color: #cbd5e1; }
+
+.bfx-victory.show .bfx-victory-main { animation: bfxVicWinTitle 2s cubic-bezier(.18, .9, .22, 1) forwards; }
+.bfx-victory.lose.show .bfx-victory-main { animation: bfxVicLoseTitle 1.6s ease-out forwards; }
+.bfx-victory.draw.show .bfx-victory-main { animation: bfxVicDrawTitle 1.7s ease-out forwards; }
+.bfx-victory.show .bfx-victory-sub { animation: bfxVicSub 2s ease-out forwards; }
+
+@keyframes bfxVicWrap { 0% { opacity: 0; } 8% { opacity: 1; } 82% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes bfxVicScrim { 0% { opacity: 0; } 12% { opacity: 1; } 78% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes bfxVicRays {
+  0% { opacity: 0; transform: rotate(0deg) scale(.85); }
+  18% { opacity: .9; transform: rotate(8deg) scale(1.02); }
+  70% { opacity: .55; transform: rotate(16deg) scale(1.06); }
+  100% { opacity: 0; transform: rotate(22deg) scale(1.1); }
+}
+@keyframes bfxVicWinTitle {
+  0% { opacity: 0; transform: scale(.55) translateY(18px); letter-spacing: 30px; }
+  22% { opacity: 1; transform: scale(1.12) translateY(0); letter-spacing: 12px; }
+  34% { transform: scale(.98); }
+  42% { transform: scale(1.02); }
+  50% { transform: scale(1); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.06); }
+}
+@keyframes bfxVicLoseTitle {
+  0% { opacity: 0; transform: translateY(-14px) scale(1.06); letter-spacing: 26px; }
+  30% { opacity: 1; transform: translateY(0) scale(1); letter-spacing: 16px; }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(10px) scale(.98); letter-spacing: 14px; }
+}
+@keyframes bfxVicDrawTitle {
+  0% { opacity: 0; transform: scale(.9); letter-spacing: 4px; }
+  30% { opacity: 1; transform: scale(1); letter-spacing: 12px; }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.02); }
+}
+@keyframes bfxVicSub {
+  0% { opacity: 0; transform: translateY(10px); }
+  35% { opacity: .95; }
+  80% { opacity: .95; }
+  100% { opacity: 0; }
+}
+
+/* 跳过按钮 */
+.victory-skip {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  z-index: 95;
+  padding: 9px 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, .6);
+  background: rgba(15, 23, 42, .82);
+  color: #e2e8f0;
+  font-size: 13px;
+  letter-spacing: 2px;
+  cursor: pointer;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, .55);
+  backdrop-filter: blur(4px);
+}
+.victory-skip:hover { border-color: #fbbf24; color: #fde68a; }
+
+/* 结算面板统计 */
+.overlay-stats {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, .22);
+  background: rgba(2, 6, 23, .42);
+  font-size: 12.5px;
+  color: #cbd5e1;
+  text-align: left;
+}
+.overlay-stats:empty { display: none; }
+.overlay-stats .os-row { display: flex; justify-content: space-between; gap: 18px; }
+.overlay-stats .os-row b { color: #fde68a; font-weight: 700; }
+.overlay-stats .os-head { color: #94a3b8; font-size: 11px; letter-spacing: 1px; border-bottom: 1px solid rgba(148,163,184,.18); padding-bottom: 4px; margin-bottom: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bfx-victory.show, .bfx-victory.show .bfx-victory-scrim,
+  .bfx-victory.show .bfx-victory-rays,
+  .bfx-victory.show .bfx-victory-main, .bfx-victory.show .bfx-victory-sub { animation-duration: .01ms; }
+}

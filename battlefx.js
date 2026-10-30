@@ -1432,6 +1432,190 @@
     }
   }
 
+  /* ---------------- 胜负结算演出 ---------------- */
+  let victoryEl = null, victoryMain = null, victorySub = null, victoryTimer = 0;
+
+  function ensureVictoryEl() {
+    if (victoryEl) return;
+    victoryEl = document.createElement("div");
+    victoryEl.className = "bfx-victory";
+    victoryEl.innerHTML =
+      '<div class="bfx-victory-scrim"></div>' +
+      '<div class="bfx-victory-rays"></div>' +
+      '<div class="bfx-victory-main"></div>' +
+      '<div class="bfx-victory-sub"></div>';
+    (wrap || document.body).appendChild(victoryEl);
+    victoryMain = victoryEl.querySelector(".bfx-victory-main");
+    victorySub = victoryEl.querySelector(".bfx-victory-sub");
+  }
+
+  /* 第二阶段：胜负氛围爆发（胜利方半场金爆 / 失败方压暗） */
+  function victoryBurst(o) {
+    o = o || {};
+    const kind = o.kind || "win";
+    const win = kind === "win";
+    const draw = kind === "draw";
+    const c = draw ? "#94a3b8" : (win ? "#fbbf24" : "#9f1239");
+    if (!opts.enabled) return;
+    // 整体压暗（短暂、克制）
+    push({ kind: "flash", x: 0, y: 0, color: draw ? "#0f172a" : (win ? "#1a1205" : "#0b1020"), alpha: win ? 0.34 : 0.42, dur: dur(760) });
+    // 从胜利方半场向外扩散
+    const side = o.side === 2 ? 2 : 1;
+    const cx = win ? (side === 1 ? W * 0.28 : W * 0.72) : (side === 1 ? W * 0.72 : W * 0.28);
+    const cy = H * 0.5;
+    for (let i = 0; i < 3; i++) {
+      push({ kind: "ring", x: cx, y: cy, r0: 12, r1: geo.cell * (2.4 + i * 1.15), color: c, width: 4 - i, dur: dur(900), delay: dur(i * 120), alpha: win ? 0.85 : 0.55 });
+    }
+    spawn(cx, cy, win ? 42 : 18, { color: c, speed: win ? 3.4 : 1.6, life: 900, size: win ? 2.3 : 1.8 });
+    if (win) {
+      // 斜向流光
+      for (let i = 0; i < 5; i++) {
+        push({ kind: "slash", x: W * (0.12 + Math.random() * 0.76), y: H * (0.18 + Math.random() * 0.64), angle: Math.random() * Math.PI, len: geo.cell * 2.6, width: 2, color: "#fde68a", dur: dur(520), delay: dur(i * 85), alpha: 0.45 });
+      }
+      push({ kind: "text", x: cx, y: cy - geo.cell * 1.2, text: "VICTORY", color: "#fde68a", size: 20, dur: dur(1100), rise: 18 });
+    }
+    // 主角专属姿态
+    if (o.heroId && o.cell) victoryHeroPose(o.heroId, o.cell, kind);
+  }
+
+  /* 每名英雄的胜利/失败姿态（纯程序化，复用既有粒子与光效原语） */
+  function victoryHeroPose(heroId, cell, kind) {
+    if (!opts.enabled) return;
+    const x = px(cell.c), y = py(cell.r);
+    const s = geo.cell;
+    const win = kind !== "lose";
+    if (!win) {
+      // 失败方：压暗 + 下沉的灰烬，不伪造角色动作
+      push({ kind: "ghost", x, y, r: s * 0.34, color: "#64748b", dur: dur(900) });
+      push({ kind: "ring", x, y, r0: s * 0.5, r1: s * 0.12, color: "#64748b", width: 2, dur: dur(800) });
+      spawn(x, y - s * 0.2, 14, { color: "#94a3b8", speed: 0.8, life: 900, size: 1.6, angle: Math.PI / 2, spread: 0.9, grav: 0.02 });
+      return;
+    }
+    switch (heroId) {
+      case "cang":
+        for (let i = 0; i < 3; i++) push({ kind: "ring", x, y, r0: s * 0.2, r1: s * (0.8 + i * 0.35), color: "#38bdf8", width: 2, dur: dur(800), delay: dur(i * 90), alpha: 0.7 });
+        push({ kind: "ribbon", x: x - s, y: y + s * 0.2, x2: x + s, y2: y - s * 0.2, color: "#7dd3fc", width: 4, bend: 16, dur: dur(900) });
+        push({ kind: "ribbon", x: x - s, y: y - s * 0.2, x2: x + s, y2: y + s * 0.2, color: "#38bdf8", width: 3, bend: -14, dur: dur(950), delay: dur(80) });
+        spawn(x, y + s * 0.3, 22, { color: "#7dd3fc", speed: 1.4, life: 900, size: 2, grav: 0.02 });
+        break;
+      case "asura":
+        push({ kind: "swords", x, y, count: 3, r: s * 0.55, color: "#e2e8f0", dur: dur(900) });
+        push({ kind: "slash", x, y, angle: -0.7, len: s * 1.5, width: 4, color: "#f8fafc", dur: dur(420) });
+        push({ kind: "slash", x, y, angle: 0.8, len: s * 1.4, width: 3, color: "#cbd5e1", dur: dur(460), delay: dur(70) });
+        spawn(x, y, 24, { type: "line", color: "#fff7ed", speed: 3.8, life: 500, size: 1.6, angle: -0.7, spread: 1.1 });
+        break;
+      case "longren":
+        push({ kind: "rune", x, y, r: s * 0.55, color: "#fbbf24", sides: 6, dur: dur(900) });
+        for (let i = 0; i < 2; i++) push({ kind: "ring", x, y, r0: s * 0.3, r1: s * (1.0 + i * 0.4), color: "#f59e0b", width: 3, dur: dur(850), delay: dur(i * 120), alpha: 0.7 });
+        spawn(x, y, 26, { color: "#fbbf24", speed: 1.8, life: 900, size: 2.1, angle: -Math.PI / 2, spread: 1.8, grav: -0.01 });
+        break;
+      case "thunder":
+        push({ kind: "bolt", x, y: y - s * 1.4, x2: x, y2: y, color: "#facc15", width: 5, dur: dur(360) });
+        push({ kind: "bolt", x: x - s * 0.8, y: y - s, x2: x, y2: y, color: "#a78bfa", width: 3, dur: dur(420), delay: dur(90) });
+        push({ kind: "crack", x, y, r: s * 0.6, color: "#a78bfa", dur: dur(700), n: 7 });
+        push({ kind: "ring", x, y, r0: s * 0.4, r1: s * 1.3, color: "#facc15", width: 3, dur: dur(650), delay: dur(120) });
+        spawn(x, y, 24, { color: "#fde047", speed: 3, life: 650, size: 2 });
+        break;
+      case "lone":
+        push({ kind: "ring", x, y, r0: s * 0.3, r1: s * 1.6, color: "#facc15", width: 5, dur: dur(780), alpha: 0.8 });
+        push({ kind: "wave", x, y, r1: s * 1.5, color: "#eab308", dur: dur(780) });
+        push({ kind: "rune", x, y, r: s * 0.5, color: "#fde68a", sides: 4, dur: dur(800) });
+        spawn(x, y, 24, { color: "#facc15", speed: 2.4, life: 750, size: 2 });
+        break;
+      case "guardian":
+        push({ kind: "rune", x, y, r: s * 0.62, color: "#fbbf24", sides: 6, dur: dur(900) });
+        push({ kind: "ring", x, y, r0: s * 0.2, r1: s * 1.1, color: "#fde68a", width: 3, dur: dur(820), double: true });
+        spawn(x, y, 20, { color: "#fde68a", speed: 1.6, life: 800, size: 1.9 });
+        break;
+      case "knight":
+        push({ kind: "rune", x, y, r: s * 0.5, color: "#fde68a", sides: 6, dur: dur(800) });
+        push({ kind: "ring", x, y, r0: s * 0.5, r1: s * 0.16, color: "#fde68a", width: 3, dur: dur(700) });
+        for (let i = 0; i < 8; i++) {
+          const ang = (i / 8) * Math.PI * 2;
+          spawn(x + Math.cos(ang) * s * 0.4, y + Math.sin(ang) * s * 0.4, 1, { type: "line", color: "#fff7ed", speed: 2.4, life: 480, size: 1.4, angle: ang, spread: 0.2 });
+        }
+        break;
+      case "cleric":
+        push({ kind: "ring", x, y, r0: s * 0.55, r1: s * 0.16, color: "#86efac", width: 2.5, dur: dur(900) });
+        push({ kind: "rune", x, y, r: s * 0.45, color: "#fde68a", sides: 4, dur: dur(900) });
+        spawn(x, y + s * 0.25, 26, { color: "#bbf7d0", speed: 1.1, life: 950, size: 2, angle: -Math.PI / 2, spread: 0.8, grav: -0.02 });
+        break;
+      case "assassin":
+        push({ kind: "portal", x, y, r: s * 0.3, color: "#22d3ee", dur: dur(500) });
+        push({ kind: "slash", x, y, angle: 0.4, len: s * 1.3, width: 3, color: "#67e8f9", dur: dur(360), delay: dur(220) });
+        push({ kind: "ghost", x: x - s * 0.4, y, r: s * 0.26, color: "#22d3ee", dur: dur(500), delay: dur(180) });
+        spawn(x, y, 18, { color: "#67e8f9", speed: 2.6, life: 600, size: 1.8 });
+        break;
+      case "vampire":
+        push({ kind: "wave", x, y, r1: s * 1.5, color: "#e11d48", dur: dur(800) });
+        push({ kind: "ring", x, y, r0: s * 0.2, r1: s * 1.2, color: "#be123c", width: 3, dur: dur(800), double: true });
+        spawn(x, y, 26, { color: "#e11d48", speed: 2.2, life: 850, size: 2.1, grav: 0.03 });
+        break;
+      case "jade":
+        for (let i = 0; i < 3; i++) push({ kind: "ring", x, y, r0: s * 0.2, r1: s * (0.8 + i * 0.3), color: i % 2 ? "#a78bfa" : "#fbbf24", width: 2.5, dur: dur(850), delay: dur(i * 100), alpha: 0.8 });
+        push({ kind: "rune", x, y, r: s * 0.55, color: "#e9d5ff", sides: 8, dur: dur(900) });
+        spawn(x, y, 22, { color: "#fde68a", speed: 1.8, life: 850, size: 2 });
+        break;
+      case "xiangyu":
+        push({ kind: "ring", x, y, r0: s * 0.3, r1: s * 1.8, color: "#f87171", width: 6, dur: dur(800), alpha: 0.85 });
+        push({ kind: "wave", x, y, r1: s * 1.7, color: "#dc2626", dur: dur(800) });
+        push({ kind: "text", x, y: y - s * 0.8, text: "力拔山兮", color: "#fde68a", size: 14, dur: dur(1000), rise: 20 });
+        spawn(x, y, 28, { color: "#fbbf24", speed: 2.8, life: 800, size: 2.3, grav: 0.02 });
+        break;
+      case "tiandao":
+        for (let i = 0; i < 3; i++) push({ kind: "ring", x, y, r0: s * (0.4 + i * 0.3), r1: s * (1.4 + i * 0.4), color: "#c084fc", width: 2.5, dur: dur(900), delay: dur(i * 90), alpha: 0.7 });
+        push({ kind: "crack", x, y, r: s * 0.7, color: "#c084fc", dur: dur(700), n: 8 });
+        spawn(x, y, 24, { color: "#e9d5ff", speed: 2.2, life: 800, size: 2 });
+        break;
+      case "huamulan":
+        push({ kind: "slash", x, y, angle: -0.55, len: s * 1.6, width: 6, color: "#fde68a", dur: dur(420) });
+        push({ kind: "slash", x, y, angle: 0.65, len: s * 1.4, width: 4, color: "#f43f5e", dur: dur(460), delay: dur(60) });
+        push({ kind: "ring", x, y, r0: s * 0.3, r1: s * 1.5, color: "#fbbf24", width: 5, dur: dur(760), delay: dur(80) });
+        push({ kind: "wave", x, y, r1: s * 1.5, color: "#f43f5e", dur: dur(760), delay: dur(80) });
+        spawn(x, y, 26, { color: "#fbbf24", speed: 3, life: 750, size: 2.2 });
+        break;
+      case "berserker":
+        push({ kind: "wave", x, y, r1: s * 1.5, color: "#f97316", dur: dur(760) });
+        push({ kind: "ring", x, y, r0: s * 0.3, r1: s * 1.4, color: "#fb923c", width: 4, dur: dur(760) });
+        spawn(x, y, 26, { color: "#fdba74", speed: 2.8, life: 750, size: 2.2 });
+        break;
+      case "mage":
+      case "warlock":
+        push({ kind: "rune", x, y, r: s * 0.5, color: "#a5f3fc", sides: 6, dur: dur(900) });
+        push({ kind: "ring", x, y, r0: s * 0.2, r1: s * 1.2, color: "#67e8f9", width: 2.5, dur: dur(820), double: true });
+        spawn(x, y, 22, { color: "#a5f3fc", speed: 1.6, life: 850, size: 1.9 });
+        break;
+      case "ranger":
+        push({ kind: "line", x: x - s, y: y - s, x2: x + s, y2: y + s, color: "#34d399", width: 3, dur: dur(520) });
+        push({ kind: "ring", x, y, r0: s * 0.2, r1: s * 0.9, color: "#6ee7b7", width: 2.5, dur: dur(760) });
+        spawn(x, y, 18, { color: "#6ee7b7", speed: 2.2, life: 700, size: 1.8 });
+        break;
+      default:
+        push({ kind: "ring", x, y, r0: s * 0.3, r1: s * 1.3, color: "#fbbf24", width: 3, dur: dur(800) });
+        push({ kind: "rune", x, y, r: s * 0.45, color: "#fde68a", sides: 6, dur: dur(850) });
+        spawn(x, y, 20, { color: "#fde68a", speed: 2, life: 800, size: 2 });
+        break;
+    }
+  }
+
+  /* 第三阶段：胜负标题 */
+  function victoryTitle(o) {
+    o = o || {};
+    const kind = o.kind || "win";
+    ensureVictoryEl();
+    victoryEl.className = "bfx-victory " + kind;
+    victoryMain.textContent = o.title || (kind === "win" ? "胜利！" : kind === "draw" ? "平局" : "失败");
+    victorySub.textContent = o.sub || "";
+    void victoryEl.offsetWidth;
+    victoryEl.classList.add("show");
+    clearTimeout(victoryTimer);
+    victoryTimer = setTimeout(() => victoryEl.classList.remove("show"), kind === "win" ? 2000 : 1600);
+  }
+  function victoryHide() {
+    clearTimeout(victoryTimer);
+    if (victoryEl) victoryEl.classList.remove("show");
+  }
+
   /* ---------------- 初始化 ---------------- */
   function init(o) {
     wrap = (o && o.wrap) || document.querySelector(".board-wrap");
@@ -1474,6 +1658,7 @@
     if (turnEl) turnEl.classList.remove("show");
     clearTimeout(cardTimer);
     if (cardEl) cardEl.className = "bfx-tcard";
+    victoryHide();
   }
 
   window.BFX = {
@@ -1481,6 +1666,7 @@
     dodge, immune, death, move, knockback, grab, heal, shield: shieldFx, revive,
     swordSpawn, cast, drain, mark: addMark, shake, flash, hitstop, heroColor,
     turnTransition, talismanCast, talismanEffect,
+    victoryBurst, victoryTitle, victoryHeroPose, victoryHide,
     setOccupancy(fn) { occupancyFn = fn || null; },
     setTargeting(v) { targeting = !!v; },
     get options() { return Object.assign({}, opts); },

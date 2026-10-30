@@ -33,6 +33,7 @@ const p2CountEl = document.getElementById("p2-count");
 const overlayEl = document.getElementById("overlay");
 const overlayTitleEl = document.getElementById("overlay-title");
 const overlaySubEl = document.getElementById("overlay-sub");
+const overlayStatsEl = document.getElementById("overlay-stats");
 const overlayBtn = document.getElementById("overlay-btn");
 const restartBtn = document.getElementById("restart");
 const heroRosterEl = document.getElementById("hero-roster");
@@ -105,6 +106,10 @@ let fx = [];                       // 一次性飘字特效（渲染后清空）
 let inputLockUntil = 0;            // 表现层输入锁（防止动画期间连点重复行动）
 let turnFxExtra = false;           // 本次 beginTurn 是否是“行军令额外回合”
 let turnFxSuppress = false;        // 自动跳过回合时抑制完整转场（避免动画连播）
+/* 对局统计（真实数据，用于结算面板） */
+let matchStats = { damage: { 1: 0, 2: 0 }, kills: { 1: 0, 2: 0 }, startedAt: 0, endedAt: 0, lastKiller: null };
+/* 结算演出状态 */
+let victorySeq = { active: false, played: false, resultShown: false, timers: [] };
 let dashOptions = [];              // 阿修罗·剑圣：本次可选的突进方向
 
 /* 游戏模式 / AI */
@@ -942,6 +947,14 @@ function init() {
   extraMoves = 0;
   graveyard = [];
   reviveOptions = [];
+  // 对局统计 & 结算演出：重置
+  matchStats = { damage: { 1: 0, 2: 0 }, kills: { 1: 0, 2: 0 }, startedAt: Date.now(), endedAt: 0, lastKiller: null };
+  clearVictoryTimers();
+  victorySeq = { active: false, played: false, resultShown: false, timers: [] };
+  if (window.BFX) window.BFX.victoryHide();
+  const _skip0 = document.getElementById("victory-skip");
+  if (_skip0) _skip0.classList.add("hidden");
+  if (overlayStatsEl) overlayStatsEl.innerHTML = "";
   overlayEl.classList.add("hidden");
   addLog("对局开始：双方各自选择并放置 3 名英雄。");
   addLog("🎴 双方各抽取了一张锦囊（见右侧「我的锦囊」）。");
@@ -1171,23 +1184,108 @@ function checkVictory() {
   if (p1 === 0 || p2 === 0) {
     phase = "over";
     winner = p1 === 0 ? 2 : 1;
+    if (!matchStats.endedAt) matchStats.endedAt = Date.now();
+    if (!matchStats.startedAt) matchStats.startedAt = matchStats.endedAt;
     addLog("玩家" + winner + " 获胜！");
     clearSelection();
     render();
-    if (window.BFX) {
-      window.BFX.banner("对局结束", "玩家" + winner + " 获胜");
-      window.BFX.flash(winner === 1 ? "#60a5fa" : "#f87171", 0.22);
-    }
-    if (window.SFX) {
-      let iWin = true;
-      if (gameMode === "ai") iWin = winner !== aiPlayer;
-      else if (gameMode === "online" && window.NET && window.NET.myPlayer) iWin = winner === window.NET.myPlayer;
-      window.SFX.stopAll();
-      window.SFX.play(iWin ? "win" : "lose", { hero: "jade" });
-    }
+    startVictorySequence();
     return true;
   }
   return false;
+}
+
+/* ============================ 胜负结算演出 ============================ */
+/* 本地视角的结果类型：胜利 / 失败 / 平局（本地双人视为“胜利方展示”） */
+function resultKind() {
+  if (winner === 0) return "draw";
+  if (gameMode === "ai") return winner === aiPlayer ? "lose" : "win";
+  if (gameMode === "online" && window.NET && window.NET.myPlayer) return winner === window.NET.myPlayer ? "win" : "lose";
+  return "win";
+}
+function clearVictoryTimers() {
+  for (const t of victorySeq.timers) clearTimeout(t);
+  victorySeq.timers = [];
+}
+/* 结算主角：优先“最后击杀者”，否则胜利方存活英雄 */
+function victoryHeroPick() {
+  const side = winner === 1 ? 1 : 2;
+  let heroId = "";
+  if (matchStats.lastKiller && matchStats.lastKiller.player === side) heroId = matchStats.lastKiller.heroId;
+  let cell = null;
+  if (heroId) {
+    for (const u of unitsOf(side)) {
+      if (u.heroId === heroId) { cell = findPos(u); break; }
+    }
+  }
+  if (!cell) {
+    const alive = unitsOf(side);
+    if (alive.length) { heroId = alive[0].heroId; cell = findPos(alive[0]); }
+  }
+  return { heroId, cell };
+}
+/* 结算演出：最后一击余韵 → 胜负氛围 → 标题 → 结算面板；可跳过 */
+function startVictorySequence(opts) {
+  opts = opts || {};
+  if (victorySeq.played) { showResultPanel(); return; }
+  victorySeq.played = true;
+  victorySeq.active = true;
+  victorySeq.resultShown = false;
+  clearVictoryTimers();
+
+  const kind = resultKind();
+  const fast = !!(window.BFX && window.BFX.options.reduce);
+  const tBurst = fast ? 60 : 620;
+  const tTitle = fast ? 220 : 1250;
+  const tPanel = fast ? 560 : 2350;
+  const pick = victoryHeroPick();
+  const side = winner === 2 ? 2 : 1;
+
+  const skip = document.getElementById("victory-skip");
+  if (skip) skip.classList.toggle("hidden", !!opts.noSkip);
+
+  // 第一阶段：最后一击的余韵（只有真实击杀才停顿/轻闪）
+  if (matchStats.lastKiller && window.BFX && !fast) {
+    window.BFX.hitstop(140);
+    window.BFX.shake(3);
+    window.BFX.flash(kind === "lose" ? "#7f1d1d" : "#fde68a", 0.1);
+  }
+
+  // 第二阶段：胜负氛围 + 主角专属姿态
+  victorySeq.timers.push(setTimeout(() => {
+    if (window.BFX) window.BFX.victoryBurst({ kind, side, heroId: pick.heroId, cell: pick.cell });
+    if (window.SFX) {
+      window.SFX.stopAll();
+      window.SFX.play(kind === "win" ? "win" : kind === "lose" ? "lose" : "draw", { hero: pick.heroId });
+    }
+  }, tBurst));
+
+  // 第三阶段：标题
+  victorySeq.timers.push(setTimeout(() => {
+    const title = kind === "win" ? "胜利！" : kind === "lose" ? "失败" : "平局";
+    const sub = kind === "win"
+      ? (gameMode === "local" ? "玩家 " + winner + " 获胜 · 剩余英雄 " + aliveCount(winner) + " 名" : "本场对决，你赢了！")
+      : kind === "lose" ? "再接再厉，下一局赢回来" : "势均力敌";
+    if (window.BFX) window.BFX.victoryTitle({ kind, title, sub });
+  }, tTitle));
+
+  // 第四阶段：结算面板
+  victorySeq.timers.push(setTimeout(showResultPanel, tPanel));
+}
+/* 跳过 / 演出结束：直接展示结算面板（不影响服务端已判定的结果） */
+function showResultPanel() {
+  clearVictoryTimers();
+  victorySeq.active = false;
+  victorySeq.resultShown = true;
+  const skip = document.getElementById("victory-skip");
+  if (skip) skip.classList.add("hidden");
+  if (window.BFX) window.BFX.victoryHide();
+  updatePanel();
+}
+/* 重连 / 已结束对局：直接显示面板，不重播整段动画 */
+function showResultPanelImmediate() {
+  victorySeq.played = true;
+  showResultPanel();
 }
 
 function computeTargets() {
@@ -1702,6 +1800,15 @@ function applyDamage(target, amount, kind, source) {
     if (source && !source.sword && source.player !== target.player && findPos(source)) {
       refreshSkillOnKill(source);
     }
+    // 真实战绩：击杀数 + 最后击杀者（用于结算演出主角与面板）
+    if (source && !source.sword && source.player !== target.player) {
+      matchStats.kills[source.player] = (matchStats.kills[source.player] || 0) + 1;
+      matchStats.lastKiller = { player: source.player, heroId: source.heroId };
+    }
+  }
+  // 真实战绩：实际造成的生命伤害（护盾/闪避/减伤后的净值）
+  if (dmg > 0 && source && !source.sword && source.player !== target.player) {
+    matchStats.damage[source.player] = (matchStats.damage[source.player] || 0) + dmg;
   }
   return dmg;
 }
@@ -3726,10 +3833,38 @@ function updatePanel() {
   logEl.scrollTop = logEl.scrollHeight;
 
   if (phase === "over") {
-    overlayTitleEl.textContent = "玩家 " + winner + " 获胜！";
-    overlayTitleEl.style.color = winner === 1 ? "var(--p1)" : "var(--p2)";
-    overlaySubEl.textContent = "剩余英雄 " + aliveCount(winner) + " 名";
-    overlayEl.classList.remove("hidden");
+    // 结算面板只在演出结束（或被跳过）后出现；演出期间保持隐藏
+    if (!victorySeq.resultShown) {
+      overlayEl.classList.add("hidden");
+    } else {
+      const kind = resultKind();
+      let title = "玩家 " + winner + " 获胜！";
+      let color = winner === 1 ? "var(--p1)" : "var(--p2)";
+      let sub = "剩余英雄 " + aliveCount(winner) + " 名";
+      if (kind === "win" && gameMode !== "local") { title = "胜利！"; color = "#fbbf24"; sub = "本场对决，你赢了！"; }
+      else if (kind === "lose") { title = "失败"; color = "#94a3b8"; sub = "再接再厉，下一局赢回来"; }
+      else if (kind === "draw") { title = "平局"; color = "#cbd5e1"; sub = "势均力敌"; }
+      overlayTitleEl.textContent = title;
+      overlayTitleEl.style.color = color;
+      overlaySubEl.textContent = sub;
+      if (overlayStatsEl) {
+        const rows = [];
+        const dur = matchStats.startedAt && matchStats.endedAt
+          ? Math.max(0, Math.round((matchStats.endedAt - matchStats.startedAt) / 1000)) : 0;
+        if (dur > 0) {
+          rows.push('<div class="os-row"><span>对局时长</span><b>' + Math.floor(dur / 60) + ":" + String(dur % 60).padStart(2, "0") + "</b></div>");
+        }
+        const d1 = matchStats.damage[1] || 0, d2 = matchStats.damage[2] || 0;
+        if (d1 + d2 > 0) rows.push('<div class="os-row"><span>总伤害 玩家1 / 玩家2</span><b>' + d1 + " / " + d2 + "</b></div>");
+        const k1 = matchStats.kills[1] || 0, k2 = matchStats.kills[2] || 0;
+        if (k1 + k2 > 0) rows.push('<div class="os-row"><span>击败英雄 玩家1 / 玩家2</span><b>' + k1 + " / " + k2 + "</b></div>");
+        overlayStatsEl.innerHTML = rows.length ? '<div class="os-head">本局战绩</div>' + rows.join("") : "";
+      }
+      if (overlayMenuBtn) overlayMenuBtn.textContent = gameMode === "online" ? "退出对局" : "返回主菜单";
+      overlayEl.classList.remove("hidden");
+    }
+  } else {
+    overlayEl.classList.add("hidden");
   }
 }
 
@@ -4638,6 +4773,18 @@ function applyRemoteState(state) {
   talismanTargets = [];
   if (phase === "placement") pendingHero = firstAvailableHero(mySide()); // 布阵时自动选下一个“本人候选池内”的可用英雄
   if (gameMode !== "online") { gameMode = "online"; updateModeBadge(); }
+  // 真实战绩（服务端权威）
+  if (state.stats) {
+    const st = state.stats;
+    const dmg = st.damage || {}, kills = st.kills || {};
+    matchStats = {
+      damage: { 1: dmg[1] || 0, 2: dmg[2] || 0 },
+      kills: { 1: kills[1] || 0, 2: kills[2] || 0 },
+      startedAt: st.startedAt || 0,
+      endedAt: st.endedAt || 0,
+      lastKiller: st.lastKiller || null,
+    };
+  }
   clearSelection();
   // 联机表现层：根据“服务端确认后的状态变化”播放动画（纯视觉，不重复结算）
   bfxPrevSnap = bfxSnapshot(state);
@@ -4646,6 +4793,20 @@ function applyRemoteState(state) {
     catch (e) { /* 表现层失败不影响权威状态渲染 */ }
   }
   render();
+  // 结算演出（联机）：服务端判定 over 后双方进入；重连直接显示面板，不重播
+  if (phase === "over") {
+    if (victorySeq.resultShown) {
+      /* 已显示 */
+    } else if (victorySeq.active) {
+      /* 演出进行中 */
+    } else if (!prevSnap) {
+      showResultPanelImmediate();
+    } else if (prevPhase === "battle") {
+      startVictorySequence();
+    } else {
+      showResultPanel();
+    }
+  }
 }
 window.onNetState = applyRemoteState;
 /* 新房间 / 断线重连：清空本地日志并重置去重游标；随后 onNetState 会按服务端权威 log 重建（不重复刷屏） */
@@ -4770,6 +4931,13 @@ overlayMenuBtn.addEventListener("click", () => {
   overlayEl.classList.add("hidden");
   showMenu();
 });
+/* 跳过结算演出：立即显示最终面板（服务端结果已判定，不影响对局状态） */
+const victorySkipBtn = document.getElementById("victory-skip");
+if (victorySkipBtn) {
+  victorySkipBtn.addEventListener("click", () => {
+    if (victorySeq.active) showResultPanel();
+  });
+}
 document.querySelector('.menu-btn[data-mode="local"]').addEventListener("click", startLocal);
 document.getElementById("menu-ai-open").addEventListener("click", () => showMenu("ai"));
 document.getElementById("menu-online-open").addEventListener("click", () => showMenu("online"));
@@ -5079,6 +5247,15 @@ window.GameAPI = {
     extraMoves = 0;
     graveyard = [];
     reviveOptions = [];
+    // 对局统计 & 结算演出：重置（测试/新局共用）
+    matchStats = { damage: { 1: 0, 2: 0 }, kills: { 1: 0, 2: 0 }, startedAt: Date.now(), endedAt: 0, lastKiller: null };
+    clearVictoryTimers();
+    victorySeq = { active: false, played: false, resultShown: false, timers: [] };
+    if (window.BFX) window.BFX.victoryHide();
+    const _skip1 = document.getElementById("victory-skip");
+    if (_skip1) _skip1.classList.add("hidden");
+    if (overlayStatsEl) overlayStatsEl.innerHTML = "";
+    overlayEl.classList.add("hidden");
     clearSelection();
     for (const spec of units) {
       const def = heroDef(spec.heroId);

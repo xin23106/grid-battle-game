@@ -503,9 +503,16 @@
   function recipeWin(h, o, L) {
     [0, 4, 7, 12].forEach((s, i) => T(L, { at: i * 0.12, dur: 0.5, wave: "triangle", f0: 523 * Math.pow(2, s / 12), peak: 0.12, attack: 0.01 }));
     N(L, { at: 0.1, dur: 0.6, bp: 3000, q: 1.0, sweepTo: 6000, peak: 0.05, attack: 0.1 });
+    // 按当前胜利英雄的音色叠一层专属收尾
+    if (h.metal > 0.3) M(L, { at: 0.1, base: h.base, dur: 0.7, peak: 0.055, partials: [1, 2.2, 3.9] });
+    else T(L, { at: 0.08, dur: 0.75, wave: "sine", f0: h.base, f1: h.base * 1.5, peak: 0.04, attack: 0.03 });
   }
   function recipeLose(h, o, L) {
     [0, -3, -7].forEach((s, i) => T(L, { at: i * 0.16, dur: 0.55, wave: "sawtooth", f0: 440 * Math.pow(2, s / 12), f1: 400 * Math.pow(2, s / 12), peak: 0.10 }));
+  }
+  function recipeDraw(h, o, L) {
+    [0, 5].forEach((s, i) => T(L, { at: i * 0.14, dur: 0.55, wave: "triangle", f0: 392 * Math.pow(2, s / 12), peak: 0.07, attack: 0.02 }));
+    N(L, { at: 0, dur: 0.5, lp: 1200, peak: 0.05, attack: 0.08 });
   }
 
   /* ---------------- 配方：技能专属（按真实技能类型） ---------------- */
@@ -739,6 +746,7 @@
       case "extraTurn": recipeExtraTurn(h, o, L); break;
       case "win": recipeWin(h, o, L); break;
       case "lose": recipeLose(h, o, L); break;
+      case "draw": recipeDraw(h, o, L); break;
       case "dash": // 兼容旧调用
         N(L, { at: 0, dur: 0.28, bp: h.air, q: 1.0, sweepTo: h.air * 0.35, peak: 0.14 });
         T(L, { at: 0, dur: 0.22, wave: h.wave, f0: h.base * 0.8, f1: h.base * 1.6, peak: 0.05 });
@@ -764,7 +772,7 @@
     attack: 55, hit: 40, hurt: 60, shieldHit: 55, shieldBreak: 90, shieldUp: 80,
     dodge: 80, flank: 70, death: 120, revive: 200, heal: 90, buffUp: 120, buffDown: 120,
     grab: 90, knockback: 60, mark: 60, swordSpawn: 80, swordPickup: 60, stun: 140,
-    talisman: 120, dash: 90, dashHit: 60, skill: 60, skillHit: 45, win: 500, lose: 500,
+    talisman: 120, dash: 90, dashHit: 60, skill: 60, skillHit: 45, win: 500, lose: 500, draw: 500,
     turnEnd: 220, turnSweep: 200, turnStart: 260, extraTurn: 400,
   };
 

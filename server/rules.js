@@ -190,6 +190,7 @@ function createState() {
            turnActionsMax: 1, turnActionsLeft: 1, turnActorUid: 0, empowerTurnActive: false,
            talisman: { 1: drawTalismanId(), 2: drawTalismanId() }, talismanUsed: { 1: false, 2: false },
            assaultPlayer: 0, guardPlayer: 0, extraMoves: 0, extraTurnPending: false, graveyard: [],
+           stats: { damage: { 1: 0, 2: 0 }, kills: { 1: 0, 2: 0 }, startedAt: 0, endedAt: 0, lastKiller: null },
            log: [], logSeq: 0 };
 }
 const clone = (s) => JSON.parse(JSON.stringify(s));
@@ -426,6 +427,17 @@ function applyDamage(s, target, amount, source) {
     if (source && !source.sword && source.player !== target.player && findPos(s, source)) {
       refreshSkillOnKill(s, source);
     }
+    // 真实战绩：击杀数 + 最后击杀者
+    if (source && !source.sword && source.player !== target.player) {
+      if (s.stats) {
+        s.stats.kills[source.player] = (s.stats.kills[source.player] || 0) + 1;
+        s.stats.lastKiller = { player: source.player, heroId: source.heroId };
+      }
+    }
+  }
+  // 真实战绩：实际造成的生命伤害
+  if (dmg > 0 && source && !source.sword && source.player !== target.player && s.stats) {
+    s.stats.damage[source.player] = (s.stats.damage[source.player] || 0) + dmg;
   }
   return dmg;
 }
@@ -673,6 +685,7 @@ function checkVictory(s) {
   const p1 = unitsOf(s, 1).length, p2 = unitsOf(s, 2).length;
   if (p1 === 0 || p2 === 0) {
     s.phase = "over"; s.winner = p1 === 0 ? 2 : 1;
+    if (s.stats && !s.stats.endedAt) s.stats.endedAt = Date.now();
     slog(s, "🏆 玩家" + s.winner + " 获胜，对局结束！");
     return true;
   }
@@ -746,6 +759,7 @@ function applyAction(state, player, action) {
     if (s.placed[1].length >= PER_PLAYER && s.placed[2].length >= PER_PLAYER) {
       s.phase = "battle";
       s.currentPlayer = 1;
+      if (s.stats) s.stats.startedAt = Date.now();
       beginTurn(s);
     }
     return { ok: true, state: s };
