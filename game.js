@@ -103,6 +103,8 @@ let logs = [];
 let unitSeq = 1;
 let fx = [];                       // 一次性飘字特效（渲染后清空）
 let inputLockUntil = 0;            // 表现层输入锁（防止动画期间连点重复行动）
+let turnFxExtra = false;           // 本次 beginTurn 是否是“行军令额外回合”
+let turnFxSuppress = false;        // 自动跳过回合时抑制完整转场（避免动画连播）
 let dashOptions = [];              // 阿修罗·剑圣：本次可选的突进方向
 
 /* 游戏模式 / AI */
@@ -1027,7 +1029,35 @@ function beginTurn() {
   if (talismanBuff.guardPlayer === currentPlayer) talismanBuff.guardPlayer = 0; // 坚守令持续到本方下个回合开始
   clearSelection();
   if (window.SFX) window.SFX.unlock();
-  if (window.BFX && phase === "battle") window.BFX.banner("玩家 " + currentPlayer + " 的回合", "");
+  if (phase === "battle") {
+    if (!turnFxSuppress && window.BFX) {
+      let title;
+      if (gameMode === "online" && window.NET && window.NET.myPlayer) {
+        title = currentPlayer === window.NET.myPlayer ? "你的回合" : "对手回合";
+      } else if (gameMode === "ai") {
+        title = currentPlayer === aiPlayer ? "对手回合" : "你的回合";
+      } else {
+        title = "玩家 " + currentPlayer + " 的回合";
+      }
+      const extra = turnFxExtra;
+      try {
+        window.BFX.turnTransition({
+          player: currentPlayer,
+          extra,
+          title: extra ? "额外回合" : title,
+          sub: extra
+            ? "玩家 " + currentPlayer + " 继续行动 · 技能次数不刷新"
+            : "玩家 " + currentPlayer + (gameMode === "ai" && currentPlayer === aiPlayer ? " · AI" : ""),
+        });
+      } catch (e) { /* 表现层失败不影响回合 */ }
+      // 转场期间短暂锁输入（0.45s，远短于演出本身，不会卡住操作）
+      inputLockUntil = Math.max(inputLockUntil, Date.now() + 450);
+    } else if (window.BFX && turnFxSuppress) {
+      // 自动跳过：只更新回合提示，不播完整转场
+      window.BFX.banner("玩家 " + currentPlayer + " 的回合", "");
+    }
+  }
+  turnFxExtra = false;
 }
 
 /* 结束当前玩家回合并交给对手（含行军令额外回合）。不含“自动跳过无行动玩家”。 */
@@ -1046,6 +1076,10 @@ function endTurnOnce() {
             window.SFX.play("buffDown", { hero: "thunder" });
             window.SFX.stopLoop("empower");
           }
+          if (window.BFX) {
+            const pp = findPos(u);
+            if (pp) window.BFX.cast({ type: "passive", heroId: "thunder", caster: { r: pp.r, c: pp.c } });
+          }
         }
       }
     }
@@ -1055,6 +1089,9 @@ function endTurnOnce() {
   const samePlayer = extraTurnPending;
   extraTurnPending = false;
   if (!samePlayer) currentPlayer = currentPlayer === 1 ? 2 : 1;
+  turnFxExtra = samePlayer;
+  // 阶段 A：当前回合收束（短促低频；与技能音效分离）
+  if (!turnFxSuppress && window.SFX) window.SFX.play("turnEnd", {});
   beginTurn();
   if (samePlayer) addLog("🐎 行军令：玩家" + currentPlayer + " 获得一个额外回合（行动已刷新）。");
   render();
@@ -1073,7 +1110,11 @@ function settleStuckTurns() {
   let guard = 0;
   while (guard++ < 4 && phase === "battle" && !hasAnyAction(currentPlayer)) {
     addLog("⏭ 玩家" + currentPlayer + " 没有可执行的行动（被冰封 / 抓取等），自动结束回合。");
+    // 自动跳过时抑制完整转场，避免双方连续无行动时动画连播
+    const prevSuppress = turnFxSuppress;
+    turnFxSuppress = true;
     endTurnOnce();
+    turnFxSuppress = prevSuppress;
   }
 }
 
@@ -2708,8 +2749,23 @@ function useTalismanEffect(id, tr, tc) {
       ok = false;
   }
   if (!ok) { render(); return false; }            // 非法：不消耗锦囊
-  if (window.SFX) window.SFX.play("talisman", { hero: "jade" });
   talismanUsed[player] = true;                     // 使用后消耗
+  // 锦囊演出：卡牌飞向目标 → 展开 → 专属效果（纯视觉，状态已在上面结算完成）
+  let tzPlayed = false;
+  try {
+    if (window.BFX && window.BFX.talismanCast) {
+      tzPlayed = window.BFX.talismanCast({
+        id: t.id,
+        name: t.name,
+        icon: t.icon,
+        target: (tr != null && tc != null) ? { r: tr, c: tc } : null,
+        caster: player,
+      });
+    }
+  } catch (e) { tzPlayed = false; }
+  if (!tzPlayed && window.SFX && window.SFX.playTalisman) window.SFX.playTalisman(t.id, {});
+  // 动画期间限制重复点击（0.62s，短于整套演出，不会卡住操作）
+  inputLockUntil = Math.max(inputLockUntil, Date.now() + 620);
   clearSelection();
   if (checkVictory()) return true;
   render();
@@ -3375,12 +3431,18 @@ function updateTalismanUI() {
   const id = talisman[cardSide];
   const t = id ? getTalismanById(id) : null;
   const isAI = gameMode === "ai" && currentPlayer === aiPlayer;
+  const CAT = { assault: "atk", revive: "life", march: "march", refresh: "arcane", guard: "guard", heal: "life" };
+  const CAT_NAME = { atk: "攻击强化", life: "生命", march: "额外回合", arcane: "技能", guard: "防御" };
+  const used = talismanUsed[cardSide];
+  const cat = t ? (CAT[t.effect] || "atk") : "";
+  // 卡面分类（颜色 + 图案 + 已使用印章）；整串重设，避免残留旧分类
+  talismanCardEl.className = "talisman-card" + (cat ? " cat-" + cat : "") +
+    (used ? " used" : "") + (talismanMode === id && !used ? " active" : "");
+  const catEl = document.getElementById("tz-cat");
+  if (catEl) catEl.textContent = t ? (CAT_NAME[cat] || "") : "";
   tzIconEl.textContent = t ? t.icon : "🎴";
   tzNameEl.textContent = t ? t.name : (gameMode === "online" && cardSide !== currentPlayer ? "（对手的锦囊：不可见）" : "（无）");
   tzDescEl.textContent = t ? t.desc : (gameMode === "online" && cardSide !== currentPlayer ? "对手的锦囊信息在开局前与对方回合中均不可见。" : "本局没有锦囊。");
-  const used = talismanUsed[cardSide];
-  talismanCardEl.classList.toggle("used", used);
-  talismanCardEl.classList.toggle("active", talismanMode === id && !used);
   if (!t) {
     talismanBtn.disabled = true;
     talismanBtn.textContent = "无锦囊";
@@ -4215,6 +4277,7 @@ function bfxSnapshot(st) {
         heroId: u.heroId, player: u.player,
         grab: !!(u.statuses && u.statuses.grab && u.statuses.grab.turns > 0),
         empower: (u.empowerTurns || 0) > 0,
+        uses: (u.usesLeft == null ? "" : u.usesLeft) + "|" + (u.usesArr ? u.usesArr.join(",") : ""),
       });
     }
   }
@@ -4229,13 +4292,37 @@ function skillTypeByName(name) {
   }
   return "";
 }
-function bfxOnlineDerive(prev, next, st) {
+function bfxOnlineDerive(prev, next, st, ctx) {
   if (!st || st.phase !== "battle") return;
+  // 先粗扫一遍差异，供锦囊动画定位目标（复活 / 治疗 / 刷新）
+  let newCell = null, healCell = null, refreshCell = null;
+  for (const [uid, n] of next) {
+    const p = prev.get(uid);
+    if (!p) { newCell = newCell || { r: n.r, c: n.c }; continue; }
+    if (n.hp > p.hp) healCell = { r: n.r, c: n.c };
+    if (n.uses !== p.uses) refreshCell = { r: n.r, c: n.c };
+  }
   if (st.log) {
     for (const e of st.log) {
       if (typeof e.id !== "number" || e.id <= bfxOnlineLogSeq) continue;
       bfxOnlineLogSeq = e.id;
-      const m = /^(.+?) 释放【(.+?)】/.exec(e.text || "");
+      const text = e.text || "";
+      // 锦囊成功使用：双方都播放卡牌演出（服务端确认后才会有该日志）
+      const mt = /使用了【(.+?)】/.exec(text);
+      if (mt) {
+        const tz = TALISMANS.find((x) => x.name === mt[1]);
+        if (tz && window.BFX && window.BFX.talismanCast) {
+          const target = tz.effect === "revive" ? newCell
+            : tz.effect === "heal" ? healCell
+              : tz.effect === "refresh" ? refreshCell : null;
+          window.BFX.talismanCast({ id: tz.id, name: tz.name, icon: tz.icon, target });
+          inputLockUntil = Math.max(inputLockUntil, Date.now() + 620);
+        } else if (tz && window.SFX && window.SFX.playTalisman) {
+          window.SFX.playTalisman(tz.id, {});
+        }
+        continue;
+      }
+      const m = /^(.+?) 释放【(.+?)】/.exec(text);
       if (m) {
         const heroName = m[1].replace(/^玩家\d+·/, "");
         const skName = m[2].split("·")[0];
@@ -4292,6 +4379,28 @@ function bfxOnlineDerive(prev, next, st) {
       if (window.SFX) window.SFX.play("death", { hero: p.heroId });
     }
   }
+
+  // 回合切换演出（联机）：以服务端 currentPlayer / extraTurnPending 为准
+  if (ctx && ctx.prevPhase === "battle" && window.BFX) {
+    const my = window.NET && window.NET.myPlayer;
+    if (st.currentPlayer !== ctx.prevTurn) {
+      window.BFX.turnTransition({
+        player: st.currentPlayer,
+        extra: false,
+        title: my ? (st.currentPlayer === my ? "你的回合" : "对手回合") : ("玩家 " + st.currentPlayer + " 的回合"),
+        sub: "玩家 " + st.currentPlayer,
+      });
+      inputLockUntil = Math.max(inputLockUntil, Date.now() + 450);
+    } else if (ctx.prevPending && !st.extraTurnPending) {
+      window.BFX.turnTransition({
+        player: st.currentPlayer,
+        extra: true,
+        title: my ? (st.currentPlayer === my ? "你的回合 · 额外" : "对手回合 · 额外") : ("玩家 " + st.currentPlayer + " 的额外回合"),
+        sub: "额外回合",
+      });
+      inputLockUntil = Math.max(inputLockUntil, Date.now() + 450);
+    }
+  }
 }
 
 /* 用服务器权威状态替换本地棋盘 */
@@ -4299,6 +4408,9 @@ function applyRemoteState(state) {
   if (!state) return;
   mergeServerLog(state);
   const prevSnap = bfxPrevSnap;      // 上一份快照（首个状态 / 重连后为 null → 不重播历史）
+  const prevTurn = currentPlayer;
+  const prevPending = extraTurnPending;
+  const prevPhase = phase;
   board = state.board.map((row) => row.map((cell) => (cell ? Object.assign({}, cell) : null)));
   phase = state.phase;
   currentPlayer = state.currentPlayer;
@@ -4329,7 +4441,10 @@ function applyRemoteState(state) {
   clearSelection();
   // 联机表现层：根据“服务端确认后的状态变化”播放动画（纯视觉，不重复结算）
   bfxPrevSnap = bfxSnapshot(state);
-  if (prevSnap) bfxOnlineDerive(prevSnap, bfxPrevSnap, state);
+  if (prevSnap) {
+    try { bfxOnlineDerive(prevSnap, bfxPrevSnap, state, { prevTurn, prevPending, prevPhase }); }
+    catch (e) { /* 表现层失败不影响权威状态渲染 */ }
+  }
   render();
 }
 window.onNetState = applyRemoteState;

@@ -772,3 +772,266 @@ html, body {
 /* 右栏顺序：技能 / 结束回合 → 英雄介绍；未选英雄时技能栏为空，避免多余间距 */
 .skill-bar:empty { display: none; }
 .panel-right > .skill-bar { margin-bottom: 2px; }
+
+/* =======================================================================
+   锦囊卡面：分类配色 / 专属符号 / 已使用印章
+   ======================================================================= */
+.cat-atk   { --tz1: #fb923c; --tz2: #7c2d12; --tz3: #fde68a; }
+.cat-life  { --tz1: #34d399; --tz2: #064e3b; --tz3: #d1fae5; }
+.cat-march { --tz1: #fbbf24; --tz2: #78350f; --tz3: #fef3c7; }
+.cat-arcane{ --tz1: #c084fc; --tz2: #3b0764; --tz3: #ede9fe; }
+.cat-guard { --tz1: #60a5fa; --tz2: #172554; --tz3: #dbeafe; }
+
+.talisman-card {
+  position: relative;
+  overflow: hidden;
+  transition: border-color .22s, box-shadow .22s, transform .16s;
+}
+.talisman-card::before {
+  position: absolute;
+  right: -12px;
+  bottom: -18px;
+  font-size: 86px;
+  line-height: 1;
+  opacity: .085;
+  pointer-events: none;
+}
+.talisman-card.cat-atk::before   { content: "⚔"; }
+.talisman-card.cat-life::before  { content: "✚"; }
+.talisman-card.cat-march::before { content: "⚑"; }
+.talisman-card.cat-arcane::before{ content: "✦"; }
+.talisman-card.cat-guard::before { content: "⛨"; }
+
+.talisman-card.cat-atk   { border-color: rgba(251, 146, 60, .62); background: linear-gradient(135deg, rgba(249, 115, 22, .14), var(--panel) 58%); }
+.talisman-card.cat-life  { border-color: rgba(52, 211, 153, .55); background: linear-gradient(135deg, rgba(16, 185, 129, .12), var(--panel) 58%); }
+.talisman-card.cat-march { border-color: rgba(251, 191, 36, .62); background: linear-gradient(135deg, rgba(251, 191, 36, .13), var(--panel) 58%); }
+.talisman-card.cat-arcane{ border-color: rgba(192, 132, 252, .58); background: linear-gradient(135deg, rgba(168, 85, 247, .13), var(--panel) 58%); }
+.talisman-card.cat-guard { border-color: rgba(96, 165, 250, .58); background: linear-gradient(135deg, rgba(59, 130, 246, .13), var(--panel) 58%); }
+
+.talisman-card.active { box-shadow: 0 0 0 2px var(--tz1, #fbbf24), 0 8px 26px rgba(0, 0, 0, .45); transform: translateY(-3px); }
+.talisman-card.used::after {
+  content: "已使用";
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #fca5a5;
+  border: 1px solid rgba(248, 113, 113, .55);
+  border-radius: 999px;
+  padding: 2px 8px;
+  transform: rotate(-6deg);
+  background: rgba(15, 23, 42, .55);
+}
+.tz-cat {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  color: var(--tz1, #fbbf24);
+  font-size: 10px;
+  letter-spacing: .5px;
+  vertical-align: 1px;
+}
+
+/* =======================================================================
+   回合切换演出
+   ======================================================================= */
+.bfx-turn {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 9;
+  opacity: 0;
+  --tc: #60a5fa;
+  --tc2: #93c5fd;
+}
+.bfx-turn.p1 { --tc: #60a5fa; --tc2: #bfdbfe; }
+.bfx-turn.p2 { --tc: #f87171; --tc2: #fecaca; }
+.bfx-turn.extra { --tc: #fbbf24; --tc2: #fef3c7; }
+.bfx-turn.show { animation: bfxTurnWrap 1.15s ease-out forwards; }
+
+.bfx-turn-scrim {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 46%, rgba(2, 6, 23, 0) 26%, rgba(2, 6, 23, .30) 66%, rgba(2, 6, 23, .46) 100%);
+  opacity: 0;
+}
+.bfx-turn.show .bfx-turn-scrim { animation: bfxTurnScrim 1.15s ease-out forwards; }
+
+.bfx-turn-ring {
+  position: absolute;
+  width: 190px;
+  height: 190px;
+  border-radius: 50%;
+  border: 2px solid var(--tc);
+  box-shadow: 0 0 26px color-mix(in srgb, var(--tc) 55%, transparent), inset 0 0 26px color-mix(in srgb, var(--tc) 30%, transparent);
+  opacity: 0;
+}
+.bfx-turn.show .bfx-turn-ring { animation: bfxTurnRing 1.15s cubic-bezier(.2, .8, .2, 1) forwards; }
+
+.bfx-turn-emblem {
+  font-size: 32px;
+  font-weight: 900;
+  color: var(--tc2);
+  text-shadow: 0 0 16px var(--tc);
+  opacity: 0;
+}
+.bfx-turn.show .bfx-turn-emblem { animation: bfxTurnEmblem 1.15s ease-out forwards; }
+
+.bfx-turn-title {
+  margin-top: 4px;
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: 8px;
+  color: #f8fafc;
+  text-shadow: 0 0 20px var(--tc), 0 2px 8px rgba(0, 0, 0, .85);
+  opacity: 0;
+}
+.bfx-turn.show .bfx-turn-title { animation: bfxTurnTitle 1.15s cubic-bezier(.2, .8, .2, 1) forwards; }
+
+.bfx-turn-sub {
+  margin-top: 10px;
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--tc2);
+  opacity: 0;
+}
+.bfx-turn.show .bfx-turn-sub { animation: bfxTurnSub 1.15s ease-out forwards; }
+
+@keyframes bfxTurnWrap {
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  78% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes bfxTurnScrim {
+  0% { opacity: 0; }
+  18% { opacity: .85; }
+  70% { opacity: .85; }
+  100% { opacity: 0; }
+}
+@keyframes bfxTurnRing {
+  0% { opacity: 0; transform: scale(.45) rotate(-18deg); }
+  30% { opacity: .95; transform: scale(1.02) rotate(6deg); }
+  62% { opacity: .7; transform: scale(1.14) rotate(10deg); }
+  100% { opacity: 0; transform: scale(1.28) rotate(14deg); }
+}
+@keyframes bfxTurnEmblem {
+  0% { opacity: 0; transform: translateY(10px) scale(.7); }
+  28% { opacity: 1; transform: translateY(0) scale(1.08); }
+  70% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-6px) scale(1); }
+}
+@keyframes bfxTurnTitle {
+  0% { opacity: 0; transform: translateY(14px) scale(.86); letter-spacing: 16px; }
+  24% { opacity: 1; transform: translateY(0) scale(1.05); letter-spacing: 8px; }
+  36% { transform: translateY(0) scale(1); }
+  78% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-8px) scale(1); }
+}
+@keyframes bfxTurnSub {
+  0% { opacity: 0; transform: translateY(8px); }
+  30% { opacity: .95; }
+  78% { opacity: .95; }
+  100% { opacity: 0; }
+}
+
+/* =======================================================================
+   锦囊卡牌飞行演出（fixed，避免被棋盘 transform 影响）
+   ======================================================================= */
+.bfx-tcard {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: clamp(132px, 20vw, 168px);
+  height: clamp(184px, 27vw, 232px);
+  margin-left: calc(clamp(132px, 20vw, 168px) / -2);
+  margin-top: calc(clamp(184px, 27vw, 232px) / -2);
+  z-index: 70;
+  pointer-events: none;
+  opacity: 0;
+  filter: drop-shadow(0 18px 30px rgba(0, 0, 0, .55));
+  --dx: 0px;
+  --dy: 0px;
+}
+.bfx-tcard.fly { animation: bfxTcardFly .5s cubic-bezier(.2, .7, .15, 1) forwards; }
+.bfx-tcard.fly.impact { animation: bfxTcardImpact .38s ease-out forwards; }
+.bfx-tcard.out { animation: bfxTcardOut .32s ease-in forwards; }
+
+.bfx-tcard-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  border: 2px solid var(--tz1, #fbbf24);
+  background:
+    radial-gradient(circle at 50% 18%, color-mix(in srgb, var(--tz1, #fbbf24) 34%, transparent), transparent 62%),
+    linear-gradient(160deg, color-mix(in srgb, var(--tz2, #78350f) 92%, #000 8%), #0b1220 74%);
+  box-shadow: inset 0 0 26px color-mix(in srgb, var(--tz1, #fbbf24) 26%, transparent), 0 0 26px color-mix(in srgb, var(--tz1, #fbbf24) 45%, transparent);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  overflow: hidden;
+}
+.bfx-tcard-face::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 11px;
+  border: 1px solid color-mix(in srgb, var(--tz1, #fbbf24) 42%, transparent);
+  pointer-events: none;
+}
+.bfx-tcard-sigil { font-size: clamp(40px, 7vw, 56px); line-height: 1; filter: drop-shadow(0 0 12px var(--tz1, #fbbf24)); }
+.bfx-tcard-name { font-size: clamp(15px, 2.4vw, 19px); font-weight: 900; letter-spacing: 2px; color: #fff; text-shadow: 0 0 12px var(--tz1, #fbbf24); }
+.bfx-tcard-tag {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--tz3, #fde68a);
+  border: 1px solid color-mix(in srgb, var(--tz1, #fbbf24) 55%, transparent);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+.bfx-tcard-trail {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 60px;
+  height: 60px;
+  margin: -30px 0 0 -30px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--tz1, #fbbf24) 60%, transparent), transparent 70%);
+  opacity: .55;
+  filter: blur(6px);
+}
+
+@keyframes bfxTcardFly {
+  0%   { opacity: 0; transform: translate(0, 0) scale(.68) rotate(-10deg); }
+  14%  { opacity: 1; transform: translate(0, -22px) scale(.9) rotate(-5deg); }
+  56%  { opacity: 1; transform: translate(var(--dx), var(--dy)) scale(1.02) rotate(3deg); }
+  100% { opacity: 1; transform: translate(var(--dx), var(--dy)) scale(1.12) rotate(0deg); }
+}
+@keyframes bfxTcardImpact {
+  0%   { opacity: 1; transform: translate(var(--dx), var(--dy)) scale(1.12); }
+  35%  { opacity: 1; transform: translate(var(--dx), var(--dy)) scale(1.24); filter: drop-shadow(0 0 40px var(--tz1, #fbbf24)); }
+  100% { opacity: .96; transform: translate(var(--dx), var(--dy)) scale(1.16); }
+}
+@keyframes bfxTcardOut {
+  0%   { opacity: .96; transform: translate(var(--dx), var(--dy)) scale(1.16); }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.42); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bfx-turn.show, .bfx-turn.show .bfx-turn-scrim, .bfx-turn.show .bfx-turn-ring,
+  .bfx-turn.show .bfx-turn-emblem, .bfx-turn.show .bfx-turn-title, .bfx-turn.show .bfx-turn-sub { animation-duration: .01ms; }
+  .bfx-tcard.fly { animation-duration: .01ms; }
+}
+
+.bfx-tcard-line { font-size: 12px; letter-spacing: .6px; color: #e2e8f0; opacity: .92; text-align: center; padding: 0 12px; line-height: 1.35; }

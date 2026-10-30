@@ -422,6 +422,41 @@
         }
         break;
       }
+      case "sweep": {
+        // 阵营交接：横向能量带扫过棋盘
+        const q = easeOut(p);
+        const x = e.x + (e.x2 - e.x) * q;
+        const a = Math.sin(Math.PI * clamp01(p)) * (e.alpha == null ? 0.55 : e.alpha);
+        const band = e.width || 150;
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        const g = ctx.createLinearGradient(x - band / 2, 0, x + band / 2, 0);
+        g.addColorStop(0, hexA(c, 0));
+        g.addColorStop(0.42, hexA(c, a * 0.5));
+        g.addColorStop(0.5, hexA(c, a));
+        g.addColorStop(0.58, hexA(c, a * 0.5));
+        g.addColorStop(1, hexA(c, 0));
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalAlpha = a * 0.9;
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+        ctx.restore();
+        break;
+      }
+      case "sideGlow": {
+        // 当前行动方半场亮起（克制，不遮挡棋子）
+        const a = Math.sin(Math.PI * clamp01(p)) * (e.alpha == null ? 0.22 : e.alpha);
+        const half = W / 2;
+        const cx = e.side === 1 ? half * 0.5 : W - half * 0.5;
+        const g = ctx.createRadialGradient(cx, H / 2, 10, cx, H / 2, half * 0.95);
+        g.addColorStop(0, hexA(c, a));
+        g.addColorStop(1, hexA(c, 0));
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, W, H);
+        break;
+      }
       case "flash": {
         ctx.globalAlpha = (e.alpha == null ? 0.35 : e.alpha) * (1 - p);
         ctx.fillStyle = c;
@@ -1138,8 +1173,7 @@
     }
   }
 
-  /* ---------------- 镜头 / 提示 ---------------- */
-  function shake(mag) {
+  /* ---------------- 镜头 / 提示 ---------------- */  function shake(mag) {
     if (!opts.enabled || !opts.shake || opts.reduce) return;
     const amp = Math.min(9, mag || 3);
     if (!wrap) return;
@@ -1173,6 +1207,203 @@
     bannerEl.classList.add("show");
     clearTimeout(bannerTimer);
     bannerTimer = setTimeout(() => bannerEl.classList.remove("show"), 1500);
+  }
+
+  /* ---------------- 回合切换演出 ---------------- */
+  let turnEl = null, turnTitleEl = null, turnSubEl = null, turnEmblemEl = null, turnTimer = 0;
+  function ensureTurnEl() {
+    if (turnEl) return;
+    turnEl = document.createElement("div");
+    turnEl.className = "bfx-turn";
+    turnEl.innerHTML =
+      '<div class="bfx-turn-scrim"></div>' +
+      '<div class="bfx-turn-ring"></div>' +
+      '<div class="bfx-turn-emblem">Ⅰ</div>' +
+      '<div class="bfx-turn-title"></div>' +
+      '<div class="bfx-turn-sub"></div>';
+    (wrap || document.body).appendChild(turnEl);
+    turnTitleEl = turnEl.querySelector(".bfx-turn-title");
+    turnSubEl = turnEl.querySelector(".bfx-turn-sub");
+    turnEmblemEl = turnEl.querySelector(".bfx-turn-emblem");
+  }
+
+  /* o: { player, extra, title, sub } */
+  function turnTransition(o) {
+    o = o || {};
+    const player = o.player === 2 ? 2 : 1;
+    const extra = !!o.extra;
+    const c = extra ? "#fbbf24" : (player === 1 ? "#60a5fa" : "#f87171");
+
+    if (opts.enabled && W && H) {
+      // 阶段 B：能量带从离开方扫向接任方
+      push({ kind: "sweep", x: player === 1 ? W + 60 : -60, y: 0, x2: player === 1 ? -60 : W + 60, y2: 0, color: c, width: 170, dur: dur(620), alpha: 0.5 });
+      // 阶段 C：接任方半场亮起
+      push({ kind: "sideGlow", side: player, color: c, dur: dur(900), delay: dur(120), alpha: extra ? 0.30 : 0.20 });
+      push({ kind: "ring", x: W / 2, y: H / 2, r0: 14, r1: geo.cell * 2.2, color: c, width: 2.6, dur: dur(760), delay: dur(200), alpha: 0.75 });
+      spawn(W / 2, H / 2, extra ? 30 : 18, { color: c, speed: extra ? 2.8 : 2.1, life: 620, size: 2.1, delay: 180 });
+      if (extra) {
+        push({ kind: "ring", x: W / 2, y: H / 2, r0: geo.cell * 0.4, r1: geo.cell * 2.8, color: "#fde68a", width: 3, dur: dur(900), delay: dur(260), alpha: 0.6 });
+      }
+    }
+
+    // DOM 标题（挡不住棋盘：整体半透明、1.1s 自动淡出）
+    ensureTurnEl();
+    turnEl.className = "bfx-turn" + (player === 1 ? " p1" : " p2") + (extra ? " extra" : "");
+    turnTitleEl.textContent = o.title || ("玩家 " + player + " 的回合");
+    turnSubEl.textContent = o.sub || "";
+    turnEmblemEl.textContent = extra ? "Ⅱ" : (player === 1 ? "Ⅰ" : "Ⅱ");
+    void turnEl.offsetWidth;
+    turnEl.classList.add("show");
+    clearTimeout(turnTimer);
+    turnTimer = setTimeout(() => turnEl.classList.remove("show"), 1150);
+
+    // 音效：收束 → 扫过 → 新回合（分段，不叠成一声巨响）
+    if (window.SFX) {
+      window.SFX.play("turnSweep", { dir: player === 1 ? -1 : 1 });
+      setTimeout(() => { if (window.SFX) window.SFX.play(extra ? "extraTurn" : "turnStart", {}); }, 300);
+    }
+  }
+
+  /* ---------------- 锦囊卡牌演出 ---------------- */
+  const TZ_CAT = {
+    assault: { cls: "cat-atk", tag: "攻击强化", line: "本回合伤害 +1" },
+    revive: { cls: "cat-life", tag: "复活", line: "复活 · 恢复 3 点生命" },
+    march: { cls: "cat-march", tag: "额外回合", line: "获得一个完整额外回合" },
+    refresh: { cls: "cat-arcane", tag: "技能重整", line: "技能次数刷新至上限" },
+    guard: { cls: "cat-guard", tag: "防御", line: "受到的伤害 -1" },
+    heal: { cls: "cat-life", tag: "治疗", line: "恢复 2 点生命" },
+  };
+  let cardEl = null, cardTimer = 0, cardEnd = 0;
+  function ensureCardEl() {
+    if (cardEl) return;
+    cardEl = document.createElement("div");
+    cardEl.className = "bfx-tcard";
+    cardEl.innerHTML =
+      '<div class="bfx-tcard-trail"></div>' +
+      '<div class="bfx-tcard-face">' +
+      '<div class="bfx-tcard-sigil"></div>' +
+      '<div class="bfx-tcard-name"></div>' +
+      '<div class="bfx-tcard-line"></div>' +
+      '<div class="bfx-tcard-tag"></div>' +
+      '</div>';
+    document.body.appendChild(cardEl);
+  }
+
+  /* o: { id, name, icon, target:{r,c} } */
+  function talismanCast(o) {
+    if (!o || !opts.enabled) return false;
+    const id = o.id || "";
+    const cat = TZ_CAT[id] || { cls: "cat-atk", tag: "锦囊" };
+    ensureCardEl();
+    clearTimeout(cardTimer);
+
+    const startEl = document.getElementById("talisman-card");
+    const sr = startEl ? startEl.getBoundingClientRect() : null;
+    const sx = sr ? sr.left + sr.width / 2 : window.innerWidth * 0.15;
+    const sy = sr ? sr.top + Math.min(70, sr.height / 2) : window.innerHeight * 0.35;
+
+    let tx = window.innerWidth / 2, ty = window.innerHeight / 2;
+    if (canvas) {
+      const cr = canvas.getBoundingClientRect();
+      if (o.target && o.target.r != null && o.target.c != null) {
+        tx = cr.left + px(o.target.c);
+        ty = cr.top + py(o.target.r);
+      } else {
+        tx = cr.left + cr.width / 2;
+        ty = cr.top + cr.height * 0.46;
+      }
+    }
+
+    cardEl.className = "bfx-tcard " + cat.cls;
+    cardEl.querySelector(".bfx-tcard-sigil").textContent = o.icon || "🎴";
+    cardEl.querySelector(".bfx-tcard-name").textContent = o.name || "锦囊";
+    cardEl.querySelector(".bfx-tcard-line").textContent = cat.line || "";
+    cardEl.querySelector(".bfx-tcard-tag").textContent = cat.tag;
+    cardEl.style.left = sx + "px";
+    cardEl.style.top = sy + "px";
+    cardEl.style.setProperty("--dx", (tx - sx) + "px");
+    cardEl.style.setProperty("--dy", (ty - sy) + "px");
+    void cardEl.offsetWidth;
+    cardEl.classList.add("fly");
+
+    // 到达瞬间：卡牌放大 + 对应锦囊的战场效果
+    cardTimer = setTimeout(() => {
+      cardEl.classList.add("impact");
+      const at = o.target && o.target.r != null ? { r: o.target.r, c: o.target.c } : null;
+      const rr = at ? at.r : 2.5, cc = at ? at.c : 2.5;
+      talismanEffect(id, rr, cc);
+      if (window.SFX && window.SFX.playTalisman) window.SFX.playTalisman(id, {});
+      cardTimer = setTimeout(() => {
+        cardEl.classList.add("out");
+        cardTimer = setTimeout(() => { cardEl.className = "bfx-tcard"; }, 340);
+      }, 380);
+    }, 460);
+    return true;
+  }
+
+  /* 锦囊效果展开（战场层） */
+  function talismanEffect(id, r, c) {
+    if (!opts.enabled) return;
+    const x = px(c), y = py(r);
+    const big = geo.cell;
+    switch (id) {
+      case "assault": {
+        for (let i = 0; i < 3; i++) push({ kind: "ring", x, y, r0: 8, r1: big * (1.1 + i * 0.55), color: "#f97316", width: 3, dur: dur(600), delay: dur(i * 70), alpha: 0.8 });
+        push({ kind: "slash", x, y, angle: -0.62, len: big * 2.2, width: 4, color: "#fbbf24", dur: dur(460) });
+        push({ kind: "slash", x, y, angle: 0.72, len: big * 1.9, width: 3, color: "#ef4444", dur: dur(500), delay: dur(60) });
+        spawn(x, y, 30, { color: "#fbbf24", speed: 3.2, life: 620, size: 2.2, angle: -Math.PI / 2, spread: 2.6 });
+        push({ kind: "text", x, y: y - big * 0.7, text: "伤害 +1", color: "#fbbf24", size: 16, dur: dur(1000), rise: 26 });
+        addMark("impact", r, c, "#f97316", 11000);
+        break;
+      }
+      case "revive": {
+        revive({ r, c });
+        push({ kind: "ring", x, y, r0: big * 0.15, r1: big * 0.9, color: "#fde68a", width: 3, dur: dur(900), delay: dur(120), double: true });
+        push({ kind: "beam", x, y: y - big * 1.4, x2: x, y2: y, color: "#fef3c7", width: 12, dur: dur(900) });
+        spawn(x, y + big * 0.3, 26, { color: "#fde68a", speed: 1.1, life: 900, size: 2, angle: -Math.PI / 2, spread: 0.8, grav: -0.03 });
+        push({ kind: "text", x, y: y - big * 0.75, text: "还魂成功", color: "#fde68a", size: 15, dur: dur(1100), rise: 24 });
+        break;
+      }
+      case "march": {
+        // 战鼓震动 + 旗帜冲击波
+                  push({ kind: "ring", x, y, r0: 10, r1: big * 3.2, color: "#fbbf24", width: 5, dur: dur(900), alpha: 0.75 });
+          push({ kind: "ring", x, y, r0: big * 0.4, r1: big * 2.2, color: "#fde68a", width: 3, dur: dur(800), delay: dur(140) });
+          push({ kind: "wave", x, y, r1: big * 2.4, color: "#f59e0b", dur: dur(900) });
+          spawn(x, y, 34, { color: "#fbbf24", speed: 3.4, life: 760, size: 2.2 });
+          push({ kind: "text", x, y: y - big * 0.8, text: "获得额外回合", color: "#fde68a", size: 16, dur: dur(1200), rise: 26 });
+        addMark("impact", Math.max(0, Math.min(5, Math.round(r))), Math.max(0, Math.min(5, Math.round(c))), "#fbbf24", 12000);
+        break;
+      }
+      case "refresh": {
+        for (let i = 0; i < 6; i++) {
+          const ang = (i / 6) * Math.PI * 2;
+          push({ kind: "rune", x: x + Math.cos(ang) * big * 0.55, y: y + Math.sin(ang) * big * 0.45, r: big * 0.16, color: "#a78bfa", sides: 5, dur: dur(700), delay: dur(i * 50) });
+        }
+        push({ kind: "ring", x, y, r0: big * 0.5, r1: big * 0.18, color: "#c4b5fd", width: 3, dur: dur(700), double: true });
+        spawn(x, y, 22, { color: "#c4b5fd", speed: 1.4, life: 760, size: 1.9, angle: -Math.PI / 2, spread: 0.7 });
+        push({ kind: "text", x, y: y - big * 0.7, text: "技能已重整", color: "#c4b5fd", size: 15, dur: dur(1100), rise: 24 });
+        addMark("space", r, c, "#a78bfa", 10000);
+        break;
+      }
+      case "guard": {
+        shieldFx({ r, c, amount: 0 });
+        for (let i = 0; i < 3; i++) push({ kind: "ring", x, y, r0: big * 0.2, r1: big * (0.9 + i * 0.35), color: "#93c5fd", width: 3, dur: dur(800), delay: dur(i * 90), alpha: 0.7 });
+        push({ kind: "rune", x, y, r: big * 0.62, color: "#bfdbfe", sides: 8, dur: dur(800) });
+        push({ kind: "text", x, y: y - big * 0.72, text: "伤害 -1", color: "#93c5fd", size: 15, dur: dur(1100), rise: 24 });
+        addMark("frost", r, c, "#93c5fd", 11000);
+        break;
+      }
+      case "heal": {
+        heal({ r, c, amount: 0 });
+        push({ kind: "ring", x, y, r0: big * 0.55, r1: big * 0.18, color: "#4ade80", width: 3, dur: dur(760), double: true });
+        spawn(x, y + big * 0.25, 24, { color: "#86efac", speed: 1.2, life: 820, size: 2, angle: -Math.PI / 2, spread: 0.9, grav: -0.02 });
+        push({ kind: "text", x, y: y - big * 0.7, text: "恢复生命", color: "#86efac", size: 15, dur: dur(1000), rise: 24 });
+        break;
+      }
+      default:
+        push({ kind: "ring", x, y, r0: 10, r1: big * 1.4, color: "#fbbf24", width: 3, dur: dur(700) });
+        break;
+    }
   }
 
   /* ---------------- 初始化 ---------------- */
@@ -1213,12 +1444,17 @@
     effects.length = 0; particles.length = 0; marks.length = 0;
     if (ctx) ctx.clearRect(0, 0, W, H);
     if (bannerEl) bannerEl.classList.remove("show");
+    clearTimeout(turnTimer);
+    if (turnEl) turnEl.classList.remove("show");
+    clearTimeout(cardTimer);
+    if (cardEl) cardEl.className = "bfx-tcard";
   }
 
   window.BFX = {
     init, sync, setOptions, clear, banner, attack, hit, shieldAbsorb: shieldAbsorb,
     dodge, immune, death, move, knockback, grab, heal, shield: shieldFx, revive,
     swordSpawn, cast, drain, mark: addMark, shake, flash, hitstop, heroColor,
+    turnTransition, talismanCast, talismanEffect,
     setOccupancy(fn) { occupancyFn = fn || null; },
     setTargeting(v) { targeting = !!v; },
     get options() { return Object.assign({}, opts); },

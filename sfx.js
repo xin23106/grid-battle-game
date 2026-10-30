@@ -437,6 +437,69 @@
     [0, 5, 9].forEach((s, i) => T(L, { at: 0.02 + i * 0.04, dur: 0.3, wave: "sine", f0: 660 * Math.pow(2, s / 12), peak: 0.05 }));
   }
 
+  /* ---------------- 回合切换 ---------------- */
+  function recipeTurnEnd(h, o, L) {
+    // 低音收束：下沉 + 轻微噪声，短促不抢戏
+    T(L, { at: 0, dur: 0.26, wave: "sine", f0: 220, f1: 110, peak: 0.09, attack: 0.005 });
+    N(L, { at: 0, dur: 0.2, lp: 700, lpTo: 300, peak: 0.05, attack: 0.004 });
+  }
+  function recipeTurnSweep(h, o, L) {
+    // 扫过：带通噪声从左到右（声像扫动）
+    const p = o.dir === -1 ? -1 : 1;
+    N(L, { at: 0, dur: 0.32, bp: 1200, q: 0.9, sweepTo: 2600, peak: 0.07, attack: 0.03, pan: -0.5 * p });
+    N(L, { at: 0.10, dur: 0.26, bp: 1800, q: 1.1, sweepTo: 3200, peak: 0.05, attack: 0.02, pan: 0.35 * p });
+  }
+  function recipeTurnStart(h, o, L) {
+    // 新回合：清晰的两音上扬（不刺耳）
+    [0, 7].forEach((s, i) => T(L, { at: i * 0.07, dur: 0.32, wave: "triangle", f0: 392 * Math.pow(2, s / 12), f1: 392 * Math.pow(2, s / 12), peak: 0.085, attack: 0.01 }));
+    T(L, { at: 0.02, dur: 0.5, wave: "sine", f0: 196, peak: 0.05, attack: 0.02 });
+    N(L, { at: 0.02, dur: 0.3, bp: 3200, q: 1.2, peak: 0.035, attack: 0.03 });
+  }
+  function recipeExtraTurn(h, o, L) {
+    // 额外回合：战鼓 + 金色和弦
+    HP(L, { at: 0, dur: 0.30, f0: 120, f1: 46, peak: 0.30 });
+    HP(L, { at: 0.16, dur: 0.26, f0: 120, f1: 46, peak: 0.24 });
+    N(L, { at: 0, dur: 0.16, lp: 900, peak: 0.10 });
+    [0, 7, 12].forEach((s, i) => M(L, { at: 0.12 + i * 0.05, base: 660 * Math.pow(2, s / 12), dur: 0.42, peak: 0.055, partials: [1, 1.5, 2.7] }));
+  }
+
+  /* ---------------- 锦囊专属（按 id） ---------------- */
+  function recipeTalismanId(id, h, o, L) {
+    switch (id) {
+      case "assault": // 猛攻令：战号 + 金属摩擦
+        T(L, { at: 0, dur: 0.22, wave: "sawtooth", f0: 180, f1: 300, peak: 0.09 });
+        T(L, { at: 0.04, dur: 0.26, wave: "sawtooth", f0: 270, f1: 360, peak: 0.07 });
+        M(L, { at: 0.02, base: 900, dur: 0.3, peak: 0.06, partials: [1, 2.2, 3.9] });
+        N(L, { at: 0, dur: 0.22, bp: 2400, q: 1.0, sweepTo: 4200, peak: 0.06 });
+        break;
+      case "revive": // 还魂令：上行的合唱/钟
+        [0, 5, 9, 12].forEach((s, i) => T(L, { at: i * 0.09, dur: 0.7 - i * 0.06, wave: "sine", f0: 330 * Math.pow(2, s / 12), peak: 0.075, attack: 0.03 }));
+        N(L, { at: 0, dur: 0.7, bp: 2800, q: 1.2, sweepTo: 6000, peak: 0.05, attack: 0.08 });
+        M(L, { at: 0.1, base: 1320, dur: 0.6, peak: 0.04, partials: [1, 2.1, 3.6] });
+        break;
+      case "march": // 行军令：鼓 + 旗
+        HP(L, { at: 0, dur: 0.28, f0: 110, f1: 44, peak: 0.28 });
+        HP(L, { at: 0.18, dur: 0.24, f0: 120, f1: 48, peak: 0.20 });
+        N(L, { at: 0.02, dur: 0.35, bp: 900, q: 0.8, sweepTo: 2600, peak: 0.07 });
+        T(L, { at: 0.06, dur: 0.3, wave: "triangle", f0: 523, f1: 784, peak: 0.05 });
+        break;
+      case "refresh": // 技能重整令：符文上涌
+        for (let i = 0; i < 4; i++) T(L, { at: i * 0.05, dur: 0.2, wave: "square", f0: 1200 + i * 260, f1: 1600 + i * 300, peak: 0.035, pan: (i - 1.5) * 0.2 });
+        M(L, { at: 0.06, base: 1800, dur: 0.4, peak: 0.045, partials: [1, 2.6, 5.1] });
+        break;
+      case "guard": // 坚守令：护盾展开
+        recipeShieldUp(h, o, L);
+        T(L, { at: 0.1, dur: 0.35, wave: "sine", f0: 330, f1: 440, peak: 0.05 });
+        break;
+      case "heal": // 战地急救令
+        recipeHeal(h, o, L);
+        break;
+      default:
+        recipeTalisman(h, o, L);
+        break;
+    }
+  }
+
   function recipeWin(h, o, L) {
     [0, 4, 7, 12].forEach((s, i) => T(L, { at: i * 0.12, dur: 0.5, wave: "triangle", f0: 523 * Math.pow(2, s / 12), peak: 0.12, attack: 0.01 }));
     N(L, { at: 0.1, dur: 0.6, bp: 3000, q: 1.0, sweepTo: 6000, peak: 0.05, attack: 0.1 });
@@ -656,6 +719,10 @@
       case "swordSpawn": recipeSwordSpawn(h, o, L); break;
       case "swordPickup": recipeSwordPickup(h, o, L); break;
       case "talisman": recipeTalisman(h, o, L); break;
+      case "turnEnd": recipeTurnEnd(h, o, L); break;
+      case "turnSweep": recipeTurnSweep(h, o, L); break;
+      case "turnStart": recipeTurnStart(h, o, L); break;
+      case "extraTurn": recipeExtraTurn(h, o, L); break;
       case "win": recipeWin(h, o, L); break;
       case "lose": recipeLose(h, o, L); break;
       case "dash": // 兼容旧调用
@@ -684,6 +751,7 @@
     dodge: 80, flank: 70, death: 120, revive: 200, heal: 90, buffUp: 120, buffDown: 120,
     grab: 90, knockback: 60, mark: 60, swordSpawn: 80, swordPickup: 60,
     talisman: 120, dash: 90, dashHit: 60, skill: 60, skillHit: 45, win: 500, lose: 500,
+    turnEnd: 220, turnSweep: 200, turnStart: 260, extraTurn: 400,
   };
 
   function canPlay(key) {
@@ -827,6 +895,27 @@
       } catch (e) { return false; }
     },
     startLoop, stopLoop, stopAll,
+    /* 锦囊专属音效（按 id 分派，未收录的走通用锦囊音） */
+    playTalisman(id, opts) {
+      try {
+        const o = opts || {};
+        if (!settings.enabled) return false;
+        if (!ensure()) return false;
+        if (ctx.state === "suspended") { try { ctx.resume(); } catch (e) {} }
+        const key = "talisman:" + id;
+        const t = (typeof performance !== "undefined" ? performance.now() : Date.now());
+        if (lastAt[key] != null && t - lastAt[key] < 120) return false;
+        if (activeVoices() >= MAX_VOICES) return false;
+        lastAt[key] = t;
+        const L = [];
+        recipeTalismanId(id, H(o.hero), o, L);
+        if (!L.length) return false;
+        render(L, busSfx);
+        log.push({ event: "talisman:" + id, at: Date.now() });
+        if (log.length > 300) log.shift();
+        return true;
+      } catch (e) { return false; }
+    },
     /* 测试/调试钩子：绕过节流强制播放；返回技能的分层结构（不发声） */
     __forcePlay(event, opts) {
       try {
