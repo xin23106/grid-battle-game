@@ -74,7 +74,7 @@ function chargeKnockbackS(s, tgt, dr, dc) {
       s.board[nr][nc] = tgt; s.board[p.r][p.c] = null; moved++;
       continue;
     }
-    if (cell.sword) break;
+    if (cell.sword || cell.pillar) break;
     const perp = [[-dc, dr], [dc, -dr]];
     const opts = [];
     for (const [pr, pc] of perp) {
@@ -153,7 +153,64 @@ function tickStatuses(s, player) {
   }
 }
 const isSword = (cell) => !!cell && cell.sword === true;
-const isUnit = (cell) => !!cell && !cell.sword;
+const isPillar = (cell) => !!cell && cell.pillar === true;
+const isUnit = (cell) => !!cell && !cell.sword && !cell.pillar;
+
+/* ============================ 山丘之王·推山 / 石柱（服务端权威） ============================ */
+const PILLAR_TURNS = 3; // 生成当回合结束不扣；之后每个完整回合结束 -1
+
+function pushDirInfoS(s, u, r, c, dr, dc) {
+  const r1 = r + dr, c1 = c + dc;
+  if (!inB(r1, c1)) return null;
+  const a = s.board[r1][c1];
+  if (a) {
+    if (!isUnit(a)) return null;
+    if (a.player === u.player) return null;
+    return { r: r1, c: c1, unit: a, dist: 1 };
+  }
+  const r2 = r + dr * 2, c2 = c + dc * 2;
+  if (!inB(r2, c2)) return null;
+  const b = s.board[r2][c2];
+  if (isUnit(b) && b.player !== u.player) return { r: r2, c: c2, unit: b, dist: 2 };
+  return null;
+}
+function pushUnitForwardS(s, tgt, dr, dc, steps) {
+  let moved = 0;
+  for (let i = 0; i < steps; i++) {
+    const p = findPos(s, tgt);
+    if (!p) break;
+    const nr = p.r + dr, nc = p.c + dc;
+    if (!inB(nr, nc)) break;
+    if (s.board[nr][nc]) break;
+    s.board[nr][nc] = tgt; s.board[p.r][p.c] = null; moved++;
+  }
+  return moved;
+}
+function createPillarsAroundS(s, r, c, owner) {
+  const cells = [];
+  for (const [dr, dc] of DIRS) {
+    const rr = r + dr, cc = c + dc;
+    if (!inB(rr, cc)) continue;
+    if (s.board[rr][cc]) continue;
+    s.board[rr][cc] = { pillar: true, uid: s.unitSeq++, owner, turns: PILLAR_TURNS, fresh: true };
+    cells.push({ r: rr, c: cc });
+  }
+  return cells;
+}
+function tickPillarsS(s) {
+  const broken = [];
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const p = s.board[r][c];
+      if (!isPillar(p)) continue;
+      if (p.fresh) { p.fresh = false; continue; }
+      p.turns = (p.turns || 0) - 1;
+      if (p.turns <= 0) { s.board[r][c] = null; broken.push({ r, c }); }
+    }
+  }
+  if (broken.length) slog(s, "🪨 临时石柱已经消失（" + broken.length + " 根）");
+  return broken;
+}
 
 /* 联机随机选将：双方各抽 3 名不重复英雄（英雄足够时双方池不重复） */
 function drawPools() {
@@ -304,7 +361,7 @@ function computeChaseLine(s, u, r, c, dr, dc) {
   while (inB(rr, cc)) {
     path.push([rr, cc]);
     const cell = s.board[rr][cc];
-    if (cell && !cell.sword && cell.player !== u.player) hits.push({ r: rr, c: cc });
+    if (cell && !cell.sword && !cell.pillar && cell.player !== u.player) hits.push({ r: rr, c: cc });
     rr += dr; cc += dc;
   }
   return { dir: [dr, dc], path, hits };
@@ -583,6 +640,7 @@ function computeDash(s, u, r, c, dr, dc, maxSteps) {  const steps = maxSteps || 
     const cell = s.board[rr][cc];
     if (!cell) { dest = { r: rr, c: cc }; continue; }
     if (cell.sword) { dest = { r: rr, c: cc }; continue; }
+    if (cell.pillar) break; // 石柱阻挡突进
     if (cell.player === u.player) continue; // 统一突进：友军可穿过，不挡不伤
     hits.push({ r: rr, c: cc });
   }
@@ -649,6 +707,8 @@ function finish(s, u, isFree, keepOpen) {
 }
 function endTurnOnce(s) {
   const ended = s.currentPlayer;
+  // 临时石柱：每完成一个完整回合结束衰减一次（生成当回合不扣）
+  tickPillarsS(s);
   for (const u of unitsOf(s, s.currentPlayer)) if (u.frozen > 0) u.frozen--;
   tickStatuses(s, s.currentPlayer);
   // 雷电之主：强化按自身回合递减，归零清除护盾
@@ -685,6 +745,8 @@ function checkVictory(s) {
   const p1 = unitsOf(s, 1).length, p2 = unitsOf(s, 2).length;
   if (p1 === 0 || p2 === 0) {
     s.phase = "over"; s.winner = p1 === 0 ? 2 : 1;
+    // 对局结束：清理临时石柱及其计时状态
+    for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (isPillar(s.board[r][c])) s.board[r][c] = null;
     if (s.stats && !s.stats.endedAt) s.stats.endedAt = Date.now();
     slog(s, "🏆 玩家" + s.winner + " 获胜，对局结束！");
     return true;
@@ -846,7 +908,7 @@ function applyAction(state, player, action) {
     const { r, c } = action.to || {};
     if (Math.abs(r - from.r) + Math.abs(c - from.c) !== 1) return err("只能移动一格");
     const t = inB(r, c) ? s.board[r][c] : null;
-    if (isUnit(t)) return err("目标格被占用");
+    if (isUnit(t) || isPillar(t)) return err("目标格被占用");
     if (isSword(t) && u.heroId !== "asura") return err("剑刃阻挡");
     if (isSword(t) && u.heroId === "asura") { u.swords = (u.swords || 0) + 1; }
     s.board[r][c] = u; s.board[from.r][from.c] = null;
@@ -1166,6 +1228,30 @@ function applyAction(state, player, action) {
         }
       } else {
         slog(s, "💥 " + uname(s, t) + " 被冲锋击倒，未发生击退");
+      }
+    } else if (sk.type === "push") {
+      // 山丘之王·推山：正前方 2 格内的第一个敌人；方向由目标位置推导
+      if (!isUnit(t) || t.player === player) return err("推山：请选择正前方 2 格内的敌方英雄");
+      const pdr = r - from.r, pdc = c - from.c;
+      const pdist = Math.abs(pdr) + Math.abs(pdc);
+      if ((pdr !== 0 && pdc !== 0) || pdist < 1 || pdist > 2) return err("推山：目标必须在正前方 1–2 格内");
+      const sdr = Math.sign(pdr), sdc = Math.sign(pdc);
+      const pinfo = pushDirInfoS(s, u, from.r, from.c, sdr, sdc);
+      if (!pinfo || pinfo.unit !== t) return err("推山：只能推击正前方 2 格内的第一个敌人（友军或障碍会阻挡）");
+      const dirTxt = sdr === -1 ? "上" : sdr === 1 ? "下" : sdc === -1 ? "左" : "右";
+      slog(s, "⛰ " + uname(s, u) + " 发动【" + sk.name + "】，向" + dirTxt + "推击 " + uname(s, t));
+      applyDamage(s, t, sk.damage + av, u);
+      if (!findPos(s, t)) {
+        slog(s, "💥 " + uname(s, t) + " 被推山击倒，未发生推动与石柱");
+      } else {
+        const moved = pushUnitForwardS(s, t, sdr, sdc, sk.push || 2);
+        const np = findPos(s, t);
+        if (moved > 0 && np) slog(s, "➡ " + uname(s, t) + " 被向前推击 " + moved + " 格到 (" + (np.r + 1) + "," + (np.c + 1) + ")");
+        else slog(s, "⛰ " + uname(s, t) + " 前方受阻，停留在原地");
+        if (np) {
+          const pillars = createPillarsAroundS(s, np.r, np.c, player);
+          if (pillars.length) slog(s, "🪨 石柱升起，封锁了 " + uname(s, t) + " 四周（" + pillars.length + " 根）");
+        }
       }
     } else return err("未知技能");
 

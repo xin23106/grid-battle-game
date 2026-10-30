@@ -688,8 +688,15 @@
         M(L, { at: 0.32, base: 1400, dur: 0.22, peak: 0.07, partials: [1, 2.4, 4.6] });
         break;
 
+      case "push": // 山丘之王·推山：沉重蓄力 → 地面推击 → 岩层震动
+        HP(L, { at: 0, dur: 0.26, f0: 120, f1: 70, peak: 0.20, attack: 0.03 });
+        N(L, { at: 0.05, dur: 0.34, bp: 700, q: 1.2, sweepTo: 2200, peak: 0.10, attack: 0.04 });
+        HP(L, { at: 0.20, dur: 0.30, f0: 90, f1: 40, peak: 0.30 });
+        N(L, { at: 0.22, dur: 0.30, lp: 600, peak: 0.16 });
+        M(L, { at: 0.24, base: 900, dur: 0.34, peak: 0.06, partials: [1, 2.1, 3.7] });
+        break;
+
       default:
-        // 未知技能：用英雄音色做一个通用的“施法”层（仍然区分英雄）
         S(L, { at: 0, f0: h.base * 0.6, f1: h.base * 1.8, dur: 0.22, peak: 0.07, wave: h.wave });
         N(L, { at: 0.02, dur: 0.2, bp: h.air, q: 1.3, peak: 0.05 });
         break;
@@ -737,6 +744,16 @@
         M(L, { at: 0.02, base: 1800, dur: 0.35, peak: 0.06, partials: [1, 2.7, 5.1] });
         for (let i = 0; i < 3; i++) T(L, { at: 0.06 + i * 0.05, dur: 0.18, wave: "triangle", f0: 1200 + i * 220, peak: 0.04 });
         break;
+      case "pillarRise":
+        HP(L, { at: 0, dur: 0.30, f0: 100, f1: 45, peak: 0.22 });
+        N(L, { at: 0.04, dur: 0.28, lp: 900, q: 0.9, peak: 0.10 });
+        M(L, { at: 0.10, base: 620, dur: 0.30, peak: 0.05, partials: [1, 2.3] });
+        break;
+      case "pillarBreak":
+        N(L, { at: 0, dur: 0.26, bp: 2600, q: 0.8, peak: 0.14 });
+        HP(L, { at: 0.02, dur: 0.26, f0: 150, f1: 60, peak: 0.18 });
+        for (let i = 0; i < 4; i++) M(L, { at: 0.04 + i * 0.035, base: 1800 + i * 260, dur: 0.14, peak: 0.04, partials: [1, 2.6] });
+        break;
       case "swordSpawn": recipeSwordSpawn(h, o, L); break;
       case "swordPickup": recipeSwordPickup(h, o, L); break;
       case "talisman": recipeTalisman(h, o, L); break;
@@ -772,6 +789,7 @@
     attack: 55, hit: 40, hurt: 60, shieldHit: 55, shieldBreak: 90, shieldUp: 80,
     dodge: 80, flank: 70, death: 120, revive: 200, heal: 90, buffUp: 120, buffDown: 120,
     grab: 90, knockback: 60, mark: 60, swordSpawn: 80, swordPickup: 60, stun: 140,
+    pillarRise: 120, pillarBreak: 160,
     talisman: 120, dash: 90, dashHit: 60, skill: 60, skillHit: 45, win: 500, lose: 500, draw: 500,
     turnEnd: 220, turnSweep: 200, turnStart: 260, extraTurn: 400,
   };

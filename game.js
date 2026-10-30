@@ -91,6 +91,7 @@ let placedIds = { 1: [], 2: [] };  // 每方已选英雄 id（防重复）
 let onlinePool = null;             // 联机随机选将：本人的候选英雄池（服务端下发，客户端不可指定）
 let onlineLogSeq = 0;              // 联机：已合并的服务端日志最大 id（去重，避免重连/重复广播刷屏）
 let bfxPrevSnap = null;            // 联机：上一份权威棋盘快照（用于派生表现事件，不改变任何状态）
+let bfxPillarSnap = null;          // 联机：上一份石柱位置（用于升起 / 碎裂表现）
 let bfxOnlineLogSeq = 0;           // 联机：表现层已消费的日志 id（横幅去重）
 let onlinePlacementDone = { 1: false, 2: false }; // 联机布阵：双方是否已完成（仅状态，不含具体选择）
 let pendingHero = null;            // 布阵阶段待放置的英雄 id
@@ -150,7 +151,9 @@ function territoryOf(c) {
   return c < SIDE_COLS ? 1 : 2;
 }
 function unitAt(r, c) {
-  return inBounds(r, c) ? board[r][c] : null;
+  if (!inBounds(r, c)) return null;
+  const cell = board[r][c];
+  return cell && !cell.pillar ? cell : null; // 石柱不是单位，不可被选中/攻击
 }
 function heroDef(id) {
   return getHeroById(id);
@@ -190,8 +193,12 @@ function isTarget(list, r, c) {
 function isSword(cell) {
   return !!cell && cell.sword === true;
 }
+/* 石柱：独立临时地形对象（不是单位），阻挡移动/突进/传送/推击，不可被攻击 */
+function isPillar(cell) {
+  return !!cell && cell.pillar === true;
+}
 function isUnit(cell) {
-  return !!cell && !cell.sword;
+  return !!cell && !cell.sword && !cell.pillar;
 }
 function hasAsuraAlive() {
   for (let r = 0; r < SIZE; r++)
@@ -318,6 +325,7 @@ function computeDashPath(u, r, c, dr, dc, maxSteps) {
     const cell = board[rr][cc];
     if (!cell) { dest = { r: rr, c: cc }; continue; }
     if (isSword(cell)) { dest = { r: rr, c: cc }; continue; }
+    if (isPillar(cell)) break;                    // 石柱：阻挡突进
     if (cell.player === u.player) continue;       // 友军：穿过，不挡不伤
     hits.push({ r: rr, c: cc });                  // 敌人：造成伤害（不停顿）
   }
@@ -335,7 +343,7 @@ function computeChaseLine(u, r, c, dr, dc) {
   while (inBounds(rr, cc)) {
     path.push([rr, cc]);
     const cell = board[rr][cc];
-    if (cell && !cell.sword && cell.player !== u.player) hits.push({ r: rr, c: cc });
+    if (cell && !cell.sword && !cell.pillar && cell.player !== u.player) hits.push({ r: rr, c: cc });
     rr += dr;
     cc += dc;
   }
@@ -737,6 +745,7 @@ function hasAnyAction(player) {
       const t = board[nr][nc];
       if (!t) { if (!turnActionUsed) return true; continue; }
       if (t.sword) { if (u.heroId === "asura" && !turnActionUsed) return true; continue; }
+      if (isPillar(t)) continue; // 石柱不可攻击、不可进入
       if (t.player !== player && !turnActionUsed) return true;
     }
     if (heroHasFreeUses(u)) return true; // 剑圣仍可使用
@@ -1105,6 +1114,8 @@ function beginTurn() {
 
 /* 结束当前玩家回合并交给对手（含行军令额外回合）。不含“自动跳过无行动玩家”。 */
 function endTurnOnce() {
+  // 临时石柱：每完成一个完整回合结束衰减一次（生成当回合不扣）
+  tickPillars();
   for (const u of unitsOf(currentPlayer)) if (u.frozen > 0) u.frozen -= 1;
   tickStatuses(currentPlayer); // 负面状态（如抓取）在本回合结束时递减/结算
   // 雷电之主：强化按“自身回合”计算，本回合若为强化回合则递减；归零时清除护盾
@@ -1184,6 +1195,8 @@ function checkVictory() {
   if (p1 === 0 || p2 === 0) {
     phase = "over";
     winner = p1 === 0 ? 2 : 1;
+    // 对局结束：清理临时石柱及其计时状态
+    for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (isPillar(board[r][c])) board[r][c] = null;
     if (!matchStats.endedAt) matchStats.endedAt = Date.now();
     if (!matchStats.startedAt) matchStats.startedAt = matchStats.endedAt;
     addLog("玩家" + winner + " 获胜！");
@@ -1303,6 +1316,8 @@ function computeTargets() {
     if (!t) moveTargets.push([nr, nc]);
     else if (t.sword) {
       if (u.heroId === "asura") moveTargets.push([nr, nc]); // 阿修罗可进入并回收剑
+    } else if (isPillar(t)) {
+      // 石柱：阻挡移动，也不能被普通攻击
     } else if (t.player !== u.player) {
       attackTargets.push([nr, nc]);
     }
@@ -1609,6 +1624,22 @@ function computeSkillTargets() {
         const lr = stage === 0 ? r + dr * 2 : r + dr;
         const lc = stage === 0 ? c + dc * 2 : c + dc;
         if (inBounds(lr, lc) && !board[lr][lc]) dashOptions.push({ kind: "wxt-landing", path: [[lr, lc]] });
+      }
+      break;
+    }
+
+    case "push": {
+      // 目标：正前方 2 格内的第一个敌人；方向由点击的敌人位置推导
+      for (const [dr, dc] of DIRS) {
+        const info = pushDirInfo(u, r, c, dr, dc);
+        if (!info) continue;
+        skillTargets.push([info.r, info.c]);
+        const line = [];
+        for (let k = 0; k <= 2; k++) {
+          const rr = info.r + dr * k, cc = info.c + dc * k;
+          if (inBounds(rr, cc)) line.push([rr, cc]);
+        }
+        dashOptions.push({ kind: "push-line", path: line });
       }
       break;
     }
@@ -1926,7 +1957,7 @@ function chargeKnockback(tgt, dr, dc) {
       board[nr][nc] = tgt; board[p.r][p.c] = null; moved++;
       continue;
     }
-    if (cell.sword) break;                     // 剑刃阻挡
+    if (cell.sword || isPillar(cell)) break;                   // 剑刃 / 石柱阻挡
     // 垂直于击退方向的两侧（左/右相对冲锋方向）
     const perp = [[-dc, dr], [dc, -dr]];
     const opts = [];
@@ -1954,7 +1985,7 @@ function chargePreview(u, tr, tc, dr, dc) {
     if (!inBounds(nr, nc)) break;
     const cell = board[nr][nc];
     if (!cell) { r = nr; c = nc; moved++; continue; }
-    if (cell.sword) break;
+    if (cell.sword || isPillar(cell)) break;
     const perp = [[-dc, dr], [dc, -dr]];
     let ok = false;
     for (const [pr, pc] of perp) {
@@ -1966,6 +1997,69 @@ function chargePreview(u, tr, tc, dr, dc) {
     r = nr; c = nc; moved++;
   }
   return { moved, sidePush, stun: moved < 2 };
+}
+
+/* ============================ 山丘之王·推山 / 石柱 ============================ */
+const PILLAR_TURNS = 3; // 生成当回合结束不扣；之后每个完整回合结束 -1（对齐需求示例）
+
+/* 该方向上“第一个”可推击的敌方英雄（第一格为友军/障碍时被阻挡，不能越过） */
+function pushDirInfo(u, r, c, dr, dc) {
+  const r1 = r + dr, c1 = c + dc;
+  if (!inBounds(r1, c1)) return null;
+  const a = board[r1][c1];
+  if (a) {
+    if (!isUnit(a)) return null;                 // 剑刃 / 石柱 / 障碍
+    if (a.player === u.player) return null;      // 友军挡路
+    return { r: r1, c: c1, unit: a, dist: 1 };
+  }
+  const r2 = r + dr * 2, c2 = c + dc * 2;
+  if (!inBounds(r2, c2)) return null;
+  const b = board[r2][c2];
+  if (isUnit(b) && b.player !== u.player) return { r: r2, c: c2, unit: b, dist: 2 };
+  return null;
+}
+/* 向前推最多 steps 格；遇英雄 / 剑刃 / 石柱 / 边界立刻停下 */
+function pushUnitForward(tgt, dr, dc, steps) {
+  let moved = 0;
+  for (let i = 0; i < steps; i++) {
+    const p = findPos(tgt);
+    if (!p) break;
+    const nr = p.r + dr, nc = p.c + dc;
+    if (!inBounds(nr, nc)) break;
+    if (board[nr][nc]) break;
+    board[nr][nc] = tgt; board[p.r][p.c] = null; moved++;
+  }
+  return moved;
+}
+/* 目标四周（上下左右）升起石柱；只落在空格 */
+function createPillarsAround(r, c, owner) {
+  const cells = [];
+  for (const [dr, dc] of DIRS) {
+    const rr = r + dr, cc = c + dc;
+    if (!inBounds(rr, cc)) continue;
+    if (board[rr][cc]) continue;                 // 英雄 / 剑刃 / 石柱：不重叠
+    board[rr][cc] = { pillar: true, uid: unitSeq++, owner, turns: PILLAR_TURNS, fresh: true };
+    cells.push([rr, cc]);
+  }
+  return cells;
+}
+/* 每个完整回合结束：先跳过“生成当回合”，之后 -1，归零碎裂 */
+function tickPillars() {
+  const broken = [];
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const p = board[r][c];
+      if (!isPillar(p)) continue;
+      if (p.fresh) { p.fresh = false; continue; }
+      p.turns = (p.turns || 0) - 1;
+      if (p.turns <= 0) { board[r][c] = null; broken.push([r, c]); }
+    }
+  }
+  if (broken.length) {
+    addLog("🪨 临时石柱已经消失（" + broken.length + " 根）。");
+    if (window.BFX) window.BFX.pillars(broken, "break");
+    if (window.SFX) window.SFX.play("pillarBreak");
+  }
 }
 
 function useSkill(tr, tc) {
@@ -2281,6 +2375,53 @@ function useSkill(tr, tc) {
         }
       }
       addLog("🌊 " + label(a) + " 释放【" + s.name + "】，前进到 (" + (ddest.r + 1) + "," + (ddest.c + 1) + ")，九宫格命中 " + dhit + " 名敌人。");
+      break;
+    }
+
+    case "push": {
+      const tgt = unitAt(tr, tc);
+      if (!tgt || tgt.sword || tgt.player === a.player) {
+        addLog("推山：请选择正前方 2 格内的敌方英雄。");
+        render();
+        return;
+      }
+      const dr = Math.sign(tr - r), dc = Math.sign(tc - c);
+      const dist = Math.abs(tr - r) + Math.abs(tc - c);
+      if ((dr !== 0 && dc !== 0) || dist < 1 || dist > 2) {
+        addLog("推山：目标必须在正前方 1–2 格内。");
+        render();
+        return;
+      }
+      const info = pushDirInfo(a, r, c, dr, dc);
+      if (!info || info.unit !== tgt) {
+        addLog("推山：只能推击正前方 2 格内的第一个敌人（友军或障碍会挡住路径）。");
+        render();
+        return;
+      }
+      addLog("⛰ " + label(a) + " 发动【推山】，向" + dirName([dr, dc]) + "推击 " + label(tgt) + "。");
+      if (window.BFX) {
+        window.BFX.cast({ type: "push", heroId: a.heroId, caster: { r, c }, target: { r: info.r, c: info.c }, dir: [dr, dc] });
+      }
+      applyDamage(tgt, s.damage, "skill", a);
+      if (!findPos(tgt)) {
+        addLog("💥 " + label(tgt) + " 被推山击倒，未发生推动与石柱。");
+        break;
+      }
+      const moved = pushUnitForward(tgt, dr, dc, 2);
+      const np = findPos(tgt);
+      if (moved > 0 && np && window.BFX) {
+        window.BFX.move({ from: { r: info.r, c: info.c }, to: { r: np.r, c: np.c }, color: window.BFX.heroColor(tgt.heroId) });
+      }
+      if (moved > 0 && np) addLog("➡ " + label(tgt) + " 被向前推击 " + moved + " 格到 (" + (np.r + 1) + "," + (np.c + 1) + ")。");
+      else addLog("⛰ " + label(tgt) + " 前方受阻，停留在原地。");
+      if (np) {
+        const cells = createPillarsAround(np.r, np.c, a.player);
+        if (cells.length) {
+          addLog("🪨 石柱升起，封锁了 " + label(tgt) + " 四周（" + cells.length + " 根）。");
+          if (window.BFX) window.BFX.pillars(cells, "rise");
+          if (window.SFX) window.SFX.play("pillarRise");
+        }
+      }
       break;
     }
 
@@ -3323,6 +3464,22 @@ function buildSwordObj() {
   return el;
 }
 
+/* 山丘之王·石柱：独立临时地形，显示剩余回合；阻挡移动 / 突进 / 传送 / 推击 */
+function buildPillarObj(p) {
+  const el = document.createElement("div");
+  el.className = "pillar-obj";
+  const rock = document.createElement("div");
+  rock.className = "pillar-rock";
+  rock.textContent = "⛰";
+  el.appendChild(rock);
+  const turns = document.createElement("span");
+  turns.className = "pillar-turns";
+  turns.textContent = String(Math.max(0, p.turns || 0));
+  el.appendChild(turns);
+  el.title = "临时石柱：阻挡移动 / 突进 / 传送 / 推击，剩余 " + Math.max(0, p.turns || 0) + " 个完整回合";
+  return el;
+}
+
 function render() {
   const info = computeFlankInfo();
   boardEl.innerHTML = "";
@@ -3375,6 +3532,9 @@ function render() {
       if (isSword(u)) {
         cell.classList.add("sword-cell");
         cell.appendChild(buildSwordObj());
+      } else if (isPillar(u)) {
+        cell.classList.add("pillar-cell");
+        cell.appendChild(buildPillarObj(u));
       } else if (u) {
         if (phase === "battle" && u.player === currentPlayer && u.frozen <= 0) {
           cell.classList.add("selectable");
@@ -4075,7 +4235,7 @@ function nearestEnemyDist(r, c, player) {
   for (let rr = 0; rr < SIZE; rr++)
     for (let cc = 0; cc < SIZE; cc++) {
       const u = board[rr][cc];
-      if (u && !u.sword && u.player !== player) best = Math.min(best, Math.abs(rr - r) + Math.abs(cc - c));
+      if (isUnit(u) && u.player !== player) best = Math.min(best, Math.abs(rr - r) + Math.abs(cc - c));
     }
   return best;
 }
@@ -4087,7 +4247,7 @@ function flankHypo(r, c, player) {
     const nc = c + dc;
     if (!inBounds(nr, nc)) { wall++; continue; }
     const t = board[nr][nc];
-    if (t && !t.sword && t.player !== player) enemy++;
+    if (isUnit(t) && t.player !== player) enemy++;
   }
   return { enemy, wall, total: enemy + wall };
 }
@@ -4445,6 +4605,35 @@ function aiEnumerate() {
         return;
       }
 
+      // 山丘之王·推山：只对正前方 2 格内第一个敌人释放；评估推击落点与石柱封锁价值
+      if (s.type === "push") {
+        for (const [dr, dc] of DIRS) {
+          const info = pushDirInfo(u, pos.r, pos.c, dr, dc);
+          if (!info) continue;
+          const e = info.unit;
+          let sc = w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0) + 6;
+          const from = findPos(e);
+          if (from) {
+            let nr = from.r, nc = from.c, steps = 0;
+            for (let k = 0; k < 2; k++) {
+              const tr = nr + dr, tc = nc + dc;
+              if (!inBounds(tr, tc) || board[tr][tc]) break;
+              nr = tr; nc = tc; steps++;
+            }
+            if (steps > 0) sc += 6 + steps * 2;
+            let pillars = 0;
+            for (const [ar, ac] of DIRS) {
+              const rr = nr + ar, cc = nc + ac;
+              if (inBounds(rr, cc) && !board[rr][cc]) pillars++;
+            }
+            sc += pillars * 2; // 石柱越多，越能限制敌方走位
+            if (steps === 2) sc += 2; // 完整推击更稳定
+          }
+          acts.push({ type: "skill", u, pos, target: { r: info.r, c: info.c }, skillIdx: si, score: sc * w.skillW });
+        }
+        return;
+      }
+
       activeSkillIdx = si;
       selected = { r: pos.r, c: pos.c };
       computeSkillTargets();
@@ -4606,7 +4795,7 @@ function bfxSnapshot(st) {
   for (let r = 0; r < SIZE; r++) {
     for (let c = 0; c < SIZE; c++) {
       const u = st.board[r][c];
-      if (!u || u.sword) continue;
+      if (!u || u.sword || u.pillar) continue;
       m.set(u.uid, {
         r, c, hp: u.hp, shield: u.shield || 0, frozen: u.frozen || 0,
         heroId: u.heroId, player: u.player,
@@ -4793,6 +4982,27 @@ function applyRemoteState(state) {
     catch (e) { /* 表现层失败不影响权威状态渲染 */ }
   }
   render();
+  // 石柱变化（联机表现）：新增 → 升起；消失 → 碎裂
+  try {
+    const nowP = new Map();
+    const stBoard = state.board || [];
+    for (let r = 0; r < SIZE; r++) {
+      for (let c = 0; c < SIZE; c++) {
+        const cell = stBoard[r] && stBoard[r][c];
+        if (cell && cell.pillar) nowP.set(r + "_" + c, cell.turns || 0);
+      }
+    }
+    if (bfxPillarSnap) {
+      const risen = [], broken = [];
+      for (const k of nowP.keys()) if (!bfxPillarSnap.has(k)) { const q = k.split("_"); risen.push([Number(q[0]), Number(q[1])]); }
+      for (const k of bfxPillarSnap.keys()) if (!nowP.has(k)) { const q = k.split("_"); broken.push([Number(q[0]), Number(q[1])]); }
+      if (risen.length && window.BFX) window.BFX.pillars(risen, "rise");
+      if (risen.length && window.SFX) window.SFX.play("pillarRise");
+      if (broken.length && window.BFX) window.BFX.pillars(broken, "break");
+      if (broken.length && window.SFX) window.SFX.play("pillarBreak");
+    }
+    bfxPillarSnap = nowP;
+  } catch (e) { /* 表现层失败不影响权威状态 */ }
   // 结算演出（联机）：服务端判定 over 后双方进入；重连直接显示面板，不重播
   if (phase === "over") {
     if (victorySeq.resultShown) {
@@ -4814,6 +5024,7 @@ window.onNetJoined = () => {
   logs = [];
   onlineLogSeq = 0;
   bfxPrevSnap = null;      // 重连/新房间：不重播历史动画
+  bfxPillarSnap = null;
   bfxOnlineLogSeq = 0;
 };
 window.onNetStart = () => {

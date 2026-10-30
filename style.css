@@ -1222,3 +1222,52 @@ html, body {
   .bfx-victory.show .bfx-victory-rays,
   .bfx-victory.show .bfx-victory-main, .bfx-victory.show .bfx-victory-sub { animation-duration: .01ms; }
 }
+
+/* =======================================================================
+   山丘之王：临时石柱
+   ======================================================================= */
+.pillar-cell { position: relative; }
+.pillar-cell::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 8px;
+  border: 1px dashed rgba(168, 162, 158, .55);
+  background: linear-gradient(160deg, rgba(120, 113, 108, .28), rgba(41, 37, 36, .45));
+  pointer-events: none;
+}
+.pillar-obj {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  animation: pillarIdle 2.6s ease-in-out infinite;
+}
+.pillar-rock {
+  font-size: clamp(26px, 4.4vw, 42px);
+  line-height: 1;
+  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, .65)) drop-shadow(0 0 6px rgba(168, 162, 158, .35));
+  transform: translateY(1px);
+}
+.pillar-turns {
+  position: absolute;
+  right: 4px;
+  top: 3px;
+  min-width: 15px;
+  padding: 0 3px;
+  border-radius: 6px;
+  background: rgba(28, 25, 23, .92);
+  border: 1px solid rgba(168, 162, 158, .75);
+  color: #e7e5e4;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+@keyframes pillarIdle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1.5px); }
+}

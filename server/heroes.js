@@ -51,4 +51,6 @@ module.exports = [
     ] },
   { id: "huamulan", name: "花木兰", hp: 8, sfx: "heavy",
     skill: { name: "所向披靡", type: "charge", damage: 2, uses: 1, knockback: 2 } },
+  { id: "hillking", name: "山丘之王", hp: 6, sfx: "heavy",
+    skill: { name: "推山", type: "push", damage: 1, uses: 3, push: 2 } },
 ];

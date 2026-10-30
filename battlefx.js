@@ -45,7 +45,7 @@
     assassin: "#22d3ee", warlock: "#a5f3fc", cleric: "#86efac", guardian: "#93c5fd",
     asura: "#e2e8f0", lone: "#facc15", cang: "#38bdf8", longren: "#fbbf24",
     thunder: "#c084fc", vampire: "#e11d48", jade: "#a78bfa", xiangyu: "#f87171",
-    tiandao: "#c084fc", huamulan: "#f43f5e",
+    tiandao: "#c084fc", huamulan: "#f43f5e", hillking: "#a8a29e",
   };
   function heroColor(id) { return HERO_COLOR[id] || "#93c5fd"; }
 
@@ -492,6 +492,29 @@
           ctx.lineTo(e.x + Math.cos(ang) * r2, e.y + Math.sin(ang) * r2);
           ctx.stroke();
         }
+        break;
+      }
+      case "pillar": {
+        const h = (e.h || geo.cell * 0.9) * Math.min(1, p * 2.2);
+        const a = Math.min(1, p * 4);
+        ctx.globalAlpha = a * 0.95;
+        const w = geo.cell * 0.46;
+        ctx.fillStyle = "#57534e";
+        ctx.strokeStyle = c;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(e.x - w, e.y + h * 0.15);
+        ctx.lineTo(e.x - w * 0.82, e.y - h * 0.65);
+        ctx.lineTo(e.x + w * 0.55, e.y - h * 0.78);
+        ctx.lineTo(e.x + w, e.y - h * 0.1);
+        ctx.lineTo(e.x + w * 0.8, e.y + h * 0.15);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "#a8a29e";
+        ctx.beginPath();
+        ctx.ellipse(e.x, e.y - h * 0.7, w * 0.8, w * 0.22, 0, 0, Math.PI * 2);
+        ctx.fill();
         break;
       }
       default: break;
@@ -1183,6 +1206,24 @@
         if (tg.r !== undefined) addMark("impact", tg.r, tg.c, "#f43f5e");
         break;
       }
+      case "push": {
+        // 山丘之王·推山：踏地蓄力 → 直线推击 → 目标处冲击
+        const d0 = m.dir || [0, 1];
+        const ang = Math.atan2(d0[0], d0[1]);
+        push({ kind: "crack", x, y, r: geo.cell * 0.42, color: "#a8a29e", n: 6, dur: dur(360) });
+        push({ kind: "ring", x, y, r0: geo.cell * 0.55, r1: geo.cell * 0.2, color: "#f59e0b", width: 3, dur: dur(300) });
+        const tx2 = tg.c !== undefined ? px(tg.c) : x + d0[1] * geo.cell;
+        const ty2 = tg.r !== undefined ? py(tg.r) : y + d0[0] * geo.cell;
+        push({ kind: "line", x, y, x2: tx2, y2: ty2, color: "#d6d3d1", width: 10, dur: dur(260), alpha: 0.55 });
+        push({ kind: "slash", x: tx2, y: ty2, angle: ang, len: geo.cell * 0.9, width: 5, color: "#fbbf24", dur: dur(260), delay: dur(50) });
+        push({ kind: "ring", x: tx2, y: ty2, r0: 6, r1: geo.cell * 0.75, color: "#a8a29e", width: 4, dur: dur(340), delay: dur(50) });
+        for (let i = 1; i <= 3; i++) {
+          push({ kind: "ghost", x: tx2 + d0[1] * geo.cell * i * 0.5, y: ty2 + d0[0] * geo.cell * i * 0.5, r: geo.cell * 0.22, color: "#a8a29e", dur: dur(220), delay: dur(i * 40) });
+        }
+        spawn(tx2, ty2, 18, { color: "#d6d3d1", speed: 2.8, life: 460, size: 2.2, angle: ang, spread: 1.1 });
+        if (tg.r !== undefined) addMark("impact", tg.r, tg.c, "#a8a29e");
+        break;
+      }
       case "stun": {
         const sx = tx !== null ? tx : x, sy = ty !== null ? ty : y;
         push({ kind: "rune", x: sx, y: sy, r: geo.cell * 0.4, color: "#fbbf24", sides: 5, dur: dur(700) });
@@ -1196,6 +1237,25 @@
         break;
       default:
         break;
+    }
+  }
+
+  /* 山丘之王·石柱：升起 / 碎裂（cells: [[r,c],...]） */
+  function pillars(cells, mode) {
+    if (!opts.enabled || !cells || !cells.length) return;
+    for (const cell of cells) {
+      const r = cell.r !== undefined ? cell.r : cell[0];
+      const c = cell.c !== undefined ? cell.c : cell[1];
+      const x = px(c), y = py(r);
+      if (mode === "break") {
+        spawn(x, y, 16, { color: "#a8a29e", speed: 2.2, life: 520, size: 2.2, grav: 0.12 });
+        push({ kind: "ring", x, y, r0: geo.cell * 0.45, r1: geo.cell * 0.12, color: "#78716c", width: 3, dur: dur(360) });
+        push({ kind: "crack", x, y, r: geo.cell * 0.42, color: "#78716c", n: 5, dur: dur(420) });
+      } else {
+        push({ kind: "pillar", x, y, h: geo.cell * 0.9, color: "#a8a29e", dur: dur(420) });
+        push({ kind: "ring", x, y: y + geo.cell * 0.22, r0: geo.cell * 0.18, r1: geo.cell * 0.55, color: "#d6d3d1", width: 2.5, dur: dur(380) });
+        spawn(x, y + geo.cell * 0.2, 12, { color: "#d6d3d1", speed: 1.4, life: 520, size: 1.8, angle: -Math.PI / 2, spread: 1.4, grav: 0.05 });
+      }
     }
   }
 
@@ -1665,7 +1725,7 @@
     init, sync, setOptions, clear, banner, attack, hit, shieldAbsorb: shieldAbsorb,
     dodge, immune, death, move, knockback, grab, heal, shield: shieldFx, revive,
     swordSpawn, cast, drain, mark: addMark, shake, flash, hitstop, heroColor,
-    turnTransition, talismanCast, talismanEffect,
+    turnTransition, talismanCast, talismanEffect, pillars,
     victoryBurst, victoryTitle, victoryHeroPose, victoryHide,
     setOccupancy(fn) { occupancyFn = fn || null; },
     setTargeting(v) { targeting = !!v; },
