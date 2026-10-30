@@ -662,11 +662,12 @@ function applyAction(state, player, action) {
 
   if (s.phase === "over") return err("对局已结束");
 
-  // 龙胆：额外移动（即使不是自己的回合，只要该龙人有额外移动机会即可）
+  // 龙胆：额外移动（只能在自己的回合、消耗由龙魂闪避积累的次数）
   if (action.type === "dragonmove") {
     const from = action.from || {};
     const u = inB(from.r, from.c) ? s.board[from.r][from.c] : null;
     if (!isUnit(u) || u.player !== player) return err("无效的单位");
+    if (player !== s.currentPlayer) return err("只能在自己回合使用龙胆");
     if (u.heroId !== "longren" || (u.dragonMoves || 0) <= 0) return err("没有额外移动机会");
     const { r, c } = action.to || {};
     if (!inB(r, c) || Math.abs(r - from.r) + Math.abs(c - from.c) !== 1) return err("只能额外移动一格");

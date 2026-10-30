@@ -1023,6 +1023,9 @@ function clearSelection() {
   talismanMode = null;
   talismanTargets = [];
   skillSub = null;
+  // 龙胆选点与普通选择互斥；换回合 / 执行其它行动时一并取消
+  dragonMoveUnit = null;
+  dragonMoveTargets = [];
 }
 
 /* 一方的回合开始：恢复“每回合型”技能次数（如阿修罗·剑圣），并清空选中 */
@@ -2856,6 +2859,13 @@ function canControlForDragonMove(u) {
   if (gameMode === "online") return !window.NET || !window.NET.myPlayer || u.player === window.NET.myPlayer;
   return true;
 }
+/* 龙胆：只能由「己方玩家」在「自己的回合」通过按钮使用 */
+function canUseDragonMoveNow(u) {
+  if (!u || u.sword) return false;
+  if (phase !== "battle") return false;
+  if (u.player !== currentPlayer) return false; // 只能自己回合
+  return canControlForDragonMove(u);            // 只能控制自己的单位
+}
 function selectDragonMove(u, r, c) {
   dragonMoveUnit = u;
   selected = { r, c };
@@ -2873,13 +2883,19 @@ function selectDragonMove(u, r, c) {
   render();
   addLog("🐉 龙胆：" + label(u) + " 有 " + (u.dragonMoves || 0) + " 次额外移动机会，请选择移动方向。");
 }
-/* 龙胆（主动）：点击按钮进入额外移动选格；再次点击取消 */
+/* 龙胆（主动）：点击按钮进入额外移动选格；再次点击取消。
+ * 规则：只能在自己的回合、通过按钮释放（不再支持回合外点击棋子触发）。 */
 function activateDragonMove(u) {
   if (!u || u.sword) return;
-  if (dragonMoveUnit === u) { // 取消
+  if (dragonMoveUnit === u) { // 取消（任何时候都允许）
     dragonMoveUnit = null;
     dragonMoveTargets = [];
     clearSelection();
+    render();
+    return;
+  }
+  if (!canUseDragonMoveNow(u)) {
+    addLog("🐉【龙胆】只能在自己回合通过按钮使用（对手回合闪避积累的次数保留到你的下个回合）。");
     render();
     return;
   }
@@ -2939,18 +2955,9 @@ function randomKnockback(t) {
 function onCellClick(r, c) {
   // 表现层保护：刚完成一次行动后的极短输入锁，防止连续点击重复施法/重复攻击（不影响规则与 AI）
   if (Date.now() < inputLockUntil) return;
-  // 龙胆额外移动优先处理（即使当前是对方回合也可用）
+  // 龙胆选点中：只处理选点（该模式只能由己方回合的按钮开启）
   if (dragonMoveUnit) {
     performDragonMove(r, c);
-    return;
-  }
-  const cu0 = isUnit(board[r][c]) ? board[r][c] : null;
-  if (
-    cu0 && cu0.heroId === "longren" && (cu0.dragonMoves || 0) > 0 &&
-    canControlForDragonMove(cu0) &&
-    (cu0.player !== currentPlayer || turnActionUsed)
-  ) {
-    selectDragonMove(cu0, r, c);
     return;
   }
   // AI 模式下：轮到电脑行动时忽略人类点击
@@ -3370,15 +3377,17 @@ function updateSkillBar() {
     skillBarEl.appendChild(b);
   });
 
-  // 龙人·龙胆：主动「额外移动」按钮（消耗由龙魂成功闪避积累的次数）
+  // 龙人·龙胆：主动「额外移动」按钮（仅在“自己的回合”可用）
   if (u.heroId === "longren") {
     const b = document.createElement("button");
     b.className = "skill-btn dragon-btn";
     const dm = u.dragonMoves || 0;
-    b.disabled = dm <= 0;
+    const canNow = canUseDragonMoveNow(u);
+    b.disabled = dm <= 0 || (!canNow && dragonMoveUnit !== u);
     b.textContent = dragonMoveUnit === u
       ? "✖ 取消 【龙胆】选择移动方向"
-      : "【龙胆】额外移动 ×" + dm + (dm > 0 ? "" : "（无次数）");
+      : "【龙胆】额外移动 ×" + dm +
+        (dm > 0 ? (canNow ? "" : "（仅自己回合可用）") : "（无次数）");
     if (dragonMoveUnit === u) b.classList.add("active");
     b.addEventListener("click", () => activateDragonMove(u));
     skillBarEl.appendChild(b);
