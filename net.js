@@ -13,7 +13,9 @@
   const CLOUD_SERVER = "wss://wyoming-fit-context-drove.trycloudflare.com";
   function defaultUrl() {
     const isLocal = /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/.test(location.hostname || "");
-    if (CLOUD_SERVER && !isLocal) return normalizeUrl(CLOUD_SERVER);
+    // 只有「HTTPS 公网页面」才使用独立的云隧道服务器；
+    // HTTP 页面（localhost / 局域网 IP）直接用同主机的 3000 端口，保证局域网联机始终可用。
+    if (CLOUD_SERVER && !isLocal && location.protocol === "https:") return normalizeUrl(CLOUD_SERVER);
     const proto = location.protocol === "https:" ? "wss://" : "ws://";
     return proto + (location.hostname || "localhost") + ":3000";
   }
