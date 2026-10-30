@@ -189,8 +189,12 @@
 
         <div id="menu-settings" class="menu-section hidden">
           <div class="menu-row"><label><input type="checkbox" id="set-sfx" checked> 战斗音效</label></div>
-          <div class="menu-row"><span class="menu-label">音效音量</span><input type="range" id="set-vol" min="0" max="100" value="60"></div>
+          <div class="menu-row"><span class="menu-label">音效音量</span><input type="range" id="set-vol" min="0" max="100" value="70"></div>
+          <div class="menu-row"><span class="menu-label">主音量</span><input type="range" id="set-master" min="0" max="100" value="85"></div>
+          <div class="menu-row"><label><input type="checkbox" id="set-skill-sfx" checked> 技能音效</label></div>
           <div class="menu-row"><button id="set-sfx-test" class="menu-mini">试听音效</button></div>
+          <div class="menu-row"><button id="set-sfx-reset" class="menu-mini">恢复默认音效</button></div>
+          <div class="menu-row"><span class="muted" id="sfx-state">音效开启</span></div>
 
           <div class="fx-sub">战斗表现（只影响画面，不影响判定）</div>
           <div class="fx-settings">
@@ -228,7 +232,7 @@
 
   <script src="heroes.js"></script>
   <script src="talismans.js"></script>
-  <script src="sfx.js"></script>
+  <script src="sfx.js?v=2"></script>
   <script src="bgm.js"></script>
   <script src="battlefx.js?v=3"></script>
   <script src="net.js?v=5"></script>

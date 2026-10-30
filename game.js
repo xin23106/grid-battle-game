@@ -444,9 +444,9 @@ function knockOutOfBox3(v, boxR, boxC) {
   board[dest.r][dest.c] = v;
   board[p.r][p.c] = null;
   if (window.BFX) window.BFX.knockback({ from: p, to: dest, color: window.BFX.heroColor(v.heroId) });
+  if (window.SFX) window.SFX.play("knockback", { hero: v.heroId });
   return dest;
 }
-
 /* ---------------- 天道超：神罗天征 / 万象天引 ---------------- */
 /* 按棋盘位置排序（多目标逐个结算，保证顺序固定、不重叠） */
 function sortUnitsByPos(list) {
@@ -474,6 +474,7 @@ function knockOutBoxAway(t, boxR, boxC, fromR, fromC) {
     board[nr][nc] = t;
     board[p.r][p.c] = null;
     if (window.BFX) window.BFX.knockback({ from: p, to: { r: nr, c: nc }, color: window.BFX.heroColor(t.heroId) });
+    if (window.SFX) window.SFX.play("knockback", { hero: t.heroId });
     return { r: nr, c: nc };
   }
   const far = [];
@@ -486,6 +487,7 @@ function knockOutBoxAway(t, boxR, boxC, fromR, fromC) {
   board[dest.r][dest.c] = t;
   board[p.r][p.c] = null;
   if (window.BFX) window.BFX.knockback({ from: p, to: dest, color: window.BFX.heroColor(t.heroId) });
+  if (window.SFX) window.SFX.play("knockback", { hero: t.heroId });
   return dest;
 }
 /* 万象天引第三段：沿远离 (fromR,fromC) 的方向击退 1 格 */
@@ -504,6 +506,7 @@ function pushAwayOne(t, fromR, fromC) {
     board[nr][nc] = t;
     board[p.r][p.c] = null;
     if (window.BFX) window.BFX.knockback({ from: p, to: { r: nr, c: nc }, color: window.BFX.heroColor(t.heroId) });
+    if (window.SFX) window.SFX.play("knockback", { hero: t.heroId });
     return { r: nr, c: nc };
   }
   return null;
@@ -608,6 +611,7 @@ function applyNegativeStatus(target, kind, opts) {
     if (p && window.BFX) {
       window.BFX.grab({ from: opts.from || p, to: p, color: kind === "grab" ? "#38bdf8" : "#a5f3fc" });
     }
+    if (window.SFX) window.SFX.play("grab", { hero: target.heroId });
   }
   return { applied: true, immune: false, damage: dmg };
 }
@@ -877,6 +881,7 @@ function init() {
   winner = 0;
   logs = [];
   if (window.BFX) window.BFX.clear(); // 新开一局：清空上一局的战场痕迹与粒子
+  if (window.SFX) window.SFX.stopAll(); // 清理上一局可能残留的持续音
   inputLockUntil = 0;
   unitSeq = 1;
   fx = [];
@@ -1018,6 +1023,10 @@ function endTurnOnce() {
         if (u.empowerTurns <= 0) {
           u.shield = 0;
           addLog("⚡ 雷电之主的强化状态结束（剩余护盾清除）。");
+          if (window.SFX) {
+            window.SFX.play("buffDown", { hero: "thunder" });
+            window.SFX.stopLoop("empower");
+          }
         }
       }
     }
@@ -1078,6 +1087,13 @@ function checkVictory() {
     if (window.BFX) {
       window.BFX.banner("对局结束", "玩家" + winner + " 获胜");
       window.BFX.flash(winner === 1 ? "#60a5fa" : "#f87171", 0.22);
+    }
+    if (window.SFX) {
+      let iWin = true;
+      if (gameMode === "ai") iWin = winner !== aiPlayer;
+      else if (gameMode === "online" && window.NET && window.NET.myPlayer) iWin = winner === window.NET.myPlayer;
+      window.SFX.stopAll();
+      window.SFX.play(iWin ? "win" : "lose", { hero: "jade" });
     }
     return true;
   }
@@ -1470,6 +1486,7 @@ function applyDamage(target, amount, kind, source) {
     addLog("🛡 坚守令为 " + label(target) + " 减免 1 点伤害。");
   }
 
+  const shieldBefore = target.shield;
   let absorbedTotal = 0;
   if (target.shield > 0) {
     const absorbed = Math.min(target.shield, dmg);
@@ -1483,6 +1500,7 @@ function applyDamage(target, amount, kind, source) {
     target.lockUsed = true;
     dmg = Math.max(0, target.hp - 1);
     addLog("🛡 孤胆侠·霸体：抵挡本次致命伤害，生命锁定为 1 点（本局一次）。");
+    if (window.SFX) window.SFX.play("buffUp", { hero: "lone" });
     if (pos) fx.push({ r: pos.r, c: pos.c, text: "锁血!", kind: "shield" });
   }
   // 龙魂：龙人受到实际伤害前有 1/2（50%）概率闪避（护盾等前置减伤处理之后；完全抵消则不触发）
@@ -1501,8 +1519,8 @@ function applyDamage(target, amount, kind, source) {
     guixiongTriggered = true;
     dmg = Math.max(0, target.hp - 1);
     addLog("👹 西楚霸王·鬼雄：锁定生命为 1 点，免于阵亡（本局一次）！");
+    if (window.SFX) window.SFX.play("buffUp", { hero: "xiangyu" });
     if (pos) fx.push({ r: pos.r, c: pos.c, text: "鬼雄!", kind: "skill" });
-    if (window.SFX) window.SFX.play("skill", { sfx: sfxOf(target) });
   }
   if (dmg > 0) target.hp -= dmg;
 
@@ -1515,9 +1533,20 @@ function applyDamage(target, amount, kind, source) {
 
   if (pos) fx.push({ r: pos.r, c: pos.c, text: dodged ? "闪避" : (dmg > 0 ? "-" + dmg : "格挡"), kind: kind || "normal" });
 
-  // 命中 / 技能命中音效（仅在真正造成伤害时播放，避免“落空”仍发声）
-  if (dmg > 0 && window.SFX) {
-    window.SFX.play(kind === "skill" ? "skillHit" : "hit", { sfx: sfxOf(target) });
+  // 命中音效：只在真实结果上播放（闪避 / 护盾 / 命中 / 重击各有独立配方）
+  if (window.SFX) {
+    const atkHero = (source && !source.sword) ? source.heroId : target.heroId;
+    if (dodged) {
+      window.SFX.play("dodge", { hero: target.heroId });
+    } else if (absorbedTotal > 0) {
+      if (shieldBefore > 0 && target.shield <= 0) window.SFX.play("shieldBreak", { hero: target.heroId });
+      else window.SFX.play("shieldHit", { hero: target.heroId });
+    } else if (dmg > 0) {
+      window.SFX.play(kind === "skill" ? "skillHit" : "hit", {
+        hero: atkHero, amount: dmg, heavy: dmg >= 3 || kind === "flank",
+      });
+      if (dmg >= 3) window.SFX.play("hurt", { hero: target.heroId });
+    }
   }
 
   // 表现层：护盾吸收 / 闪避 / 命中（纯视觉，不影响结算）
@@ -1554,7 +1583,8 @@ function applyDamage(target, amount, kind, source) {
     });
     board[pos.r][pos.c] = null;
     addLog(label(target) + " 阵亡！");
-    if (window.SFX) window.SFX.play("death", { sfx: sfxOf(target) });
+    if (window.SFX) window.SFX.play("death", { hero: target.heroId });
+    if (window.SFX && target.heroId === "thunder") window.SFX.stopLoop("empower");
     if (window.BFX) window.BFX.death({ r: pos.r, c: pos.c, color: window.BFX.heroColor(target.heroId) });
     // 阿修罗·锻剑：阿修罗存活时，阵亡位置留下一把剑
     if (spawnSword(pos.r, pos.c)) {
@@ -1610,8 +1640,11 @@ function normalAttack(attacker, target) {
     addLog(label(attacker) + " 攻击 " + label(target) + "，造成 " + (res.damage + aBonus) + " 点伤害" + (res.guixiong ? "（鬼雄·绝境 +1）" : "") + (aBonus ? "（猛攻令 +1）" : "") + "。");
   }
 
-  if (window.SFX) window.SFX.play("attack", { sfx: sfxOf(attacker) });
-  if (res.flank && window.SFX) window.SFX.play("flank", { sfx: sfxOf(attacker) });
+  if (window.SFX) {
+    const _heavy = /^(berserker|xiangyu|guardian|knight|jade|lone)$/.test(attacker.heroId);
+    window.SFX.play("attack", { hero: attacker.heroId, heavy: _heavy });
+  }
+  if (res.flank && window.SFX) window.SFX.play("flank", { hero: attacker.heroId });
   // 表现层：突进 + 挥击轨迹（近战手感；不改变结算）
   if (window.BFX && atkBefore && tgtBefore) {
     window.BFX.attack({
@@ -1801,7 +1834,12 @@ function useSkill(tr, tc) {
     return;
   }
   const target = unitAt(tr, tc);
-  if (window.SFX) window.SFX.play("skill", { sfx: sfxOf(a) });
+  // 技能音效在“结算成功后”统一播放（失败/取消会提前 return，不会误播）
+  const sfxStage = s.type === "shuidiao" ? (a.sdStage || 0)
+    : s.type === "wxt" ? (a.wxtStage || 0)
+      : s.type === "chase" ? (a.chaseStage || 0) : 0;
+  const sfxType = s.type;
+  const sfxHero = a.heroId;
   const sd2 = s.type === "shuidiao" && (a.sdStage || 0) === 1; // 水调歌头第二段（同一套的延续）
   const chase2 = s.type === "chase" && (a.chaseStage || 0) === 1; // 追猎第二段（不消耗次数、不消耗行动）
   const wxtCombo = s.type === "wxt" && (a.wxtStage || 0) >= 1; // 万象天引第二/三段（只消耗行动，不重复消耗整套次数）
@@ -1898,7 +1936,6 @@ function useSkill(tr, tc) {
         render();
         return;
       }
-      if (window.SFX) window.SFX.play("dash", { sfx: sfxOf(a) });
       const dashDmg = s.damage + attackerBonus(a); // 剑圣伤害 + 猛攻令/孤胆
       const fr = computeDashPath(a, r, c, opt.dir[0], opt.dir[1], 3); // 按实际路径重新判定
       if (window.BFX) window.BFX.cast({ type: "dash", heroId: a.heroId, caster: { r, c }, from: { r, c }, to: fr.dest || { r, c } });
@@ -1907,7 +1944,6 @@ function useSkill(tr, tc) {
         const t = board[h.r][h.c];
         if (t && !t.sword && t.player !== a.player) {
           applyDamage(t, dashDmg, "skill"); // 阿修罗·剑圣的伤害（技能，不吃夹击加成）
-          if (window.SFX) window.SFX.play("dashHit", { sfx: "blade" });
           hitCount++;
         }
       }
@@ -1971,7 +2007,6 @@ function useSkill(tr, tc) {
         // 第二段：突进 2 格，擒拿沿途第一个敌人（按实际路径重新判定）
         const opt2 = dashOptions.find((o) => o.stage === 2 && o.target && o.target.r === tr && o.target.c === tc);
         if (!opt2) { addLog("突进方向无效。"); clearSelection(); render(); return; }
-        if (window.SFX) window.SFX.play("dash", { sfx: sfxOf(a) });
         const fr = computeDashPath(a, r, c, opt2.dir[0], opt2.dir[1], 2);
         if (window.BFX) window.BFX.cast({ type: "shuidiao", heroId: a.heroId, caster: { r, c }, from: { r, c }, to: fr.dest || { r, c }, stage: 1 });
         let grabbed = null;
@@ -1993,7 +2028,6 @@ function useSkill(tr, tc) {
         // 第一段第 2 步：先位移到 skillSub 记录的落点，再突进 3 格（按实际路径重新判定）
         const opt1 = dashOptions.find((o) => o.stage === 1 && o.target && o.target.r === tr && o.target.c === tc);
         if (!opt1) { addLog("突进方向无效。"); skillSub = null; clearSelection(); render(); return; }
-        if (window.SFX) window.SFX.play("dash", { sfx: sfxOf(a) });
         const rp = opt1.reposition || { r, c };
         if (!(rp.r === r && rp.c === c)) {
           board[rp.r][rp.c] = a;
@@ -2085,6 +2119,10 @@ function useSkill(tr, tc) {
         a.empowerTurns = s.empowerTurns || 3;
         a.shield += s.empowerShield || 2;
         addLog("⚡ 雷电之主进入【强化】：获得 " + (s.empowerShield || 2) + " 点护盾，持续 " + (s.empowerTurns || 3) + " 个自身回合（每回合 2 次行动）。");
+        if (window.SFX) {
+          window.SFX.play("buffUp", { hero: "thunder" });
+          window.SFX.startLoop("empower");
+        }
       } else {
         addLog("⚡ 雷电之主已处于强化状态，刷新无效（不叠加护盾/时间）。");
       }
@@ -2154,7 +2192,7 @@ function useSkill(tr, tc) {
       for (const t of hitUnits) applyDamage(t, s.damage, "skill", a); // 全部结算（逐个判定，不只命中第一个）
       const marked = hitUnits.filter((t) => findPos(t)).length;
       a.chaseStage = 1; // 进入第二段待释放状态
-      if (window.SFX) window.SFX.play("dash", { sfx: sfxOf(a) });
+      if (window.SFX && marked > 0) window.SFX.play("mark", { hero: a.heroId });
       addLog("🗡 " + label(a) + " 释放【" + s.name + "】，向" + dirName(opt.dir) + "投出飞镖，贯穿 " + opt.path.length + " 格，命中 " + hitUnits.length + " 名敌人" + (marked ? "（" + marked + " 个【追猎标记】）" : "（无标记）") + "。");
       break;
     }
@@ -2222,7 +2260,6 @@ function useSkill(tr, tc) {
       let zHit = 0;
       for (const t of beforeU) { if (!findPos(t)) continue; applyDamage(t, s.damage, "skill", a); zHit++; }
       for (const t of afterU) { if (!findPos(t)) continue; applyDamage(t, s.damage, "skill", a); zHit++; } // 重叠区域再结算一次
-      if (window.SFX) window.SFX.play("dash", { sfx: sfxOf(a) });
       addLog("👑 " + label(a) + " 释放【" + s.name + "】，瞬移到 (" + (tr + 1) + "," + (tc + 1) + ")，位移前后共结算 " + zHit + " 次伤害（重叠区域分别计算）。");
       fx.push({ r: tr, c: tc, text: "神步", kind: "skill" });
       break;
@@ -2278,7 +2315,6 @@ function useSkill(tr, tc) {
         tHit++;
         if (findPos(t) && knockOutOfBox3(t, tr, tc)) tKnock++;
       }
-      if (window.SFX) window.SFX.play("dash", { sfx: sfxOf(a) });
       addLog("👑 " + label(a) + " 释放【" + s.name + "】，降临 (" + (tr + 1) + "," + (tc + 1) + ")，命中 " + tHit + " 名敌人，击飞 " + tKnock + " 名。");
       fx.push({ r: tr, c: tc, text: "天威", kind: "skill" });
       break;
@@ -2294,7 +2330,6 @@ function useSkill(tr, tc) {
         sHit++;
         if (findPos(t) && knockOutBoxAway(t, r, c, r, c)) sPushed++; // 再尝试击退出九宫格
       }
-      if (window.SFX) window.SFX.play("skill", { sfx: sfxOf(a) });
       fx.push({ r, c, text: "神罗", kind: "skill" });
       addLog("🌀 " + label(a) + " 释放【" + s.name + "】，命中 " + sHit + " 名敌人，击退 " + sPushed + " 名。");
       break;
@@ -2399,6 +2434,10 @@ function useSkill(tr, tc) {
   const keepOpen = !!(s.free && !s.perTurn);  // free 型技能使用后不结束回合
   if (!isFree) turnActionUsed = true;
   clearSelection();
+  // 技能音效：只有在真正结算完成（未提前 return）后才播放，失败/取消不会误播
+  if (window.SFX && window.SFX.playSkill) {
+    window.SFX.playSkill(sfxType, { hero: sfxHero, stage: sfxStage });
+  }
   afterAction(a, isFree, keepOpen);
 }
 
@@ -2592,6 +2631,7 @@ function useTalismanEffect(id, tr, tc) {
       }
       const healed = Math.max(0, Math.min(t.heal || 2, u.maxHp - u.hp));
       u.hp += healed;
+      if (window.SFX) window.SFX.play("heal", { hero: u.heroId });
       if (window.BFX) window.BFX.heal({ r: tr, c: tc, amount: healed });
       fx.push({ r: tr, c: tc, text: "+" + healed, kind: "heal" });
       addLog("➕ 玩家" + player + " 使用【战地急救令】：" + label(u) + " 恢复 " + healed + " 点生命（" + u.hp + "/" + u.maxHp + "）。");
@@ -2623,6 +2663,7 @@ function useTalismanEffect(id, tr, tc) {
         chaseMark: 0,
       };
       graveyard = graveyard.filter((g) => g !== rec);
+      if (window.SFX) window.SFX.play("revive", { hero: def.id });
       if (window.BFX) window.BFX.revive({ r: tr, c: tc });
       fx.push({ r: tr, c: tc, text: "复活", kind: "heal" });
       addLog("💫 玩家" + player + " 使用【还魂令】：" + def.name + " 在 (" + (tr + 1) + "," + (tc + 1) + ") 复活，恢复至 3 点生命（技能剩余 " + (rec.usesLeft || 0) + " 次，携带剑 " + (rec.swords || 0) + "）。");
@@ -2632,7 +2673,7 @@ function useTalismanEffect(id, tr, tc) {
       ok = false;
   }
   if (!ok) { render(); return false; }            // 非法：不消耗锦囊
-  if (window.SFX) window.SFX.play("skill", { sfx: "holy" });
+  if (window.SFX) window.SFX.play("talisman", { hero: "jade" });
   talismanUsed[player] = true;                     // 使用后消耗
   clearSelection();
   if (checkVictory()) return true;
@@ -2780,6 +2821,7 @@ function randomKnockback(t) {
   board[pick.r][pick.c] = t;
   board[p.r][p.c] = null;
   if (window.BFX) window.BFX.knockback({ from: p, to: pick, color: window.BFX.heroColor(t.heroId) });
+  if (window.SFX) window.SFX.play("knockback", { hero: t.heroId });
   return pick;
 }
 
@@ -3451,12 +3493,14 @@ function startAI() {
   aiKick();
 }
 function syncSettingsUI() {
+  // 统一的音效设置同步（避免与旧字段 volume 冲突）
+  if (typeof syncSfxUI === "function") { syncSfxUI(); return; }
   if (!window.SFX) return;
   const st = SFX.getSettings();
   const cb = document.getElementById("set-sfx");
   const vol = document.getElementById("set-vol");
   if (cb) cb.checked = st.enabled;
-  if (vol) vol.value = Math.round(st.volume * 100);
+  if (vol) vol.value = Math.round((st.sfx == null ? 0.7 : st.sfx) * 100);
 }
 function syncServerInput() {
   if (!window.NET) return;
@@ -4142,36 +4186,76 @@ function bfxSnapshot(st) {
   return m;
 }
 /* 联机表现层：由“服务端确认后的状态差异”派生战斗事件；只播放，不结算、不改状态 */
+function skillTypeByName(name) {
+  for (const h of HEROES) {
+    for (const sk of heroSkills(h)) {
+      if (sk && sk.name === name) return sk.type;
+    }
+  }
+  return "";
+}
 function bfxOnlineDerive(prev, next, st) {
-  if (!window.BFX || !st || st.phase !== "battle") return;
+  if (!st || st.phase !== "battle") return;
   if (st.log) {
     for (const e of st.log) {
       if (typeof e.id !== "number" || e.id <= bfxOnlineLogSeq) continue;
       bfxOnlineLogSeq = e.id;
       const m = /^(.+?) 释放【(.+?)】/.exec(e.text || "");
-      if (m) window.BFX.banner(m[1].replace(/^玩家\d+·/, ""), m[2], "");
+      if (m) {
+        const heroName = m[1].replace(/^玩家\d+·/, "");
+        const skName = m[2].split("·")[0];
+        const hero = HEROES.find((h) => h.name === heroName);
+        if (window.BFX) window.BFX.banner(heroName, m[2], "");
+        if (window.SFX && window.SFX.playSkill) {
+          window.SFX.playSkill(skillTypeByName(skName) || "passive", { hero: hero ? hero.id : "", stage: 0 });
+        }
+      }
     }
   }
   for (const [uid, n] of next) {
     const p = prev.get(uid);
-    if (!p) { window.BFX.revive({ r: n.r, c: n.c }); continue; }
+    if (!p) {
+      if (window.BFX) window.BFX.revive({ r: n.r, c: n.c });
+      if (window.SFX) window.SFX.play("revive", { hero: n.heroId });
+      continue;
+    }
     const hpDrop = Math.max(0, p.hp - n.hp);
     const shDrop = Math.max(0, p.shield - n.shield);
     if (p.r !== n.r || p.c !== n.c) {
-      window.BFX.move({
+      if (window.BFX) window.BFX.move({
         from: { r: p.r, c: p.c }, to: { r: n.r, c: n.c },
         blink: Math.abs(p.r - n.r) + Math.abs(p.c - n.c) > 1,
         color: window.BFX.heroColor(n.heroId),
       });
     }
-    if (shDrop > 0 && hpDrop === 0) window.BFX.shieldAbsorb({ r: n.r, c: n.c, amount: shDrop });
-    if (hpDrop > 0) window.BFX.hit({ r: n.r, c: n.c, amount: hpDrop, kind: "skill", color: window.BFX.heroColor(n.heroId), uid: uid });
-    if (!p.grab && n.grab) window.BFX.grab({ from: { r: n.r, c: n.c }, to: { r: n.r, c: n.c }, color: "#38bdf8" });
-    if (!p.empower && n.empower) window.BFX.cast({ type: "thunder", heroId: "thunder", caster: { r: n.r, c: n.c }, target: { r: n.r, c: n.c } });
-    if (n.hp > p.hp) window.BFX.heal({ r: n.r, c: n.c, amount: n.hp - p.hp });
+    if (shDrop > 0 && hpDrop === 0) {
+      if (window.BFX) window.BFX.shieldAbsorb({ r: n.r, c: n.c, amount: shDrop });
+      if (window.SFX) window.SFX.play("shieldHit", { hero: n.heroId });
+    }
+    if (hpDrop > 0) {
+      if (window.BFX) window.BFX.hit({ r: n.r, c: n.c, amount: hpDrop, kind: "skill", color: window.BFX.heroColor(n.heroId), uid: uid });
+      if (window.SFX) window.SFX.play("hit", { hero: n.heroId, amount: hpDrop, heavy: hpDrop >= 3 });
+    }
+    if (!p.grab && n.grab) {
+      if (window.BFX) window.BFX.grab({ from: { r: n.r, c: n.c }, to: { r: n.r, c: n.c }, color: "#38bdf8" });
+      if (window.SFX) window.SFX.play("grab", { hero: n.heroId });
+    }
+    if (!p.empower && n.empower) {
+      if (window.BFX) window.BFX.cast({ type: "thunder", heroId: "thunder", caster: { r: n.r, c: n.c }, target: { r: n.r, c: n.c } });
+      if (window.SFX) { window.SFX.play("buffUp", { hero: "thunder" }); window.SFX.startLoop("empower"); }
+    } else if (p.empower && !n.empower) {
+      if (window.SFX) { window.SFX.play("buffDown", { hero: "thunder" }); window.SFX.stopLoop("empower"); }
+    }
+    if (n.hp > p.hp) {
+      if (window.BFX) window.BFX.heal({ r: n.r, c: n.c, amount: n.hp - p.hp });
+      if (window.SFX) window.SFX.play("heal", { hero: n.heroId });
+    }
   }
   for (const [uid, p] of prev) {
-    if (!next.has(uid)) window.BFX.death({ r: p.r, c: p.c, color: window.BFX.heroColor(p.heroId) });
+    if (!next.has(uid)) {
+      if (window.BFX) window.BFX.death({ r: p.r, c: p.c, color: window.BFX.heroColor(p.heroId) });
+      if (window.SFX) window.SFX.play("death", { hero: p.heroId });
+    }
   }
 }
 
@@ -4397,25 +4481,57 @@ if (document.getElementById("phone-copy")) {
   setTimeout(() => { if (window.BFX) window.BFX.sync(); }, 80);
 })();
 
-/* 设置：音效开关 / 音量（自动保存到 localStorage） */
+/* 设置：音效开关 / 音量 / 技能音效（自动保存到 localStorage） */
+function syncSfxUI() {
+  if (!window.SFX) return;
+  const s = SFX.getSettings();
+  const c1 = document.getElementById("set-sfx");
+  const c2 = document.getElementById("set-skill-sfx");
+  const v1 = document.getElementById("set-vol");
+  const v2 = document.getElementById("set-master");
+  const st = document.getElementById("sfx-state");
+  if (c1) c1.checked = !!s.enabled;
+  if (c2) { c2.checked = !!s.skills; c2.disabled = !s.enabled; }
+  if (v1) v1.value = String(Math.round(s.sfx * 100));
+  if (v2) v2.value = String(Math.round(s.master * 100));
+  if (st) {
+    st.textContent = s.enabled
+      ? "音效开启 · 战斗 " + Math.round(s.sfx * 100) + "% · 主音量 " + Math.round(s.master * 100) + "%" + (s.skills ? "" : " · 技能音效已关")
+      : "已静音（战斗音效关闭）";
+  }
+}
 document.getElementById("set-sfx").addEventListener("change", (e) => {
   if (window.SFX) SFX.setEnabled(e.target.checked);
+  syncSfxUI();
 });
 document.getElementById("set-vol").addEventListener("input", (e) => {
-  const v = parseInt(e.target.value, 10) / 100;
   if (window.SFX) {
-    SFX.setVolume(v);
+    SFX.setVolume(parseInt(e.target.value, 10) / 100);
+    if (!SFX.isEnabled()) SFX.setEnabled(true); // 拖动音量即视为想听
+  }
+  syncSfxUI();
+});
+document.getElementById("set-master").addEventListener("input", (e) => {
+  if (window.SFX) {
+    SFX.setMaster(parseInt(e.target.value, 10) / 100);
     if (!SFX.isEnabled()) SFX.setEnabled(true);
   }
-  const cb = document.getElementById("set-sfx");
-  if (cb) cb.checked = true;
+  syncSfxUI();
+});
+document.getElementById("set-skill-sfx").addEventListener("change", (e) => {
+  if (window.SFX) SFX.setSettings({ skills: e.target.checked });
+  syncSfxUI();
+});
+document.getElementById("set-sfx-reset").addEventListener("click", () => {
+  if (window.SFX) SFX.resetDefaults();
+  syncSfxUI();
 });
 document.getElementById("set-sfx-test").addEventListener("click", () => {
   if (!window.SFX) return;
   SFX.unlock();
-  SFX.play("attack", { sfx: "sword" });
-  setTimeout(() => SFX.play("hit", { sfx: "blade" }), 90);
+  SFX.testDemo();
 });
+syncSfxUI();
 
 /* 在线联机入口（需要先启动 server/ 下的 Node 服务器） */
 document.getElementById("create-room").addEventListener("click", () => {
@@ -4603,6 +4719,7 @@ window.GameAPI = {
     unitSeq = 1;
     logs = [];
     if (window.BFX) window.BFX.clear(); // 新开一局：清空战场痕迹
+    if (window.SFX) window.SFX.stopAll();
     inputLockUntil = 0;
     fx = [];
     turnActionUsed = false;
