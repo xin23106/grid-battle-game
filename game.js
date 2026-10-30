@@ -1527,7 +1527,11 @@ function applyDamage(target, amount, kind, source) {
       window.BFX.dodge({ r: pos.r, c: pos.c, heroId: target.heroId, uid: target.uid });
     } else {
       if (absorbedTotal > 0) window.BFX.shieldAbsorb({ r: pos.r, c: pos.c, amount: absorbedTotal, uid: target.uid });
-      if (dmg > 0) window.BFX.hit({ r: pos.r, c: pos.c, amount: dmg, kind: kind || "normal", color: hcol, heroId: target.heroId, uid: target.uid });
+      if (dmg > 0) window.BFX.hit({
+        r: pos.r, c: pos.c, amount: dmg, kind: kind || "normal",
+        color: hcol, heroId: (source && !source.sword) ? source.heroId : target.heroId,
+        uid: target.uid,
+      });
     }
     if (dmg >= 3 || kind === "flank") window.BFX.hitstop(60);
   }
@@ -3029,7 +3033,12 @@ function render() {
   fx = []; // 飘字为一次性特效，渲染后清空
   updatePanel(info);
   // 表现层：棋盘重建后校正画布尺寸/坐标（仅尺寸变化时才真正重置，不会打断正在播放的特效）
-  if (window.BFX) window.BFX.sync();
+  if (window.BFX) {
+    window.BFX.sync();
+    // 正在选目标 / 显示可操作范围时，让战场印记进一步变淡，避免盖住高亮
+    window.BFX.setTargeting(!!(selected && (skillMode || talismanMode ||
+      moveTargets.length || attackTargets.length || skillTargets.length)));
+  }
 }
 
 function updateRoster() {
@@ -4362,6 +4371,12 @@ if (document.getElementById("phone-copy")) {
   const wrapEl = document.querySelector(".board-wrap");
   const boardDom = document.getElementById("board");
   window.BFX.init({ wrap: wrapEl, board: boardDom });
+  // 痕迹避让：有单位的格子只画在边缘，绝不压住棋子图标 / 血条
+  window.BFX.setOccupancy((r, c) => {
+    const row = board && board[r];
+    const u = row && row[c];
+    return !!(u && !u.sword);
+  });
   const o = window.BFX.options;
   const bind = (id, key, isCheck) => {
     const el = document.getElementById(id);

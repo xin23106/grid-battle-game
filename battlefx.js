@@ -159,12 +159,17 @@
 
   function draw(t) {
     ctx.clearRect(0, 0, W, H);
-    // 痕迹层（低透明度，不遮挡棋子/血条）
+    // 痕迹层：低透明度 + 选目标时进一步变淡；有单位的格子避开中心（不盖棋子/血条）
     if (opts.traces) {
+      const ta = targeting ? 0.35 : 1;
       for (const m of marks) {
         const p = clamp01((t - m.t0) / m.ttl);
-        const a = p < 0.82 ? 1 : 1 - (p - 0.82) / 0.18;
-        drawMark(m, a * 0.5);
+        const fade = p < 0.55 ? 1 : 1 - (p - 0.55) / 0.45;  // 后 45% 逐渐淡出
+        const st = MARK_STYLE[m.kind] || {};
+        const occ = occupancyFn ? !!occupancyFn(m.r, m.c) : false;
+        const a = (st.alpha || 0.18) * fade * ta * (occ ? 0.75 : 1);
+        if (a <= 0.01) continue;
+        drawMark(m, a, occ);
       }
     }
     // 瞬时特效
@@ -327,6 +332,28 @@
         ctx.stroke();
         break;
       }
+      case "ribbon": {
+        const a = 1 - clamp01((p - 0.45) / 0.55);
+        const dx = e.x2 - e.x, dy = e.y2 - e.y, L = Math.hypot(dx, dy) || 1;
+        const nx = -dy / L, ny = dx / L;
+        ctx.strokeStyle = c;
+        ctx.lineCap = "round";
+        for (let k = 0; k < 2; k++) {
+          ctx.globalAlpha = a * (k ? 0.45 : 0.9);
+          ctx.lineWidth = (e.width || 3) * (k ? 0.55 : 1);
+          ctx.beginPath();
+          const N = 16;
+          for (let i = 0; i <= N; i++) {
+            const q = i / N;
+            const off = Math.sin(q * Math.PI * 2 + p * 7 + k * 1.9) * (e.bend || 7) * Math.sin(q * Math.PI);
+            const X = e.x + dx * q + nx * off;
+            const Y = e.y + dy * q + ny * off;
+            if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y);
+          }
+          ctx.stroke();
+        }
+        break;
+      }
       case "text": {
         const rise = (e.rise || 26) * easeOut(p);
         ctx.globalAlpha = 1 - clamp01((p - 0.55) / 0.45);
@@ -457,19 +484,56 @@
   }
 
   /* ---------------- 痕迹（第三层：战场印记） ---------------- */
-  const MARK_TTL = { sword: 14000, water: 12000, thunder: 15000, impact: 13000, blood: 16000, space: 11000, ember: 10000, frost: 12000 };
+  /* 痕迹层级：不同技能留下不同“重量”的印记；alpha 较低，永不压过棋子与操作范围 */
+  const MARK_STYLE = {
+    sword:   { alpha: 0.20, ttl: 12000, rim: true },  // 剑痕：淡、细、偏边缘
+    water:   { alpha: 0.15, ttl: 7000,  rim: true },  // 水纹：最短命，流动后消失
+    thunder: { alpha: 0.26, ttl: 15000, rim: false }, // 焦痕：最重但面积小
+    impact:  { alpha: 0.12, ttl: 10000, rim: true },  // 冲击纹：很淡
+    blood:   { alpha: 0.20, ttl: 16000, rim: true },  // 血痕：低饱和、偏角落
+    space:   { alpha: 0.18, ttl: 9000,  rim: true },  // 空间裂隙：中等寿命
+    ember:   { alpha: 0.12, ttl: 8000,  rim: true },  // 灼痕：最轻
+    frost:   { alpha: 0.14, ttl: 10000, rim: true },  // 霜痕
+  };
+  let occupancyFn = null;   // (r,c) => 该格是否有单位（有则痕迹避开中心）
+  let targeting = false;    // 正在选目标 / 显示范围时，痕迹进一步变淡
+
   function addMark(kind, r, c, color, ttl) {
     if (!opts.enabled || !opts.traces) return;
     if (r == null || c == null) return;
+    const st = MARK_STYLE[kind] || {};
     const t = now();
-    marks.push({ kind, r, c, color: color || "#94a3b8", t0: t, ttl: dur(ttl || MARK_TTL[kind] || 12000), seed: Math.random() * 10 });
-    while (marks.length > MAX_MARKS) marks.shift();
+    marks.push({
+      kind, r, c, color: color || "#94a3b8", t0: t,
+      ttl: dur(ttl || st.ttl || 12000),
+      seed: Math.random() * 10,
+    });
+    // 超出上限时优先清掉“最不重要”（impact/ember 先走），同类再按最旧
+    while (marks.length > MAX_MARKS) {
+      let idx = 0, best = 99;
+      for (let i = 0; i < marks.length; i++) {
+        const m = marks[i];
+        const w = (m.kind === "impact" || m.kind === "ember") ? 0 : (m.kind === "water" ? 1 : 2);
+        if (w < best) { best = w; idx = i; }
+      }
+      marks.splice(idx, 1);
+    }
     kick();
   }
 
-  function drawMark(m, alpha) {
+  function drawMark(m, alpha, occupied) {
     const x = px(m.c), y = py(m.r), s = geo.cell;
     ctx.save();
+    if (occupied) {
+      // 有单位：中心挖空 + 整体向外扩张，印记只落在格子边缘（不压棋子/血条，但仍可见）
+      ctx.beginPath();
+      ctx.rect(x - s / 2 + 1, y - s / 2 + 1, s - 2, s - 2);
+      ctx.arc(x, y, s * 0.28, 0, Math.PI * 2, true);
+      ctx.clip();
+      ctx.translate(x, y);
+      ctx.scale(1.55, 1.55);
+      ctx.translate(-x, -y);
+    }
     ctx.globalAlpha = alpha;
     switch (m.kind) {
       case "sword": {
@@ -635,33 +699,97 @@
     const ang = Math.atan2(y1 - y0, x1 - x0);
     const col = m.color || "#e2e8f0";
     const strong = !!m.flank;
-    const d = m.reduce == null ? 120 : m.reduce;
+    const id = m.heroId || "";
+    /* 每个英雄有自己的“出手语言”：重击宽而慢、快攻细而急 */
+    const heavy = /^(berserker|xiangyu|guardian|knight|jade)$/.test(id);
+    const fast = /^(assassin|ranger|cang|longren|tiandao)$/.test(id);
+    const d = m.reduce == null ? (fast ? 90 : heavy ? 150 : 120) : m.reduce;
+    const width = strong ? 7 : heavy ? 6 : fast ? 3.2 : 4.5;
+    const len = geo.cell * (strong ? 1.15 : heavy ? 0.95 : fast ? 0.7 : 0.82);
 
-    // 突进残影
-    push({ kind: "ghost", x: x0, y: y0, r: geo.cell * 0.34, color: col, dur: 220 });
-    push({ kind: "line", x: x0, y: y0, x2: x1, y2: y1, color: col, width: strong ? 4 : 2.5, dur: 160, alpha: 0.5 });
-    // 挥击弧线（命中前一瞬）
-    push({ kind: "slash", x: (x0 + x1) / 2 + Math.cos(ang) * 4, y: (y0 + y1) / 2 + Math.sin(ang) * 4, angle: ang + Math.PI / 2, len: geo.cell * (strong ? 1.15 : 0.82), width: strong ? 7 : 4.5, color: strong ? "#fbbf24" : col, lines: strong ? 3 : 1, curve: strong ? 9 : 5, dur: 260, delay: d });
+    push({ kind: "ghost", x: x0, y: y0, r: geo.cell * 0.34, color: col, dur: fast ? 190 : 240 });
+    push({ kind: "line", x: x0, y: y0, x2: x1, y2: y1, color: col, width: fast ? 1.6 : strong ? 4 : 2.5, dur: fast ? 130 : 170, alpha: 0.5 });
+    // 挥击弧线：重击更开阔、快攻更短促
+    push({
+      kind: "slash", x: (x0 + x1) / 2 + Math.cos(ang) * 4, y: (y0 + y1) / 2 + Math.sin(ang) * 4,
+      angle: ang + Math.PI / 2, len, width,
+      color: strong ? "#fbbf24" : col, lines: strong ? 3 : 1,
+      curve: strong ? 9 : heavy ? 8 : 4,
+      dur: heavy ? 300 : fast ? 200 : 260, delay: d,
+    });
     if (strong) {
       push({ kind: "slash", x: (x0 + x1) / 2, y: (y0 + y1) / 2, angle: ang - Math.PI / 2, len: geo.cell * 0.8, width: 4, color: "#f97316", dur: 240, delay: d + 40 });
       push({ kind: "ring", x: x1, y: y1, r0: 4, r1: geo.cell * 0.6, color: "#fbbf24", width: 3, dur: 300, delay: d, alpha: 0.8 });
       push({ kind: "text", x: x1, y: y1 - geo.cell * 0.32, text: "夹击!", color: "#fbbf24", size: 15, dur: 520, delay: d, rise: 22 });
     }
-    spawn(x1, y1, strong ? 20 : 12, { color: strong ? "#fbbf24" : "#ffffff", speed: strong ? 3.4 : 2.4, life: 300, size: strong ? 2.4 : 1.9, angle: ang, spread: 1.5, delay: d });
+    if (heavy) {
+      // 重击：落点尘土 + 更沉的星火
+      spawn(x1, y1, 10, { color: col, speed: 2.0, life: 380, size: 2.6, angle: ang, spread: 1.1, delay: d, grav: 0.02 });
+      shake(3);
+    } else if (fast) {
+      // 快攻：一道细长的破风线
+      spawn(x1, y1, 8, { color: "#ffffff", speed: 3.6, life: 220, size: 1.5, angle: ang, spread: 0.9, delay: d, type: "line" });
+    } else {
+      spawn(x1, y1, strong ? 20 : 12, { color: strong ? "#fbbf24" : "#ffffff", speed: strong ? 3.4 : 2.4, life: 300, size: strong ? 2.4 : 1.9, angle: ang, spread: 1.5, delay: d });
+    }
     if (strong) shake(4);
+  }
+
+  /* 每个英雄的“命中语言”：同样是 1 点伤害，刀是刀、水是水、雷是雷 */
+  function hitStyle(heroId) {
+    if (/^(asura|assassin|knight|ranger|berserker|xiangyu)$/.test(heroId || "")) return "blade";
+    if (heroId === "cang") return "water";
+    if (heroId === "longren") return "flame";
+    if (/^(thunder|tiandao|jade|warlock)$/.test(heroId || "")) return "arcane";
+    if (heroId === "vampire") return "blood";
+    if (/^(cleric|guardian)$/.test(heroId || "")) return "holy";
+    return "blade";
   }
 
   function hit(m) {
     if (!m) return;
     const x = px(m.c), y = py(m.r);
     const col = m.color || (m.kind === "skill" ? "#c4b5fd" : "#fca5a5");
+    const style = hitStyle(m.heroId);
+    const big = (m.amount || 1) >= 3;
+    const k = big ? 1.25 : (m.amount || 1) >= 2 ? 1.1 : 0.95;
     unitReact(m.uid, "fx-hit");
-    const size = m.amount ? Math.min(26, 12 + m.amount * 3) : 20;
-    push({ kind: "wave", x, y, r1: geo.cell * (m.amount >= 3 ? 0.95 : 0.72), color: col, dur: 300 });
-    push({ kind: "ring", x, y, r0: 3, r1: geo.cell * 0.55, color: col, width: 2.5, dur: 260 });
-    spawn(x, y, m.amount >= 3 ? 16 : 10, { color: col, speed: 2.8, life: 340, size: 2, jitter: 4 });
-    // 技能命中额外留痕
-    if (m.kind === "skill") addMark("impact", m.r, m.c, col, 11000);
+
+    // 极短的落点底光（保证“打中了”可读，但不做成通用大光环）
+    push({ kind: "wave", x, y, r1: geo.cell * 0.34 * k, color: col, dur: 200, alpha: 0.5 });
+
+    if (style === "blade") {
+      push({ kind: "slash", x, y, angle: -0.72, len: geo.cell * 0.46 * k, width: big ? 4 : 2.8, color: "#f8fafc", dur: 190 });
+      push({ kind: "slash", x, y, angle: 0.86, len: geo.cell * 0.38 * k, width: 2, color: col, dur: 210, delay: 25 });
+      spawn(x, y, big ? 14 : 9, { type: "line", color: "#fff7ed", speed: 4.4, life: 220, size: 1.5, angle: -0.72, spread: 1.0, jitter: 3 });
+    } else if (style === "water") {
+      for (let i = 0; i < 3; i++) {
+        push({ kind: "ring", x, y, r0: 3, r1: geo.cell * (0.16 + i * 0.11) * k, color: "#7dd3fc", width: 1.6, dur: 380, delay: i * 55, alpha: 0.55 });
+      }
+      spawn(x, y, big ? 14 : 9, { color: "#38bdf8", speed: 1.5, life: 520, size: 2, grav: 0.035 });
+    } else if (style === "flame") {
+      push({ kind: "ring", x, y, r0: 3, r1: geo.cell * 0.42 * k, color: "#f59e0b", width: 2.4, dur: 300 });
+      spawn(x, y, big ? 16 : 10, { color: "#fbbf24", speed: 1.6, life: 560, size: 2.1, angle: -Math.PI / 2, spread: 1.4, grav: -0.01 });
+      spawn(x, y, 5, { color: "#fef3c7", speed: 2.6, life: 300, size: 1.4 });
+    } else if (style === "arcane") {
+      for (let i = 0; i < 3; i++) {
+        push({ kind: "slash", x, y, angle: (i / 3) * Math.PI * 2 + 0.4, len: geo.cell * 0.3 * k, width: 1.6, color: "#e9d5ff", dur: 200, delay: i * 22 });
+      }
+      push({ kind: "rune", x, y, r: geo.cell * 0.3 * k, color: col, sides: 6, dur: 260, alpha: 0.7 });
+      spawn(x, y, big ? 12 : 8, { color: "#e9d5ff", speed: 2.8, life: 300, size: 1.6 });
+    } else if (style === "blood") {
+      push({ kind: "ring", x, y, r0: 3, r1: geo.cell * 0.4 * k, color: "#be123c", width: 2.2, dur: 260 });
+      spawn(x, y, big ? 16 : 10, { color: "#e11d48", speed: 2.2, life: 440, size: 2.2, grav: 0.06 });
+    } else if (style === "holy") {
+      push({ kind: "rune", x, y, r: geo.cell * 0.34 * k, color: "#fde68a", sides: 4, dur: 300 });
+      spawn(x, y + geo.cell * 0.14, big ? 12 : 8, { color: "#fef3c7", speed: 1.2, life: 520, size: 1.8, angle: -Math.PI / 2, spread: 0.7, grav: -0.02 });
+    }
+
+    if (m.kind === "skill") {
+      // 技能命中留下与该英雄属性一致的印记
+      const mk = style === "water" ? "water" : style === "flame" ? "ember" : style === "blood" ? "blood" : style === "arcane" ? (m.heroId === "tiandao" || m.heroId === "jade" ? "space" : "impact") : "sword";
+      addMark(mk, m.r, m.c, col);
+    }
   }
 
   function shieldAbsorb(m) {
@@ -879,29 +1007,39 @@
         }
         break;
       case "dash":
+        // 阿修罗：三剑环绕 → 直线突进 → 落点剑痕（锐利、无光环）
         push({ kind: "swords", x, y, count: 3, r: geo.cell * 0.52, color: "#e2e8f0", dur: 460 });
         if (m.from && m.to) {
           const x0 = px(m.from.c), y0 = py(m.from.r), x1 = px(m.to.c), y1 = py(m.to.r);
-          push({ kind: "line", x: x0, y: y0, x2: x1, y2: y1, color: "#e2e8f0", width: 4, dur: 300, alpha: 0.8 });
+          push({ kind: "line", x: x0, y: y0, x2: x1, y2: y1, color: "#e2e8f0", width: 3.2, dur: 280, alpha: 0.8 });
           const n = Math.max(2, Math.round(Math.hypot(x1 - x0, y1 - y0) / (geo.cell * 0.55)));
-          for (let i = 0; i <= n; i++) push({ kind: "ghost", x: x0 + (x1 - x0) * (i / n), y: y0 + (y1 - y0) * (i / n), r: geo.cell * 0.28, color: "#f8fafc", dur: 260, delay: i * 30 });
+          for (let i = 0; i <= n; i++) push({ kind: "ghost", x: x0 + (x1 - x0) * (i / n), y: y0 + (y1 - y0) * (i / n), r: geo.cell * 0.24, color: "#f8fafc", dur: 250, delay: i * 28 });
+          const ang = Math.atan2(y1 - y0, x1 - x0);
+          push({ kind: "slash", x: x1, y: y1, angle: ang + 1.1, len: geo.cell * 0.62, width: 3, color: "#f1f5f9", dur: 240, delay: 110 });
+          push({ kind: "slash", x: x1, y: y1, angle: ang - 1.1, len: geo.cell * 0.5, width: 2, color: "#cbd5e1", dur: 240, delay: 150 });
+          addMark("sword", m.to.r, m.to.c, "#e2e8f0");
         }
         break;
       case "duanlang":
         if (tx != null) {
-          push({ kind: "wave", x: tx, y: ty, r1: geo.cell * 1.3, color: "#38bdf8", dur: 520 });
-          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.2, r1: geo.cell * 1.15, color: "#7dd3fc", width: 4, dur: 460, double: true });
-          spawn(tx, ty, 22, { color: "#7dd3fc", speed: 2.6, life: 520, size: 2 });
-          addMark("water", tg.r, tg.c, "#38bdf8", 12000);
+          // 沧：水流线条 + 小涟漪（不用通用大光环）
+          push({ kind: "ribbon", x, y, x2: tx, y2: ty, color: "#38bdf8", width: 5, bend: 14, dur: 420 });
+          push({ kind: "ribbon", x, y, x2: tx, y2: ty, color: "#7dd3fc", width: 3, bend: -10, dur: 460, delay: 50 });
+          for (let i = 0; i < 3; i++) {
+            push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.12, r1: geo.cell * (0.42 + i * 0.2), color: "#7dd3fc", width: 1.8, dur: 480, delay: i * 70, alpha: 0.6 });
+          }
+          spawn(tx, ty, 20, { color: "#7dd3fc", speed: 2.0, life: 520, size: 2, grav: 0.02 });
+          addMark("water", tg.r, tg.c, "#38bdf8");
         }
         break;
       case "shuidiao":
         if (tx != null) {
-          push({ kind: "tendril", x, y, x2: tx, y2: ty, color: "#38bdf8", width: 4, bend: 22, dur: 480 });
-          push({ kind: "wave", x: tx, y: ty, r1: geo.cell * 1.15, color: "#38bdf8", dur: 520 });
+          push({ kind: "ribbon", x, y, x2: tx, y2: ty, color: "#38bdf8", width: 4, bend: 20, dur: 460 });
+          push({ kind: "tendril", x, y, x2: tx, y2: ty, color: "#7dd3fc", width: 1.6, bend: 10, dur: 500, delay: 40 });
+          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.4, r1: geo.cell * 0.1, color: "#7dd3fc", width: 2.4, dur: 460 });
           push({ kind: "text", x: tx, y: ty - geo.cell * 0.34, text: (m.stage || 0) >= 1 ? "引渡" : "断浪", color: "#7dd3fc", size: 13, dur: 620, rise: 22 });
-          spawn(tx, ty, 18, { color: "#7dd3fc", speed: 2.4, life: 480, size: 2 });
-          addMark("water", tg.r, tg.c, "#38bdf8", 12000);
+          spawn(tx, ty, 16, { color: "#7dd3fc", speed: 1.8, life: 480, size: 2, grav: 0.02 });
+          addMark("water", tg.r, tg.c, "#38bdf8");
         }
         break;
       case "dragonbreath":
@@ -916,13 +1054,16 @@
         break;
       case "thunder":
         if (tx != null) {
+          // 雷电：落雷 + 焦痕 + 地面电弧，不用通用大光环
           push({ kind: "bolt", x: tx, y: ty - geo.cell * 1.6, x2: tx, y2: ty, color: "#facc15", width: 5, dur: 340, seed: Math.random() * 99 });
           push({ kind: "bolt", x: tx, y: ty - geo.cell * 1.6, x2: tx, y2: ty, color: "#e0f2fe", width: 2, dur: 260, delay: 40, seed: Math.random() * 99 });
-          push({ kind: "ring", x: tx, y: ty, r0: 4, r1: geo.cell * 0.85, color: "#facc15", width: 3, dur: 420, delay: 60 });
-          spawn(tx, ty, 20, { color: "#fde047", speed: 3.2, life: 420, size: 2.2 });
-          addMark("thunder", tg.r, tg.c, "#facc15", 15000);
+          push({ kind: "crack", x: tx, y: ty, r: geo.cell * 0.45, color: "#facc15", dur: 360, n: 6 });
+          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.5, r1: geo.cell * 0.16, color: "#facc15", width: 2.2, dur: 380, delay: 50 });
+          spawn(tx, ty, 18, { color: "#fde047", speed: 3.2, life: 420, size: 2.2 });
+          addMark("thunder", tg.r, tg.c, "#facc15");
         }
-        push({ kind: "ring", x, y, r0: geo.cell * 0.5, r1: geo.cell * 0.9, color: "#a78bfa", width: 3, dur: 480 });
+        // 施法者周围逸散的电弧
+        push({ kind: "crack", x, y, r: geo.cell * 0.42, color: "#a78bfa", dur: 420, n: 5 });
         break;
       case "chase":
         if ((m.stage || 0) >= 1 && tx != null) {
@@ -970,19 +1111,23 @@
         }
         break;
       case "shenluo":
-        push({ kind: "ring", x, y, r0: geo.cell * 0.18, r1: geo.cell * 1.45, color: "#c084fc", width: 6, dur: 520, double: true });
-        push({ kind: "wave", x, y, r1: geo.cell * 1.5, color: "#a855f7", dur: 520 });
-        push({ kind: "crack", x, y, r: geo.cell * 0.7, color: "#c084fc", dur: 460 });
-        spawn(x, y, 26, { color: "#c084fc", speed: 3.4, life: 500, size: 2.2 });
-        addMark("impact", c.r, c.c, "#c084fc", 12000);
+        // 天道超：向内坍缩 + 空间裂纹 + 碎片外抛，区别于“向外炸开的光圈”
+        push({ kind: "ring", x, y, r0: geo.cell * 1.35, r1: geo.cell * 0.12, color: "#c084fc", width: 3, dur: 440 });
+        push({ kind: "ring", x, y, r0: geo.cell * 0.95, r1: geo.cell * 0.08, color: "#e9d5ff", width: 2, dur: 480, delay: 70 });
+        push({ kind: "rune", x, y, r: geo.cell * 0.52, color: "#c084fc", sides: 8, dur: 420 });
+        push({ kind: "crack", x, y, r: geo.cell * 0.62, color: "#a855f7", dur: 460, n: 8 });
+        spawn(x, y, 18, { color: "#e9d5ff", speed: 3.0, life: 460, size: 1.8 });
+        addMark("space", c.r, c.c, "#c084fc");
         break;
       case "wxt":
         if (tx != null) {
           push({ kind: "tendril", x, y, x2: tx, y2: ty, color: "#c084fc", width: 4, bend: 26, dur: 460 });
-          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.42, r1: geo.cell * 0.12, color: "#c084fc", width: 3, dur: 420 });
+          // 引力：粒子朝目标“吸”过去（负速度）
+          spawn(tx, ty, 12, { color: "#e9d5ff", speed: -1.4, life: 420, size: 1.6 });
+          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.42, r1: geo.cell * 0.12, color: "#c084fc", width: 2.6, dur: 420 });
+          push({ kind: "crack", x: tx, y: ty, r: geo.cell * 0.32, color: "#c084fc", dur: 360, n: 5 });
           push({ kind: "text", x: tx, y: ty - geo.cell * 0.34, text: ["引力", "束缚", "弹射"][m.stage || 0] || "引力", color: "#c084fc", size: 13, dur: 640, rise: 22 });
-          spawn(tx, ty, 14, { color: "#c084fc", speed: 1.8, life: 420, size: 2 });
-          addMark("space", tg.r, tg.c, "#c084fc", 10000);
+          addMark("space", tg.r, tg.c, "#c084fc");
         }
         break;
       case "passive":
@@ -1074,6 +1219,8 @@
     init, sync, setOptions, clear, banner, attack, hit, shieldAbsorb: shieldAbsorb,
     dodge, immune, death, move, knockback, grab, heal, shield: shieldFx, revive,
     swordSpawn, cast, drain, mark: addMark, shake, flash, hitstop, heroColor,
+    setOccupancy(fn) { occupancyFn = fn || null; },
+    setTargeting(v) { targeting = !!v; },
     get options() { return Object.assign({}, opts); },
     DEFAULTS,
     /* 测试/调试钩子：手动推进一帧（隐藏标签页里 rAF 会被浏览器暂停） */
