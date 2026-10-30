@@ -358,7 +358,8 @@ function endChase(a) {
   a.chaseStage = 0;
   skillSub = null;
 }
-/* 单位击杀任意敌人 → 刷新其标记了 refreshOnKill 的技能（刺客·追猎 / 吸血鬼·血崩）。
+/* 单位击杀任意敌人 → 刷新其标记了 refreshOnKill 的技能（刺客·追猎）。
+ * 标记 refreshOnlyOnSkillKill 的技能（吸血鬼·血崩）不在此处刷新，只由“技能自身击杀”触发。
  * 同一次击杀只刷新一次（技能次数已满时不再重复触发）。返回是否真的刷新。 */
 function refreshSkillOnKill(a) {
   if (!a || a.sword) return false;
@@ -368,6 +369,7 @@ function refreshSkillOnKill(a) {
   for (let i = 0; i < skills.length; i++) {
     const sk = skills[i];
     if (!sk || !sk.refreshOnKill) continue;
+    if (sk.refreshOnlyOnSkillKill) continue; // 仅“技能击杀”才刷新的技能，普攻击杀不刷新
     const max = sk.uses == null ? Infinity : sk.uses;
     const cur = skillUsesLeft(a, i);
     if (cur === Infinity || cur >= max) continue; // 已满 → 不重复触发刷新事件
@@ -382,6 +384,22 @@ function refreshSkillOnKill(a) {
     if (p) fx.push({ r: p.r, c: p.c, text: "刷新!", kind: "skill" });
   }
   return refreshed;
+}
+/* 技能自身击杀 → 刷新标记 refreshOnlyOnSkillKill 的技能（吸血鬼·血崩）。
+ * 仅当该技能真的把敌人打死时调用；返回是否真的刷新。 */
+function refreshSkillOnSkillKill(a, idx) {
+  if (!a || a.sword) return false;
+  const skills = heroSkills(heroDef(a.heroId));
+  const sk = skills[idx];
+  if (!sk || !sk.refreshOnlyOnSkillKill) return false;
+  const max = sk.uses == null ? Infinity : sk.uses;
+  const cur = skillUsesLeft(a, idx);
+  if (cur === Infinity || cur >= max) return false;
+  setSkillUsesLeft(a, idx, max);
+  chaseRefreshSeq++; // 与“先扣次数后结算”的流程保持一致
+  const p = findPos(a);
+  if (p) fx.push({ r: p.r, c: p.c, text: "刷新!", kind: "skill" });
+  return true;
 }
 /* 兼容旧名（刺客·追猎） */
 function refreshChase(a) { return refreshSkillOnKill(a); }
@@ -2299,8 +2317,10 @@ function useSkill(tr, tc) {
         addLog("🩸 " + label(a) + " 释放【" + s.name + "】，命中 " + victims.length + " 名敌人，但没有造成实际伤害，未回血。");
       }
       if (kills > 0) {
+        // 只有“血崩自身击杀”才刷新（普攻击杀不刷新）
+        const refreshed = refreshSkillOnSkillKill(a, activeSkillIdx);
         const nowUses = skillUsesLeft(a, activeSkillIdx);
-        if (nowUses > 0) addLog("🩸 血崩击杀 " + kills + " 名敌人，【" + s.name + "】使用次数已刷新（当前 " + nowUses + " 次）。");
+        if (refreshed) addLog("🩸 " + label(a) + " 使用【" + s.name + "】击杀 " + kills + " 名敌人，使用次数已刷新（当前 " + nowUses + " 次）。");
       }
       break;
     }

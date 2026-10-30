@@ -284,7 +284,8 @@ function endChase(s, a) {
   clearChaseMarks(s, a.uid);
   a.chaseStage = 0;
 }
-/* 单位击杀任意敌人 → 刷新其标记了 refreshOnKill 的技能（刺客·追猎 / 吸血鬼·血崩）。
+/* 单位击杀任意敌人 → 刷新其标记了 refreshOnKill 的技能（刺客·追猎）。
+ * 标记 refreshOnlyOnSkillKill 的技能（吸血鬼·血崩）只由“技能自身击杀”触发刷新。
  * 同一次击杀只刷新一次（技能次数已满时不再重复触发）。返回是否真的刷新。 */
 function refreshSkillOnKill(s, a) {
   if (!a || a.sword) return false;
@@ -294,18 +295,32 @@ function refreshSkillOnKill(s, a) {
   for (let i = 0; i < skills.length; i++) {
     const skk = skills[i];
     if (!skk || !skk.refreshOnKill) continue;
+    if (skk.refreshOnlyOnSkillKill) continue;
     const max = skk.uses == null ? Infinity : skk.uses;
     const cur = skillUsesLeft(s, a, i);
-    if (cur === Infinity || cur >= max) continue; // 已满 → 不重复触发刷新事件
+    if (cur === Infinity || cur >= max) continue;
     setSkillUses(s, a, i, max);
     refreshed = true;
     name = skk.name;
   }
   if (refreshed) {
-    s.chaseRefreshSeq = (s.chaseRefreshSeq || 0) + 1; // 供“先结算后扣次数”的流程校正
+    s.chaseRefreshSeq = (s.chaseRefreshSeq || 0) + 1;
     slog(s, "♻ " + uname(s, a) + " 击杀了敌人，【" + name + "】使用次数已刷新。");
   }
   return refreshed;
+}
+/* 技能自身击杀 → 刷新标记 refreshOnlyOnSkillKill 的技能（吸血鬼·血崩） */
+function refreshSkillOnSkillKill(s, a, idx) {
+  if (!a || a.sword) return false;
+  const skills = heroSkills(heroDef(a.heroId));
+  const sk = skills[idx];
+  if (!sk || !sk.refreshOnlyOnSkillKill) return false;
+  const max = sk.uses == null ? Infinity : sk.uses;
+  const cur = skillUsesLeft(s, a, idx);
+  if (cur === Infinity || cur >= max) return false;
+  setSkillUses(s, a, idx, max);
+  s.chaseRefreshSeq = (s.chaseRefreshSeq || 0) + 1;
+  return true;
 }
 /* 兼容旧名（刺客·追猎） */
 function refreshChase(s, a) { return refreshSkillOnKill(s, a); }
@@ -951,8 +966,17 @@ function applyAction(state, player, action) {
         if (isUnit(e) && e.player !== player) victims.push(e);
       }
       let totalDealt = 0;
-      for (const e of victims) totalDealt += applyDamage(s, e, sk.damage, u); // 返回值=实际扣掉的生命
+      let kills = 0;
+      for (const e of victims) {
+        const aliveBefore = !!findPos(s, e);
+        totalDealt += applyDamage(s, e, sk.damage, u); // 返回值=实际扣掉的生命
+        if (aliveBefore && !findPos(s, e)) kills++;
+      }
       if (totalDealt > 0) u.hp += totalDealt; // 吸血鬼：按实际总伤害回血（不受 maxHp 限制）
+      // 只有“血崩自身击杀”才刷新（普攻击杀不刷新）
+      if (kills > 0 && refreshSkillOnSkillKill(s, u, idx)) {
+        slog(s, "🩸 " + uname(s, u) + " 使用【" + sk.name + "】击杀 " + kills + " 名敌人，使用次数已刷新。");
+      }
     } else if (sk.type === "shield_ally") {
       const ally = inB(r, c) ? s.board[r][c] : null;
       if (!isUnit(ally) || ally.player !== player) return err("目标不合法（需选择一名己方存活英雄）");
@@ -1074,5 +1098,5 @@ function applyAction(state, player, action) {
 }
 
 module.exports = { createState, applyAction, applyNegativeStatus, hasSuperArmor, isLoneActive, applyDamage, SIZE, PER_PLAYER,
-  normalDamage, assassinInFlank, computeChaseLine, chaseTargetsOf, chaseBlinkCells, refreshChase, endChase, skillFreeForS, refreshSkillOnKill,
+  normalDamage, assassinInFlank, computeChaseLine, chaseTargetsOf, chaseBlinkCells, refreshChase, endChase, skillFreeForS, refreshSkillOnKill, refreshSkillOnSkillKill,
   isGuixiongActive, guixiongCounter, box3Enemies, CORNERS, cornerOk, knockOutBox3 };
