@@ -1460,7 +1460,7 @@ function moveHero(r, c) {
   board[fr][fc] = null;
   if (picked) {
     addLog("⚔ " + label(u) + " 回收了一把剑（携带 " + u.swords + " 把）。");
-    if (window.SFX) window.SFX.play("swordPickup", { sfx: "blade" });
+    if (window.SFX) window.SFX.play("swordPickup", { hero: "asura" });
   }
   addLog(label(u) + " 移动到 (" + (r + 1) + "," + (c + 1) + ")。");
   if (isExtra) {
@@ -1589,7 +1589,7 @@ function applyDamage(target, amount, kind, source) {
     // 阿修罗·锻剑：阿修罗存活时，阵亡位置留下一把剑
     if (spawnSword(pos.r, pos.c)) {
       addLog("⚔ 锻剑：" + label(target) + " 的阵亡处留下了一把剑。");
-      if (window.SFX) window.SFX.play("swordSpawn", { sfx: "blade" });
+      if (window.SFX) window.SFX.play("swordSpawn", { hero: "asura" });
     }
     // 击杀刷新：刺客·追猎 / 吸血鬼·血崩（同一次击杀只刷新一次）
     if (source && !source.sword && source.player !== target.player && findPos(source)) {
@@ -1972,7 +1972,7 @@ function useSkill(tr, tc) {
         (moved ? "突进 " + moved + " 格" : "原地斩击") + "，剑刃命中 " + hitCount + " 次" +
         (pickedCount ? "，并回收了 " + pickedCount + " 把剑（携带 " + a.swords + " 把）" : "") + "。"
       );
-      if (pickedCount && window.SFX) window.SFX.play("swordPickup", { sfx: "blade" });
+      if (pickedCount && window.SFX) window.SFX.play("swordPickup", { hero: "asura" });
       break;
     }
 
@@ -2799,7 +2799,7 @@ function performDragonMove(r, c) {
   dragonMoveUnit = null;
   dragonMoveTargets = [];
   selected = null;
-  if (window.SFX) window.SFX.play("swordPickup", { sfx: sfxOf(u) });
+  if (window.SFX) window.SFX.play("swordPickup", { hero: u.heroId });
   if (checkVictory()) return;
   render();
 }
