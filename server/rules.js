@@ -186,16 +186,49 @@ function pushUnitForwardS(s, tgt, dr, dc, steps) {
   }
   return moved;
 }
+function squeezeOutOfCellS(s, unit, cr, cc, nr, nc) {
+  const p = findPos(s, unit);
+  if (!p) return null;
+  const ok = (r, c) => inB(r, c) && !s.board[r][c] && !(r === cr && c === cc);
+  const dr = Math.sign(nr - cr), dc = Math.sign(nc - cc);
+  const dirs = [[dr, dc]].concat(DIRS.filter((d) => !(d[0] === dr && d[1] === dc)));
+  for (const [rr, cc2] of dirs) {
+    const tr = p.r + rr, tc = p.c + cc2;
+    if (!ok(tr, tc)) continue;
+    s.board[tr][tc] = unit; s.board[p.r][p.c] = null;
+    return { r: tr, c: tc };
+  }
+  let best = null;
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (!ok(r, c)) continue;
+      const d = Math.abs(r - p.r) + Math.abs(c - p.c);
+      if (!best || d < best.d || (d === best.d && (r < best.r || (r === best.r && c < best.c)))) best = { r, c, d };
+    }
+  }
+  if (!best) return null;
+  s.board[best.r][best.c] = unit; s.board[p.r][p.c] = null;
+  return { r: best.r, c: best.c };
+}
+/* 相邻格有英雄 → 强制挤开后再升起石柱；剑刃/已有石柱/越界不生成 */
 function createPillarsAroundS(s, r, c, owner) {
   const cells = [];
+  const squeezed = [];
   for (const [dr, dc] of DIRS) {
     const rr = r + dr, cc = c + dc;
     if (!inB(rr, cc)) continue;
+    const cell = s.board[rr][cc];
+    if (cell) {
+      if (!isUnit(cell)) continue;
+      const dest = squeezeOutOfCellS(s, cell, r, c, rr, cc);
+      if (!dest) continue;
+      squeezed.push({ unit: cell, to: dest });
+    }
     if (s.board[rr][cc]) continue;
     s.board[rr][cc] = { pillar: true, uid: s.unitSeq++, owner, turns: PILLAR_TURNS, fresh: true };
     cells.push({ r: rr, c: cc });
   }
-  return cells;
+  return { cells, squeezed };
 }
 function tickPillarsS(s) {
   const broken = [];
@@ -1249,8 +1282,11 @@ function applyAction(state, player, action) {
         if (moved > 0 && np) slog(s, "➡ " + uname(s, t) + " 被向前推击 " + moved + " 格到 (" + (np.r + 1) + "," + (np.c + 1) + ")");
         else slog(s, "⛰ " + uname(s, t) + " 前方受阻，停留在原地");
         if (np) {
-          const pillars = createPillarsAroundS(s, np.r, np.c, player);
-          if (pillars.length) slog(s, "🪨 石柱升起，封锁了 " + uname(s, t) + " 四周（" + pillars.length + " 根）");
+          const made = createPillarsAroundS(s, np.r, np.c, player);
+          for (const sq of made.squeezed) {
+            slog(s, "↔ 石柱将 " + uname(s, sq.unit) + " 挤开到 (" + (sq.to.r + 1) + "," + (sq.to.c + 1) + ")");
+          }
+          if (made.cells.length) slog(s, "🪨 石柱升起，封锁了 " + uname(s, t) + " 四周（" + made.cells.length + " 根）");
         }
       }
     } else return err("未知技能");

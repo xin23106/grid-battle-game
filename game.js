@@ -2031,17 +2031,54 @@ function pushUnitForward(tgt, dr, dc, steps) {
   }
   return moved;
 }
-/* 目标四周（上下左右）升起石柱；只落在空格 */
+/* 强制挤开：占据石柱格的英雄被沿“远离目标”的方向推开；无解则移到最近空格（与天威一致） */
+function squeezeOutOfCell(unit, cr, cc, nr, nc) {
+  const p = findPos(unit);
+  if (!p) return null;
+  const ok = (r, c) => inBounds(r, c) && !board[r][c] && !(r === cr && c === cc);
+  const dr = Math.sign(nr - cr), dc = Math.sign(nc - cc);
+  const dirs = [[dr, dc]].concat(DIRS.filter((d) => !(d[0] === dr && d[1] === dc)));
+  for (const [rr, cc2] of dirs) {
+    const tr = p.r + rr, tc = p.c + cc2;
+    if (!ok(tr, tc)) continue;
+    board[tr][tc] = unit; board[p.r][p.c] = null;
+    if (window.BFX) window.BFX.knockback({ from: p, to: { r: tr, c: tc }, color: window.BFX.heroColor(unit.heroId) });
+    if (window.SFX) window.SFX.play("knockback", { hero: unit.heroId });
+    return { r: tr, c: tc };
+  }
+  let best = null;
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (!ok(r, c)) continue;
+      const d = Math.abs(r - p.r) + Math.abs(c - p.c);
+      if (!best || d < best.d || (d === best.d && (r < best.r || (r === best.r && c < best.c)))) best = { r, c, d };
+    }
+  }
+  if (!best) return null;
+  board[best.r][best.c] = unit; board[p.r][p.c] = null;
+  if (window.BFX) window.BFX.knockback({ from: p, to: { r: best.r, c: best.c }, color: window.BFX.heroColor(unit.heroId) });
+  if (window.SFX) window.SFX.play("knockback", { hero: unit.heroId });
+  return { r: best.r, c: best.c };
+}
+/* 目标四周（上下左右）升起石柱；相邻格有英雄时强制挤开，只跳过剑刃/已有石柱/越界 */
 function createPillarsAround(r, c, owner) {
   const cells = [];
+  const squeezed = [];
   for (const [dr, dc] of DIRS) {
     const rr = r + dr, cc = c + dc;
     if (!inBounds(rr, cc)) continue;
-    if (board[rr][cc]) continue;                 // 英雄 / 剑刃 / 石柱：不重叠
+    const cell = board[rr][cc];
+    if (cell) {
+      if (!isUnit(cell)) continue;                 // 剑刃 / 已有石柱：不挤、不生成
+      const dest = squeezeOutOfCell(cell, r, c, rr, cc);
+      if (!dest) continue;                         // 无处可去：该格不生成
+      squeezed.push({ unit: cell, to: dest });
+    }
+    if (board[rr][cc]) continue;
     board[rr][cc] = { pillar: true, uid: unitSeq++, owner, turns: PILLAR_TURNS, fresh: true };
     cells.push([rr, cc]);
   }
-  return cells;
+  return { cells, squeezed };
 }
 /* 每个完整回合结束：先跳过“生成当回合”，之后 -1，归零碎裂 */
 function tickPillars() {
@@ -2415,10 +2452,13 @@ function useSkill(tr, tc) {
       if (moved > 0 && np) addLog("➡ " + label(tgt) + " 被向前推击 " + moved + " 格到 (" + (np.r + 1) + "," + (np.c + 1) + ")。");
       else addLog("⛰ " + label(tgt) + " 前方受阻，停留在原地。");
       if (np) {
-        const cells = createPillarsAround(np.r, np.c, a.player);
-        if (cells.length) {
-          addLog("🪨 石柱升起，封锁了 " + label(tgt) + " 四周（" + cells.length + " 根）。");
-          if (window.BFX) window.BFX.pillars(cells, "rise");
+        const made = createPillarsAround(np.r, np.c, a.player);
+        for (const sq of made.squeezed) {
+          addLog("↔ 石柱将 " + label(sq.unit) + " 挤开到 (" + (sq.to.r + 1) + "," + (sq.to.c + 1) + ")。");
+        }
+        if (made.cells.length) {
+          addLog("🪨 石柱升起，封锁了 " + label(tgt) + " 四周（" + made.cells.length + " 根）。");
+          if (window.BFX) window.BFX.pillars(made.cells, "rise");
           if (window.SFX) window.SFX.play("pillarRise");
         }
       }
