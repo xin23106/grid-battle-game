@@ -2321,14 +2321,28 @@ function tickMists() {
     if (window.BFX) window.BFX.mist(gone, "fade");
   }
 }
-/* 回合结束：当前玩家位于毒雾格的英雄各受 0.5 点伤害（每格只结算一次） */
+/* 回合结束：当前玩家位于毒雾格的英雄各受 0.5 点伤害（每格只结算一次；己方毒雾不伤己方） */
 function applyMistPoison(player) {
   for (const u of unitsOf(player).slice()) {
     const p = findPos(u);
-    if (!p || !mistAt(p.r, p.c)) continue;
+    if (!p) continue;
+    const m = mistAt(p.r, p.c);
+    if (!m) continue;
+    if (m.owner === u.player) continue; // 己方施放的毒雾不会伤害己方单位
     const dealt = applyDamage(u, 0.5, "poison", null);
     if (dealt > 0) addLog("☠ 毒雾： " + label(u) + " 受到 0.5 点伤害（余 " + u.hp + "）。");
     if (findPos(u) && window.SFX) window.SFX.play("poison", { hero: u.heroId });
+  }
+}
+/* 毒雾刚生成：立即对站在雾格上的敌方单位结算一次 0.5（每个单位一次，己方免疫） */
+function mistBurst(cells, owner) {
+  const seen = new Set();
+  for (const [r, c] of cells) {
+    const u = unitAt(r, c);
+    if (!u || u.player === owner || seen.has(u.uid)) continue;
+    seen.add(u.uid);
+    const dealt = applyDamage(u, 0.5, "poison", null);
+    if (dealt > 0) addLog("☠ 毒雾瞬间侵蚀： " + label(u) + " 受到 0.5 点伤害（余 " + u.hp + "）。");
   }
 }
 function clearRavenStealth(u) {
@@ -2837,6 +2851,8 @@ function useSkill(tr, tc) {
       for (const [rr, cc] of o.path) if (addMistAt(rr, cc, a.player)) mistCells.push([rr, cc]);
       if (window.BFX && mistCells.length) window.BFX.mist(mistCells, "rise");
       if (window.SFX) window.SFX.play("mist", { hero: "raven" });
+      // 毒雾生成瞬间：站在雾格上的敌人立即受到 0.5（己方单位免疫）
+      if (mistCells.length) mistBurst(mistCells, a.player);
       addLog("🌫 " + label(a) + " 使用【雾冲】，突进到 (" + (o.dest.r + 1) + "," + (o.dest.c + 1) + ")，路径命中 " + hit + " 名敌人，留下 " + o.path.length + " 格毒雾。");
       break;
     }

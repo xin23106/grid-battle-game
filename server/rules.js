@@ -318,12 +318,25 @@ function tickMistsS(s) {
 function applyMistPoisonS(s, player) {
   for (const u of unitsOf(s, player).slice()) {
     const p = findPos(s, u);
-    if (!p || !mistAtS(s, p.r, p.c)) continue;
+    if (!p) continue;
+    const m = mistAtS(s, p.r, p.c);
+    if (!m) continue;
+    if (m.owner === u.player) continue; // 己方毒雾不伤己方
     const dealt = applyDamage(s, u, 0.5, null);
     if (dealt > 0) {
       slog(s, "☠ 毒雾： " + uname(s, u) + " 受到 0.5 点伤害（余 " + u.hp + "）");
-      if (s.stats) { /* 毒雾不计入任何玩家的伤害统计 */ }
     }
+  }
+}
+/* 毒雾刚生成：立即对雾格上的敌方单位结算一次 0.5（每个单位一次，己方免疫） */
+function mistBurstS(s, cells, owner) {
+  const seen = new Set();
+  for (const [r, c] of cells) {
+    const u = isUnit(s.board[r][c]) ? s.board[r][c] : null;
+    if (!u || u.player === owner || seen.has(u.uid)) continue;
+    seen.add(u.uid);
+    const dealt = applyDamage(s, u, 0.5, null);
+    if (dealt > 0) slog(s, "☠ 毒雾瞬间侵蚀： " + uname(s, u) + " 受到 0.5 点伤害（余 " + u.hp + "）");
   }
 }
 function clearRavenStealthS(u) {
@@ -1549,7 +1562,10 @@ function applyAction(state, player, action) {
       }
       s.board[o.dest.r][o.dest.c] = u;
       s.board[from.r][from.c] = null;
-      for (const [rr, cc] of o.path) addMistAtS(s, rr, cc, player);
+      const newMist = [];
+      for (const [rr, cc] of o.path) if (addMistAtS(s, rr, cc, player)) newMist.push([rr, cc]);
+      // 毒雾生成瞬间：站在雾格上的敌人立即受到 0.5（己方免疫）
+      if (newMist.length) mistBurstS(s, newMist, player);
       slog(s, "🌫 " + uname(s, u) + " 使用【雾冲】，路径留下 " + o.path.length + " 格毒雾", isStealthedS(u) ? { only: player } : undefined);
     } else if (sk.type === "shadowfang") {
       // 渡鸦·影牙：相邻敌人 2 伤（影袭 +1），击杀刷新 1 次
