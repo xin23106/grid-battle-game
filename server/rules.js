@@ -1277,9 +1277,10 @@ function applyAction(state, player, action) {
       if (!findPos(s, t)) {
         slog(s, "💥 " + uname(s, t) + " 被推山击倒，未发生推动与石柱");
       } else {
-        const moved = pushUnitForwardS(s, t, sdr, sdc, sk.push || 2);
+        const moved = pushUnitForwardS(s, t, sdr, sdc, Math.max(0, 2 - pinfo.dist));
         const np = findPos(s, t);
-        if (moved > 0 && np) slog(s, "➡ " + uname(s, t) + " 被向前推击 " + moved + " 格到 (" + (np.r + 1) + "," + (np.c + 1) + ")");
+        if (moved > 0 && np) slog(s, "➡ " + uname(s, t) + " 被推击到 (" + (np.r + 1) + "," + (np.c + 1) + ")，距山丘之王 2 格");
+        else if (pinfo.dist === 2) slog(s, "⛰ " + uname(s, t) + " 已在正前方第二格，未再推动");
         else slog(s, "⛰ " + uname(s, t) + " 前方受阻，停留在原地");
         if (np) {
           const made = createPillarsAroundS(s, np.r, np.c, player);

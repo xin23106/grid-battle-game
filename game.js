@@ -1634,11 +1634,9 @@ function computeSkillTargets() {
         const info = pushDirInfo(u, r, c, dr, dc);
         if (!info) continue;
         skillTargets.push([info.r, info.c]);
-        const line = [];
-        for (let k = 0; k <= 2; k++) {
-          const rr = info.r + dr * k, cc = info.c + dc * k;
-          if (inBounds(rr, cc)) line.push([rr, cc]);
-        }
+        const line = [[info.r, info.c]];
+        const destR = r + dr * 2, destC = c + dc * 2;
+        if (inBounds(destR, destC)) line.push([destR, destC]);
         dashOptions.push({ kind: "push-line", path: line });
       }
       break;
@@ -2444,13 +2442,17 @@ function useSkill(tr, tc) {
         addLog("💥 " + label(tgt) + " 被推山击倒，未发生推动与石柱。");
         break;
       }
-      const moved = pushUnitForward(tgt, dr, dc, 2);
+      const pushed = Math.max(0, 2 - info.dist); // 目标最终停在离自己 2 格处
+      const moved = pushUnitForward(tgt, dr, dc, pushed);
       const np = findPos(tgt);
-      if (moved > 0 && np && window.BFX) {
-        window.BFX.move({ from: { r: info.r, c: info.c }, to: { r: np.r, c: np.c }, color: window.BFX.heroColor(tgt.heroId) });
+      if (moved > 0 && np) {
+        if (window.BFX) window.BFX.move({ from: { r: info.r, c: info.c }, to: { r: np.r, c: np.c }, color: window.BFX.heroColor(tgt.heroId) });
+        addLog("➡ " + label(tgt) + " 被推击到 (" + (np.r + 1) + "," + (np.c + 1) + ")，距山丘之王 2 格。");
+      } else if (info.dist === 2) {
+        addLog("⛰ " + label(tgt) + " 已在正前方第二格，未再推动。");
+      } else {
+        addLog("⛰ " + label(tgt) + " 前方受阻，停留在原地。");
       }
-      if (moved > 0 && np) addLog("➡ " + label(tgt) + " 被向前推击 " + moved + " 格到 (" + (np.r + 1) + "," + (np.c + 1) + ")。");
-      else addLog("⛰ " + label(tgt) + " 前方受阻，停留在原地。");
       if (np) {
         const made = createPillarsAround(np.r, np.c, a.player);
         for (const sq of made.squeezed) {
@@ -4654,8 +4656,9 @@ function aiEnumerate() {
           let sc = w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0) + 6;
           const from = findPos(e);
           if (from) {
+            const maxSteps = Math.max(0, 2 - info.dist);
             let nr = from.r, nc = from.c, steps = 0;
-            for (let k = 0; k < 2; k++) {
+            for (let k = 0; k < maxSteps; k++) {
               const tr = nr + dr, tc = nc + dc;
               if (!inBounds(tr, tc) || board[tr][tc]) break;
               nr = tr; nc = tc; steps++;
@@ -4667,7 +4670,7 @@ function aiEnumerate() {
               if (inBounds(rr, cc) && !board[rr][cc]) pillars++;
             }
             sc += pillars * 2; // 石柱越多，越能限制敌方走位
-            if (steps === 2) sc += 2; // 完整推击更稳定
+            if (steps === maxSteps) sc += 2; // 完整推到距自己 2 格
           }
           acts.push({ type: "skill", u, pos, target: { r: info.r, c: info.c }, skillIdx: si, score: sc * w.skillW });
         }
