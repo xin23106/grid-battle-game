@@ -10,7 +10,7 @@ module.exports = [
     skill: { name: "火球术", type: "damage_single", range: 3, damage: 2, uses: 3 } },
   { id: "knight", name: "骑士", hp: 6, sfx: "sword",
     skill: { name: "横扫", type: "damage_adjacent_all", range: 1, damage: 1, uses: 3, free: true } },
-  { id: "ranger", name: "游侠", hp: 6, sfx: "ranged",
+  { id: "ranger", name: "游侠", hp: 5, sfx: "ranged",
     skill: { name: "穿透射击", type: "damage_line", range: 4, damage: 2, uses: 3 } },
   { id: "assassin", name: "刺客", hp: 6, sfx: "fast",
     passive: { name: "暗杀" },
