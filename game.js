@@ -1340,6 +1340,13 @@ function computeTargets() {
   }
 }
 
+/* 游侠技能范围：前后左右 range 格（同一行/列）+ 以自身为中心的九宫格 */
+function rangerSkillRangeOk(dr, dc, range) {
+  if (!dr && !dc) return false;
+  if (Math.abs(dr) <= 1 && Math.abs(dc) <= 1) return true; // 九宫格（含四个斜角）
+  return (dr === 0 || dc === 0) && Math.abs(dr) + Math.abs(dc) <= (range || 4);
+}
+
 /* 曼哈顿距离内的所有格子（includeSelf 决定是否含自身格） */
 function cellsWithin(r, c, range, includeSelf) {
   const res = [];
@@ -1397,10 +1404,13 @@ function computeSkillTargets() {
       break;
 
     case "damage_line":
-      // 游侠：4 格内指定敌方英雄射击，不要求直线、无视中间阻挡
-      for (const [rr, cc] of cellsWithin(r, c, s.range, false)) {
-        const t = unitAt(rr, cc);
-        if (t && t.player !== u.player) skillTargets.push([rr, cc]);
+      // 游侠：前后左右 4 格 + 以自身为中心的九宫格内指定敌人；无视中间阻挡
+      for (let rr = 0; rr < SIZE; rr++) {
+        for (let cc = 0; cc < SIZE; cc++) {
+          if (!rangerSkillRangeOk(rr - r, cc - c, s.range)) continue;
+          const t = unitAt(rr, cc);
+          if (t && t.player !== u.player) skillTargets.push([rr, cc]);
+        }
       }
       break;
 
@@ -2327,6 +2337,12 @@ function useSkill(tr, tc) {
     }
 
     case "damage_line": {
+      if (!target || target.player === a.player || !rangerSkillRangeOk(tr - r, tc - c, s.range)) {
+        addLog("穿透射击：目标必须在正前/后/左/右 4 格或自身九宫格内。");
+        clearSelection();
+        render();
+        return;
+      }
       const rd = resolveSkillDamage(a, target, s);
       addLog(label(a) + " 释放【" + s.name + "】，射击 " + label(target) + "，造成 " + rd.damage + " 点伤害" + (rd.assault ? "（猛攻令 +1）" : "") + "。");
       if (window.BFX) window.BFX.cast({ type: "damage_line", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc } });

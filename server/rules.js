@@ -1021,9 +1021,12 @@ function applyAction(state, player, action) {
       }
       if (!any) return err("相邻没有敌人");
     } else if (sk.type === "damage_line") {
-      // 游侠：4 格内指定敌方英雄射击，不要求直线、无视中间阻挡
+      // 游侠：前后左右 4 格 + 自身九宫格内指定敌人；无视中间阻挡
       if (!isUnit(t) || t.player === player) return err("射击目标必须是敌方英雄");
-      if (dist < 1 || dist > sk.range) return err("射击目标必须在 4 格内");
+      const rdr = r - from.r, rdc = c - from.c;
+      const inNine = Math.abs(rdr) <= 1 && Math.abs(rdc) <= 1 && !(rdr === 0 && rdc === 0);
+      const inLine = (rdr === 0 || rdc === 0) && !(rdr === 0 && rdc === 0) && (Math.abs(rdr) + Math.abs(rdc)) <= sk.range;
+      if (!inNine && !inLine) return err("射击目标必须在正前/后/左/右 4 格或自身九宫格内");
       applyDamage(s, t, sk.damage + av, u);
     } else if (sk.type === "shield_self") {
       u.shield += sk.shield;
