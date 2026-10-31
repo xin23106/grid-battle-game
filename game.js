@@ -748,6 +748,14 @@ function hasAnyAction(player) {
       if (isPillar(t)) continue; // 石柱不可攻击、不可进入
       if (t.player !== player && !turnActionUsed) return true;
     }
+    // 游侠：距离 2 的敌人也可普攻
+    if (u.heroId === "ranger" && !turnActionUsed) {
+      for (const [rr, cc] of cellsWithin(pos.r, pos.c, 2, false)) {
+        if (Math.abs(rr - pos.r) + Math.abs(cc - pos.c) !== 2) continue;
+        const t = unitAt(rr, cc);
+        if (t && t.player !== player) return true;
+      }
+    }
     if (heroHasFreeUses(u)) return true; // 剑圣仍可使用
   }
   return false;
@@ -1322,6 +1330,14 @@ function computeTargets() {
       attackTargets.push([nr, nc]);
     }
   }
+  // 游侠：普通攻击可打到距离 2 的敌人，且无视中间阻挡
+  if (u.heroId === "ranger") {
+    for (const [rr, cc] of cellsWithin(selected.r, selected.c, 2, false)) {
+      if (Math.abs(rr - selected.r) + Math.abs(cc - selected.c) !== 2) continue;
+      const t = unitAt(rr, cc);
+      if (t && t.player !== u.player) attackTargets.push([rr, cc]);
+    }
+  }
 }
 
 /* 曼哈顿距离内的所有格子（includeSelf 决定是否含自身格） */
@@ -1381,17 +1397,10 @@ function computeSkillTargets() {
       break;
 
     case "damage_line":
-      for (const [dr, dc] of DIRS) {
-        for (let st = 1; st <= s.range; st++) {
-          const rr = r + dr * st;
-          const cc = c + dc * st;
-          if (!inBounds(rr, cc)) break;
-          const t = board[rr][cc];
-          if (t) {
-            if (!t.sword && t.player !== u.player) skillTargets.push([rr, cc]);
-            break; // 第一个物体即阻挡，射线终止
-          }
-        }
+      // 游侠：4 格内指定敌方英雄射击，不要求直线、无视中间阻挡
+      for (const [rr, cc] of cellsWithin(r, c, s.range, false)) {
+        const t = unitAt(rr, cc);
+        if (t && t.player !== u.player) skillTargets.push([rr, cc]);
       }
       break;
 
@@ -1896,9 +1905,10 @@ function normalAttack(attacker, target) {
     });
   }
   applyDamage(target, total, res.flank ? "flank" : "normal", attacker);
-  // 普通攻击击杀 → 攻击者占据目标原先所在的格子
+  // 普通攻击击杀 → 攻击者占据目标原先所在的格子（仅限相邻攻击；远程游侠不位移）
   // 仅在「伤害 / 护盾 / 闪避 / 锁血 / 死亡」全部结算完成后判定；夹击击杀同样生效
-  if (tgtBefore && atkBefore && target.hp <= 0 && !findPos(target) && !board[tgtBefore.r][tgtBefore.c]) {
+  const atkAdjacent = !!atkBefore && !!tgtBefore && (Math.abs(atkBefore.r - tgtBefore.r) + Math.abs(atkBefore.c - tgtBefore.c) === 1);
+  if (atkAdjacent && target.hp <= 0 && !findPos(target) && !board[tgtBefore.r][tgtBefore.c]) {
     const ap = findPos(attacker);
     if (ap && ap.r === atkBefore.r && ap.c === atkBefore.c) {
       board[ap.r][ap.c] = null;
@@ -2318,7 +2328,7 @@ function useSkill(tr, tc) {
 
     case "damage_line": {
       const rd = resolveSkillDamage(a, target, s);
-      addLog(label(a) + " 释放【" + s.name + "】，穿透 " + label(target) + "，造成 " + rd.damage + " 点伤害" + (rd.assault ? "（猛攻令 +1）" : "") + "。");
+      addLog(label(a) + " 释放【" + s.name + "】，射击 " + label(target) + "，造成 " + rd.damage + " 点伤害" + (rd.assault ? "（猛攻令 +1）" : "") + "。");
       if (window.BFX) window.BFX.cast({ type: "damage_line", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc } });
       applyDamage(target, rd.damage, "skill", a);
       break;
@@ -3913,6 +3923,7 @@ function renderDetailCard() {
     const wst = u.wxtStage || 0;
     st.push("万象天引：" + (wst === 0 ? "第一段待执行" : wst === 1 ? "第二段待执行（已引力汇聚）" : "第三段待执行（已万象引渡）"));
   }
+  if (u.heroId === "ranger") st.push("普攻射程 2 格（可越过中间单位与石柱）");
   if (flankImmune(u)) st.push("免疫夹击加成");
   if (u.frozen > 0) st.push("冰封：跳过 " + u.frozen + " 个回合");
   if (u.statuses) for (const k of Object.keys(u.statuses)) st.push((u.statuses[k].label || k) + "（剩 " + (u.statuses[k].turns != null ? u.statuses[k].turns : 1) + "）");
@@ -4548,6 +4559,20 @@ function aiEnumerate() {
           const kill = t.hp <= res.damage;
           acts.push({
             type: "attack", u, pos, target: { r: pos.r + dr, c: pos.c + dc },
+            score: w.dmgW * res.damage + (kill ? w.killW : 0) + (res.flank ? w.flankW : 0) + 6,
+          });
+        }
+      }
+      // 游侠：2 格内敌人也能普攻（无视中间阻挡）
+      if (u.heroId === "ranger") {
+        for (const [rr, cc] of cellsWithin(pos.r, pos.c, 2, false)) {
+          if (Math.abs(rr - pos.r) + Math.abs(cc - pos.c) !== 2) continue;
+          const t = unitAt(rr, cc);
+          if (!t || t.player === u.player) continue;
+          const res = resolveNormalAttack(u, t);
+          const kill = t.hp <= res.damage;
+          acts.push({
+            type: "attack", u, pos, target: { r: rr, c: cc },
             score: w.dmgW * res.damage + (kill ? w.killW : 0) + (res.flank ? w.flankW : 0) + 6,
           });
         }

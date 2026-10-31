@@ -961,13 +961,15 @@ function applyAction(state, player, action) {
     const { r, c } = action.to || {};
     const t = inB(r, c) ? s.board[r][c] : null;
     if (!isUnit(t) || t.player === player) return err("无效的攻击目标");
-    if (Math.abs(r - from.r) + Math.abs(c - from.c) !== 1) return err("只能攻击相邻目标");
+    const atkDist = Math.abs(r - from.r) + Math.abs(c - from.c);
+    const atkRange = u.heroId === "ranger" ? 2 : 1;
+    if (atkDist < 1 || atkDist > atkRange) return err(atkRange > 1 ? "只能攻击 2 格内的目标" : "只能攻击相邻目标");
     const fi = flankInfo(s).get(t.uid);
     slog(s, uname(s, u) + " 攻击 " + uname(s, t) + (fi && fi.flanked ? "（触发夹击×" + fi.count + "）" : ""));
     applyDamage(s, t, normalDamage(s, u, t), u);
-    // 普通攻击击杀 → 攻击者占据目标原先所在的格子
+    // 普通攻击击杀 → 攻击者占据目标原先所在的格子（仅限相邻攻击；远程游侠不位移）
     // 仅在「伤害 / 护盾 / 闪避 / 锁血 / 死亡」全部结算完成后判定；夹击击杀同样生效
-    if (t.hp <= 0 && !findPos(s, t) && !s.board[r][c]) {
+    if (atkDist === 1 && t.hp <= 0 && !findPos(s, t) && !s.board[r][c]) {
       const upos = findPos(s, u);
       if (upos && upos.r === from.r && upos.c === from.c) {
         s.board[from.r][from.c] = null;
@@ -1019,16 +1021,9 @@ function applyAction(state, player, action) {
       }
       if (!any) return err("相邻没有敌人");
     } else if (sk.type === "damage_line") {
-      let found = false;
-      for (const [dr, dc] of DIRS) {
-        for (let st = 1; st <= sk.range; st++) {
-          const rr = from.r + dr * st, cc = from.c + dc * st;
-          if (!inB(rr, cc)) break;
-          const e = s.board[rr][cc];
-          if (e) { if (isUnit(e) && e.player !== player && rr === r && cc === c) found = true; break; }
-        }
-      }
-      if (!found) return err("射线目标不合法");
+      // 游侠：4 格内指定敌方英雄射击，不要求直线、无视中间阻挡
+      if (!isUnit(t) || t.player === player) return err("射击目标必须是敌方英雄");
+      if (dist < 1 || dist > sk.range) return err("射击目标必须在 4 格内");
       applyDamage(s, t, sk.damage + av, u);
     } else if (sk.type === "shield_self") {
       u.shield += sk.shield;
