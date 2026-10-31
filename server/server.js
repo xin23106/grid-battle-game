@@ -89,6 +89,19 @@ function publicStateFor(state, player) {
     s.placementDone[1] = state.placed[1].length >= PER_PLAYER;
     s.placementDone[2] = state.placed[2].length >= PER_PLAYER;
   }
+  // 5) 隐身：对手看不到潜行中的渡鸦（服务端直接移除坐标，而非仅前端透明）
+  s.hiddenUids = [];
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const u = s.board[r][c];
+      if (u && !u.sword && !u.pillar && u.player === opp && u.stealth && (u.stealth.turns || 0) > 0) {
+        s.hiddenUids.push(u.uid);
+        s.board[r][c] = null;
+      }
+    }
+  }
+  // 6) 日志：带 only 的条目只发给指定玩家（如隐身单位的移动坐标）
+  if (Array.isArray(s.log)) s.log = s.log.filter((e) => !e.only || e.only === me);
   return s;
 }
 /* 给房间内每位玩家分别发送“按身份过滤”的消息 */

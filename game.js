@@ -84,6 +84,8 @@ const detailCloseEl = document.getElementById("detail-close");
 
 /* ----------------------------- 状态 ----------------------------- */
 let board = [];                    // board[r][c] = 单位对象 或 null
+let mists = {};                    // "r_c" -> { turns, fresh, owner } 毒雾地形（不阻挡移动）
+let turnSerial = 0;                // 回合序号（用于记录潜行开始时间）
 let phase = "placement";           // placement(布阵) / battle(对战) / over(结束)
 let currentPlayer = 1;
 let toPlace = SOLDIERS_PER_PLAYER;
@@ -964,6 +966,7 @@ function init() {
   extraMoves = 0;
   graveyard = [];
   reviveOptions = [];
+  mists = {};
   // 对局统计 & 结算演出：重置
   matchStats = { damage: { 1: 0, 2: 0 }, kills: { 1: 0, 2: 0 }, startedAt: Date.now(), endedAt: 0, lastKiller: null };
   clearVictoryTimers();
@@ -1028,6 +1031,10 @@ function handlePlacement(r, c) {
     chaseMark: 0,               // 被哪个刺客（uid）附加了追猎标记，0=无
     guixiongUsed: false,        // 西楚霸王·鬼雄：首次致命锁血是否已触发
     wxtStage: 0,                // 天道超·万象天引：连招阶段（0=第一段可用 / 1=第二段待执行 / 2=第三段待执行）
+    stealth: null,              // 渡鸦·潜行：{ turns, fresh, startTurn, reason, broken }
+    ravenBuff: false,           // 渡鸦·影袭强化：下一次主动攻击 +1
+    ravenDouble: false,         // 渡鸦·潜行双动：本次潜行是否还有一次双动机会
+    ravenDoubleUsed: false,     // 双动的第一次「走」是否已使用
   };
   initUnitUses(unit, def);
   board[r][c] = unit;
@@ -1069,6 +1076,7 @@ function clearSelection() {
 
 /* 一方的回合开始：恢复“每回合型”技能次数（如阿修罗·剑圣），并清空选中 */
 function beginTurn() {
+  turnSerial += 1;
   for (const u of unitsOf(currentPlayer)) {
     const skills = heroSkills(heroDef(u.heroId));
     skills.forEach((s, i) => {
@@ -1122,6 +1130,9 @@ function beginTurn() {
 
 /* 结束当前玩家回合并交给对手（含行军令额外回合）。不含“自动跳过无行动玩家”。 */
 function endTurnOnce() {
+  // 毒雾：当前玩家位于毒雾格的英雄各受 0.5（在回合结束、离开判定后结算）
+  applyMistPoison(currentPlayer);
+  if (checkVictory()) return;
   // 临时石柱：每完成一个完整回合结束衰减一次（生成当回合不扣）
   tickPillars();
   for (const u of unitsOf(currentPlayer)) if (u.frozen > 0) u.frozen -= 1;
@@ -1150,6 +1161,10 @@ function endTurnOnce() {
   // 行军令：若本回合附加了「额外回合」，则不交给对方，而是让当前玩家再获得一个完整回合
   const samePlayer = extraTurnPending;
   extraTurnPending = false;
+  // 渡鸦：潜行时长只在真实回合交接时推进（行军令额外回合不缩短）；双动机会在回合结束时作废
+  tickRavenTurn(currentPlayer, !samePlayer);
+  // 毒雾：只在真实回合交接时衰减（额外回合不缩短），生成当回合不扣
+  if (!samePlayer) tickMists();
   if (!samePlayer) currentPlayer = currentPlayer === 1 ? 2 : 1;
   turnFxExtra = samePlayer;
   // 阶段 A：当前回合收束（短促低频；与技能音效分离）
@@ -1203,6 +1218,9 @@ function checkVictory() {
   if (p1 === 0 || p2 === 0) {
     phase = "over";
     winner = p1 === 0 ? 2 : 1;
+    // 对局结束：清理临时地形与潜行相关状态
+    mists = {};
+    for (const u of unitsOf(1).concat(unitsOf(2))) clearRavenStealth(u);
     // 对局结束：清理临时石柱及其计时状态
     for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (isPillar(board[r][c])) board[r][c] = null;
     if (!matchStats.endedAt) matchStats.endedAt = Date.now();
@@ -1647,6 +1665,36 @@ function computeSkillTargets() {
       break;
     }
 
+    case "stealth": {
+      // 雷霆万钧范围：3×3 + 上下左右 2 格；空格或原地
+      for (let rr = 0; rr < SIZE; rr++) {
+        for (let cc = 0; cc < SIZE; cc++) {
+          if (!stealthRangeOk(rr - r, cc - c)) continue;
+          if (rr === r && cc === c) { skillTargets.push([rr, cc]); continue; }
+          if (!board[rr][cc]) skillTargets.push([rr, cc]);
+        }
+      }
+      break;
+    }
+
+    case "mistdash": {
+      for (const [dr, dc] of DIRS) {
+        const o = mistDashPath(u, r, c, dr, dc, s.range || 3);
+        if (!o.dest) continue;
+        skillTargets.push([r + dr, c + dc]); // 点击相邻方向格
+        dashOptions.push({ kind: "mistdash", dir: [dr, dc], path: o.path, dest: o.dest });
+      }
+      break;
+    }
+
+    case "shadowfang": {
+      for (const [dr, dc] of DIRS) {
+        const t = unitAt(r + dr, c + dc);
+        if (t && t.player !== u.player) skillTargets.push([r + dr, c + dc]);
+      }
+      break;
+    }
+
     case "push": {
       // 目标：正前方 2 格内的第一个敌人；方向由点击的敌人位置推导
       for (const [dr, dc] of DIRS) {
@@ -1701,6 +1749,9 @@ function moveHero(r, c) {
     render();
     return;
   }
+  // 渡鸦·潜行双动：隐身期间第一次「走」不消耗行动，之后还可再走一次或普通攻击
+  const isDoubleFirst = !isExtra && !turnActionUsed && isStealthed(u) && u.ravenDouble && !u.ravenDoubleUsed;
+  const isDoubleSecond = !isExtra && !turnActionUsed && u.ravenDoubleUsed;
   const picked = collectSwordAt(r, c, u); // 阿修罗进入剑格：回收
   if (window.BFX) {
     window.BFX.move({
@@ -1716,6 +1767,18 @@ function moveHero(r, c) {
     if (window.SFX) window.SFX.play("swordPickup", { hero: "asura" });
   }
   addLog(label(u) + " 移动到 (" + (r + 1) + "," + (c + 1) + ")。");
+  if (isDoubleFirst) {
+    u.ravenDoubleUsed = true;
+    addLog("🌑 潜行双动：移动完成，还可再进行一次移动或普通攻击。");
+    clearSelection();
+    render();
+    return;
+  }
+  if (isDoubleSecond) {
+    u.ravenDouble = false;
+    u.ravenDoubleUsed = false;
+    addLog("🌑 潜行双动：第二次移动完成。");
+  }
   if (isExtra) {
     extraMoves -= 1;
     addLog("🐎 行军令：额外移动一次（剩余 " + extraMoves + " 次）。");
@@ -1890,16 +1953,17 @@ function normalAttack(attacker, target) {
   const tgtBefore = findPos(target);
   const res = resolveNormalAttack(attacker, target);
   const aBonus = attackerBonus(attacker); // 猛攻令 +1 / 孤胆 +1
-  const total = res.damage + aBonus;
+  const ravenBuff = attacker.ravenBuff ? 1 : 0; // 渡鸦·影袭强化 +1
+  const total = res.damage + aBonus + ravenBuff;
 
   if (res.flank) {
     addLog("【夹击×" + res.count + "】" + label(attacker) + " 攻击 " + label(target) + "，额外伤害 +" + res.bonus +
-      (res.assassin ? "，刺客·暗杀 +1" : "") + (res.guixiong ? "，鬼雄·绝境 +1" : "") + (aBonus ? "，猛攻令 +1" : "") + "（共 " + total + " 点）。");
+      (res.assassin ? "，刺客·暗杀 +1" : "") + (res.guixiong ? "，鬼雄·绝境 +1" : "") + (aBonus ? "，猛攻令 +1" : "") + (ravenBuff ? "，影袭 +1" : "") + "（共 " + total + " 点）。");
     if (res.assassin) addLog("🗡 刺客·暗杀触发：本次夹击额外 +1 点伤害。");
   } else if (res.base && res.protected) {
-    addLog("【队友保护，夹击无效】" + label(attacker) + " 攻击 " + label(target) + "，造成 " + (res.damage + aBonus) + " 点伤害" + (res.guixiong ? "（鬼雄·绝境 +1）" : "") + (aBonus ? "（猛攻令 +1）" : "") + "。");
+    addLog("【队友保护，夹击无效】" + label(attacker) + " 攻击 " + label(target) + "，造成 " + total + " 点伤害" + (res.guixiong ? "（鬼雄·绝境 +1）" : "") + (aBonus ? "（猛攻令 +1）" : "") + (ravenBuff ? "（影袭 +1）" : "") + "。");
   } else {
-    addLog(label(attacker) + " 攻击 " + label(target) + "，造成 " + (res.damage + aBonus) + " 点伤害" + (res.guixiong ? "（鬼雄·绝境 +1）" : "") + (aBonus ? "（猛攻令 +1）" : "") + "。");
+    addLog(label(attacker) + " 攻击 " + label(target) + "，造成 " + total + " 点伤害" + (res.guixiong ? "（鬼雄·绝境 +1）" : "") + (aBonus ? "（猛攻令 +1）" : "") + (ravenBuff ? "（影袭 +1）" : "") + "。");
   }
 
   if (window.SFX) {
@@ -1915,6 +1979,8 @@ function normalAttack(attacker, target) {
     });
   }
   applyDamage(target, total, res.flank ? "flank" : "normal", attacker);
+  // 渡鸦：主动攻击成功执行 → 立刻破隐并消耗影袭强化
+  if (attacker.heroId === "raven" || attacker.ravenBuff || attacker.stealth) consumeRavenAttackState(attacker);
   // 普通攻击击杀 → 攻击者占据目标原先所在的格子（仅限相邻攻击；远程游侠不位移）
   // 仅在「伤害 / 护盾 / 闪避 / 锁血 / 死亡」全部结算完成后判定；夹击击杀同样生效
   const atkAdjacent = !!atkBefore && !!tgtBefore && (Math.abs(atkBefore.r - tgtBefore.r) + Math.abs(atkBefore.c - tgtBefore.c) === 1);
@@ -2114,6 +2180,119 @@ function tickPillars() {
     addLog("🪨 临时石柱已经消失（" + broken.length + " 根）。");
     if (window.BFX) window.BFX.pillars(broken, "break");
     if (window.SFX) window.SFX.play("pillarBreak");
+  }
+}
+
+/* ============================ 渡鸦：潜行 / 雾冲 / 影牙 / 毒雾 ============================ */
+const RAVEN_STEALTH_TURNS = 3;
+const MIST_TURNS = 3;
+
+function isStealthed(u) {
+  return !!(u && u.stealth && (u.stealth.turns || 0) > 0);
+}
+/* 对 viewer 是否不可见（隐身只对敌方隐藏） */
+function hiddenFrom(u, viewer) {
+  return !!(u && viewer !== u.player && isStealthed(u));
+}
+/* 潜行落点：以自身为中心 3×3 + 上下左右各 2 格（复用雷霆万钧范围） */
+function stealthRangeOk(dr, dc) {
+  if (!dr && !dc) return true; // 原地潜行
+  const box3 = Math.abs(dr) <= 1 && Math.abs(dc) <= 1;
+  const line2 = (dr === 0 || dc === 0) && Math.abs(dr) + Math.abs(dc) <= 2;
+  return box3 || line2;
+}
+/* 雾冲：沿方向突进最多 maxSteps 格，返回实际路径（不含起点）与落点 */
+function mistDashPath(u, r, c, dr, dc, maxSteps) {
+  const path = [];
+  let dest = null;
+  for (let k = 1; k <= (maxSteps || 3); k++) {
+    const rr = r + dr * k, cc = c + dc * k;
+    if (!inBounds(rr, cc)) break;
+    const cell = board[rr][cc];
+    if (isPillar(cell)) break;              // 石柱阻挡
+    path.push([rr, cc]);                    // 经过的格（英雄/剑刃可穿过）
+    if (!cell) dest = { r: rr, c: cc };     // 最远合法空落点
+  }
+  if (!dest) return { path: [], dest: null, dir: [dr, dc] };
+  const steps = Math.abs(dest.r - r) + Math.abs(dest.c - c);
+  return { path: path.slice(0, steps), dest, dir: [dr, dc] };
+}
+function mistKey(r, c) { return r + "_" + c; }
+function mistAt(r, c) { return mists[mistKey(r, c)] || null; }
+function addMistAt(r, c, owner) {
+  const key = mistKey(r, c);
+  if (mists[key]) return false;             // 已有毒雾：不叠加、不延长
+  mists[key] = { turns: MIST_TURNS, fresh: true, owner };
+  return true;
+}
+/* 每个真实回合结束衰减一次（额外回合不缩短），生成当回合不扣 */
+function tickMists() {
+  const gone = [];
+  for (const key of Object.keys(mists)) {
+    const m = mists[key];
+    if (m.fresh) { m.fresh = false; continue; }
+    m.turns -= 1;
+    if (m.turns <= 0) {
+      delete mists[key];
+      const q = key.split("_");
+      gone.push([Number(q[0]), Number(q[1])]);
+    }
+  }
+  if (gone.length) {
+    addLog("🌫 毒雾消散（" + gone.length + " 格）。");
+    if (window.BFX) window.BFX.mist(gone, "fade");
+  }
+}
+/* 回合结束：当前玩家位于毒雾格的英雄各受 0.5 点伤害（每格只结算一次） */
+function applyMistPoison(player) {
+  for (const u of unitsOf(player).slice()) {
+    const p = findPos(u);
+    if (!p || !mistAt(p.r, p.c)) continue;
+    const dealt = applyDamage(u, 0.5, "poison", null);
+    if (dealt > 0) addLog("☠ 毒雾： " + label(u) + " 受到 0.5 点伤害（余 " + u.hp + "）。");
+    if (findPos(u) && window.SFX) window.SFX.play("poison", { hero: u.heroId });
+  }
+}
+function clearRavenStealth(u) {
+  if (!u) return;
+  u.stealth = null;
+  u.ravenBuff = false;
+  u.ravenDouble = false;
+  u.ravenDoubleUsed = false;
+}
+/* 主动攻击成功执行：立即破隐并消耗影袭强化 */
+function consumeRavenAttackState(u) {
+  if (!u) return;
+  const wasStealth = isStealthed(u);
+  if (wasStealth) {
+    u.stealthLog = { reason: "主动攻击", broken: true, at: Date.now() };
+    addLog("🌑 " + label(u) + " 出手攻击，隐身在瞬间破除。");
+    const p = findPos(u);
+    if (p && window.BFX) window.BFX.cast({ type: "stealthBreak", heroId: "raven", caster: p });
+    if (window.SFX) window.SFX.play("stealthEnd", { hero: "raven" });
+  }
+  u.ravenBuff = false;
+  u.ravenDouble = false;
+  u.ravenDoubleUsed = false;
+  u.stealth = null;
+}
+/* 渡鸦自己的回合结束：潜行与双动计时（额外回合不缩短隐身） */
+function tickRavenTurn(player, countDuration) {
+  if (countDuration) {
+    for (const u of unitsOf(player)) {
+      if (!u.stealth) continue;
+      if (u.stealth.fresh) { u.stealth.fresh = false; continue; }
+      u.stealth.turns -= 1;
+      if (u.stealth.turns <= 0) {
+        addLog("🌑 " + label(u) + " 的潜行结束（持续时间结束）。");
+        if (window.BFX) { const p = findPos(u); if (p) window.BFX.cast({ type: "stealthBreak", heroId: "raven", caster: p }); }
+        clearRavenStealth(u);
+      }
+    }
+  }
+  for (const u of unitsOf(player)) {
+    // 回合结束仍未完成的双动机会作废（本次潜行只给一次）
+    if (u.ravenDoubleUsed) { u.ravenDouble = false; u.ravenDoubleUsed = false; }
   }
 }
 
@@ -2436,6 +2615,108 @@ function useSkill(tr, tc) {
         }
       }
       addLog("🌊 " + label(a) + " 释放【" + s.name + "】，前进到 (" + (ddest.r + 1) + "," + (ddest.c + 1) + ")，九宫格命中 " + dhit + " 名敌人。");
+      break;
+    }
+
+    case "stealth": {
+      if (!stealthRangeOk(tr - r, tc - c)) {
+        addLog("潜行：落点必须在自身九宫格或上下左右 2 格内。");
+        clearSelection();
+        render();
+        return;
+      }
+      if (!(tr === r && tc === c) && board[tr][tc]) {
+        addLog("潜行：落点必须是空格。");
+        clearSelection();
+        render();
+        return;
+      }
+      if (!(tr === r && tc === c)) {
+        if (window.BFX) window.BFX.cast({ type: "stealth", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc }, from: { r, c } });
+        board[tr][tc] = a;
+        board[r][c] = null;
+      } else if (window.BFX) {
+        window.BFX.cast({ type: "stealth", heroId: a.heroId, caster: { r, c }, target: { r, c } });
+      }
+      a.stealth = { turns: RAVEN_STEALTH_TURNS, fresh: true, startTurn: turnSerial, reason: "", broken: false };
+      a.ravenBuff = true;
+      a.ravenDouble = true;
+      a.ravenDoubleUsed = false;
+      addLog("🌑 " + label(a) + " 使用【潜行】，进入隐身（" + RAVEN_STEALTH_TURNS + " 个完整回合），并获得【影袭强化】与一次【潜行双动】。");
+      if (window.SFX) window.SFX.play("stealthEnter", { hero: "raven" });
+      break;
+    }
+
+    case "mistdash": {
+      const fd = DIRS.find((d) => r + d[0] === tr && c + d[1] === tc);
+      if (!fd) {
+        addLog("雾冲：请点击上/下/左/右选择一个突进方向。");
+        clearSelection();
+        render();
+        return;
+      }
+      const o = mistDashPath(a, r, c, fd[0], fd[1], s.range || 3);
+      if (!o.dest) {
+        addLog("雾冲：该方向无法突进（第一格被石柱/边界阻挡）。");
+        clearSelection();
+        render();
+        return;
+      }
+      if (window.BFX) window.BFX.cast({ type: "mistdash", heroId: a.heroId, caster: { r, c }, from: { r, c }, to: o.dest, path: o.path, dir: [fd[0], fd[1]] });
+      // 路径伤害：每个敌人最多一次 0.5
+      const seen = new Set();
+      let hit = 0;
+      for (const [rr, cc] of o.path) {
+        const t = unitAt(rr, cc);
+        if (!t || t.player === a.player || seen.has(t.uid)) continue;
+        seen.add(t.uid);
+        const dealt = applyDamage(t, s.damage + attackerBonus(a), "skill", a);
+        if (dealt > 0) hit++;
+      }
+      // 位移到最远合法空格
+      board[o.dest.r][o.dest.c] = a;
+      board[r][c] = null;
+      // 实际经过的路径格生成毒雾（持续 3 回合）
+      const mistCells = [];
+      for (const [rr, cc] of o.path) if (addMistAt(rr, cc, a.player)) mistCells.push([rr, cc]);
+      if (window.BFX && mistCells.length) window.BFX.mist(mistCells, "rise");
+      if (window.SFX) window.SFX.play("mist", { hero: "raven" });
+      addLog("🌫 " + label(a) + " 使用【雾冲】，突进到 (" + (o.dest.r + 1) + "," + (o.dest.c + 1) + ")，路径命中 " + hit + " 名敌人，留下 " + o.path.length + " 格毒雾。");
+      break;
+    }
+
+    case "shadowfang": {
+      const tgt = unitAt(tr, tc);
+      if (!tgt || tgt.sword || tgt.player === a.player) {
+        addLog("影牙：请选择普通攻击范围内的敌方英雄。");
+        clearSelection();
+        render();
+        return;
+      }
+      if (Math.abs(tr - r) + Math.abs(tc - c) !== 1) {
+        addLog("影牙：只能对相邻敌人发动。");
+        clearSelection();
+        render();
+        return;
+      }
+      const buff = a.ravenBuff ? 1 : 0;
+      const dmg = s.damage + attackerBonus(a) + buff;
+      addLog("🖤 " + label(a) + " 发动【影牙】！" + (buff ? "（影袭强化 +1）" : ""));
+      // 先扣次数：确保击杀刷新不被尾部扣次数覆盖
+      consumedHere = true;
+      {
+        const cur = skillUsesLeft(a, activeSkillIdx);
+        if (cur !== Infinity) setSkillUsesLeft(a, activeSkillIdx, cur - 1);
+      }
+      if (window.BFX) window.BFX.cast({ type: "shadowfang", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc } });
+      applyDamage(tgt, dmg, "skill", a);
+      if (!findPos(tgt)) {
+        if (skillUsesLeft(a, activeSkillIdx) < 1) setSkillUsesLeft(a, activeSkillIdx, 1);
+        addLog("🗡 影牙击败目标，技能次数已刷新！");
+        if (window.BFX) window.BFX.cast({ type: "refresh", heroId: a.heroId, caster: { r, c } });
+        if (window.SFX) window.SFX.play("refresh", { hero: "raven" });
+      }
+      consumeRavenAttackState(a);
       break;
     }
 
@@ -3021,6 +3302,12 @@ function activateSkill(idx) {
     render();
     return;
   }
+  // 渡鸦·潜行双动进行中：第二次行动只能是「移动」或「普通攻击」
+  if (isStealthed(u) && u.ravenDoubleUsed && !turnActionUsed) {
+    addLog("🌑 潜行双动：第一次移动后只能再进行一次移动或普通攻击。");
+    render();
+    return;
+  }
   if (skillBlockedByStatus(u)) {
     addLog(label(u) + " 处于【" + actionBlockReason(u) + "】状态，无法使用技能。");
     render();
@@ -3224,6 +3511,10 @@ function useTalismanEffect(id, tr, tc) {
         empowerTurns: 0,
         chaseStage: 0,
         chaseMark: 0,
+        stealth: null,
+        ravenBuff: false,
+        ravenDouble: false,
+        ravenDoubleUsed: false,
       };
       graveyard = graveyard.filter((g) => g !== rec);
       if (window.SFX) window.SFX.play("revive", { hero: def.id });
@@ -3534,6 +3825,18 @@ function buildSwordObj() {
   return el;
 }
 
+/* 渡鸦·毒雾：地面层（不阻挡移动），显示剩余回合 */
+function buildMistObj(m) {
+  const el = document.createElement("div");
+  el.className = "mist-obj";
+  const t = document.createElement("span");
+  t.className = "mist-turns";
+  t.textContent = String(Math.max(0, m.turns || 0));
+  el.appendChild(t);
+  el.title = "毒雾：位于此格的英雄在其回合结束时受到 0.5 点伤害（剩余 " + Math.max(0, m.turns || 0) + " 回合）";
+  return el;
+}
+
 /* 山丘之王·石柱：独立临时地形，显示剩余回合；阻挡移动 / 突进 / 传送 / 推击 */
 function buildPillarObj(p) {
   const el = document.createElement("div");
@@ -3599,6 +3902,12 @@ function render() {
       if (dragonMoveUnit && isTarget(dragonMoveTargets, r, c)) cell.classList.add("move-target");
 
       const u = board[r][c];
+      // 毒雾是地面层（不阻挡棋子，先绘制，棋子在其上方）
+      const mm = mistAt(r, c);
+      if (mm) {
+        cell.classList.add("mist-cell");
+        cell.appendChild(buildMistObj(mm));
+      }
       if (isSword(u)) {
         cell.classList.add("sword-cell");
         cell.appendChild(buildSwordObj());
@@ -3614,6 +3923,8 @@ function render() {
         else if (d && d.base && d.protected) cell.classList.add("protected-unit");
         if (hasSuperArmor(u)) cell.classList.add("superarmor");
         if (u.chaseMark) cell.classList.add("chase-marked");
+        if (isStealthed(u)) cell.classList.add("stealth-unit");
+        if (u.ravenBuff) cell.classList.add("raven-buffed");
 
         cell.appendChild(buildUnit(u));
 
@@ -3940,6 +4251,11 @@ function renderDetailCard() {
     st.push("万象天引：" + (wst === 0 ? "第一段待执行" : wst === 1 ? "第二段待执行（已引力汇聚）" : "第三段待执行（已万象引渡）"));
   }
   if (u.heroId === "ranger") st.push("普攻射程 2 格（可越过中间单位与石柱）");
+  if (u.heroId === "raven") {
+    if (isStealthed(u)) st.push("隐身：剩余 " + u.stealth.turns + " 回合");
+    if (u.ravenBuff) st.push("影袭强化：下一次普通攻击 / 影牙 +1");
+    if (u.ravenDouble) st.push(u.ravenDoubleUsed ? "潜行双动：已走一步，还可移动或普通攻击" : "潜行双动：可用（走+普攻 / 走+走）");
+  }
   if (flankImmune(u)) st.push("免疫夹击加成");
   if (u.frozen > 0) st.push("冰封：跳过 " + u.frozen + " 个回合");
   if (u.statuses) for (const k of Object.keys(u.statuses)) st.push((u.statuses[k].label || k) + "（剩 " + (u.statuses[k].turns != null ? u.statuses[k].turns : 1) + "）");
@@ -4306,7 +4622,7 @@ function nearestEnemyDist(r, c, player) {
   for (let rr = 0; rr < SIZE; rr++)
     for (let cc = 0; cc < SIZE; cc++) {
       const u = board[rr][cc];
-      if (isUnit(u) && u.player !== player) best = Math.min(best, Math.abs(rr - r) + Math.abs(cc - c));
+      if (isUnit(u) && u.player !== player && !hiddenFrom(u, player)) best = Math.min(best, Math.abs(rr - r) + Math.abs(cc - c));
     }
   return best;
 }
@@ -4318,7 +4634,7 @@ function flankHypo(r, c, player) {
     const nc = c + dc;
     if (!inBounds(nr, nc)) { wall++; continue; }
     const t = board[nr][nc];
-    if (isUnit(t) && t.player !== player) enemy++;
+    if (isUnit(t) && t.player !== player && !hiddenFrom(t, player)) enemy++;
   }
   return { enemy, wall, total: enemy + wall };
 }
@@ -4336,6 +4652,7 @@ function dangerAt(r, c, u) {
 }
 function aiSkillScore(u, s, pos, rr, cc, w) {
   const t = unitAt(rr, cc);
+  if (t && hiddenFrom(t, u.player) && (s.type === "damage_single" || s.type === "freeze" || s.type === "damage_line")) return null;
   switch (s.type) {
     case "damage_single":
     case "damage_line": {
@@ -4570,12 +4887,13 @@ function aiEnumerate() {
     if (!turnActionUsed) {
       for (const [dr, dc] of DIRS) {
         const t = unitAt(pos.r + dr, pos.c + dc);
-        if (t && !t.sword && t.player !== u.player) {
+        if (t && !t.sword && t.player !== u.player && !hiddenFrom(t, u.player)) {
           const res = resolveNormalAttack(u, t);
-          const kill = t.hp <= res.damage;
+          const dmg = res.damage + (u.ravenBuff ? 1 : 0);
+          const kill = t.hp <= dmg;
           acts.push({
             type: "attack", u, pos, target: { r: pos.r + dr, c: pos.c + dc },
-            score: w.dmgW * res.damage + (kill ? w.killW : 0) + (res.flank ? w.flankW : 0) + 6,
+            score: w.dmgW * dmg + (kill ? w.killW : 0) + (res.flank ? w.flankW : 0) + 6,
           });
         }
       }
@@ -4584,7 +4902,7 @@ function aiEnumerate() {
         for (const [rr, cc] of cellsWithin(pos.r, pos.c, 2, false)) {
           if (Math.abs(rr - pos.r) + Math.abs(cc - pos.c) !== 2) continue;
           const t = unitAt(rr, cc);
-          if (!t || t.player === u.player) continue;
+          if (!t || t.player === u.player || hiddenFrom(t, u.player)) continue;
           const res = resolveNormalAttack(u, t);
           const kill = t.hp <= res.damage;
           acts.push({
@@ -4628,7 +4946,7 @@ function aiEnumerate() {
             let sc = 0;
             for (const h of line.hits) {
               const e = board[h.r][h.c];
-              if (e && !e.sword && e.player !== u.player) sc += w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0) + 6;
+              if (e && !e.sword && e.player !== u.player && !hiddenFrom(e, u.player)) sc += w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0) + 6;
             }
             const tgt = line.path[line.path.length - 1];
             acts.push({ type: "skill", u, pos, target: { r: tgt[0], c: tgt[1] }, skillIdx: si, score: (sc > 0 ? sc : 1) * w.skillW });
@@ -4643,7 +4961,7 @@ function aiEnumerate() {
         if (!legal.length) return;
         for (const v of unitsOf(aiPlayer === 1 ? 2 : 1)) {
           const vp = findPos(v);
-          if (!vp) continue;
+          if (!vp || hiddenFrom(v, aiPlayer)) continue;
           for (const cn of legal) {
             // 打分：控制价值 + 残血目标优先（放逐本身不造成伤害）
             let sc = 10 + (v.hp <= 2 ? 14 : 0);
@@ -4665,7 +4983,7 @@ function aiEnumerate() {
           if (!landOk) continue;
           for (const [rr, cc] of wxtStageTargets(u, pos.r, pos.c, dr, dc, wstage)) {
             const e = board[rr][cc];
-            if (!e || e.sword || e.player === u.player) continue;
+            if (!e || e.sword || e.player === u.player || hiddenFrom(e, u.player)) continue;
             let sc = w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0) + 6;
             if (wstage === 1) sc += 8; // 抓取控制
             acts.push({ type: "skill", u, pos, target: { r: rr, c: cc }, wxtDir: wstage === 2 ? undefined : { dr, dc }, skillIdx: si, score: sc * w.skillW });
@@ -4679,7 +4997,7 @@ function aiEnumerate() {
         for (const [dr, dc] of DIRS) {
           const rr = pos.r + dr, cc = pos.c + dc;
           const e = inBounds(rr, cc) ? board[rr][cc] : null;
-          if (!e || e.sword || e.player === u.player) continue;
+          if (!e || e.sword || e.player === u.player || hiddenFrom(e, u.player)) continue;
           const pv = chargePreview(u, e, rr, cc, dr, dc);
           let sc = w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0) + 6;
           sc += pv.moved * (w.distW / 3);
@@ -4694,7 +5012,7 @@ function aiEnumerate() {
       if (s.type === "push") {
         for (const [dr, dc] of DIRS) {
           const info = pushDirInfo(u, pos.r, pos.c, dr, dc);
-          if (!info) continue;
+          if (!info || hiddenFrom(info.unit, u.player)) continue;
           const e = info.unit;
           let sc = w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0) + 6;
           const from = findPos(e);
@@ -4716,6 +5034,56 @@ function aiEnumerate() {
             if (steps === maxSteps) sc += 2; // 完整推到距自己 2 格
           }
           acts.push({ type: "skill", u, pos, target: { r: info.r, c: info.c }, skillIdx: si, score: sc * w.skillW });
+        }
+        return;
+      }
+
+      // 渡鸦·潜行：评估落点安全性 + 隐身 / 强化 / 双动价值
+      if (s.type === "stealth") {
+        for (let rr = 0; rr < SIZE; rr++) {
+          for (let cc = 0; cc < SIZE; cc++) {
+            if (!stealthRangeOk(rr - pos.r, cc - pos.c)) continue;
+            if (!(rr === pos.r && cc === pos.c) && board[rr][cc]) continue;
+            let sc = 26;
+            sc -= dangerAt(rr, cc, u) * (w.riskW / 10);
+            const before = nearestEnemyDist(pos.r, pos.c, u.player);
+            const after = nearestEnemyDist(rr, cc, u.player);
+            sc += (before - after) * (w.distW / 2);
+            acts.push({ type: "skill", u, pos, target: { r: rr, c: cc }, skillIdx: si, score: sc * w.skillW });
+          }
+        }
+        return;
+      }
+
+      // 渡鸦·雾冲：路径伤害 + 毒雾覆盖 + 落点安全性
+      if (s.type === "mistdash") {
+        for (const [dr, dc] of DIRS) {
+          const o = mistDashPath(u, pos.r, pos.c, dr, dc, s.range || 3);
+          if (!o.dest) continue;
+          let sc = 0;
+          const seen = new Set();
+          for (const [rr, cc] of o.path) {
+            const e = unitAt(rr, cc);
+            if (!e || e.player === u.player || hiddenFrom(e, u.player) || seen.has(e.uid)) continue;
+            seen.add(e.uid);
+            sc += w.dmgW * (s.damage + attackerBonus(u)) + (e.hp <= s.damage + attackerBonus(u) ? w.killW : 0);
+          }
+          sc += o.path.length * 1.5; // 毒雾封锁
+          sc -= dangerAt(o.dest.r, o.dest.c, u) * (w.riskW / 10);
+          acts.push({ type: "skill", u, pos, target: { r: pos.r + dr, c: pos.c + dc }, skillIdx: si, score: (sc > 0 ? sc : 1) * w.skillW });
+        }
+        return;
+      }
+
+      // 渡鸦·影牙：优先击杀（刷新次数）
+      if (s.type === "shadowfang") {
+        const dmg = s.damage + attackerBonus(u) + (u.ravenBuff ? 1 : 0);
+        for (const [dr, dc] of DIRS) {
+          const e = unitAt(pos.r + dr, pos.c + dc);
+          if (!e || e.player === u.player || hiddenFrom(e, u.player)) continue;
+          const kill = e.hp <= dmg;
+          let sc = w.dmgW * dmg + (kill ? w.killW + 14 : 0) + 6;
+          acts.push({ type: "skill", u, pos, target: { r: pos.r + dr, c: pos.c + dc }, skillIdx: si, score: sc * w.skillW });
         }
         return;
       }
@@ -4985,6 +5353,7 @@ function bfxOnlineDerive(prev, next, st, ctx) {
   }
   for (const [uid, p] of prev) {
     if (!next.has(uid)) {
+      if (st.hiddenUids && st.hiddenUids.indexOf(uid) >= 0) continue; // 隐身：不播死亡表现（避免误导/泄位）
       if (window.BFX) window.BFX.death({ r: p.r, c: p.c, color: window.BFX.heroColor(p.heroId) });
       if (window.SFX) window.SFX.play("death", { hero: p.heroId });
     }
@@ -5022,6 +5391,7 @@ function applyRemoteState(state) {
   const prevPending = extraTurnPending;
   const prevPhase = phase;
   board = state.board.map((row) => row.map((cell) => (cell ? Object.assign({}, cell) : null)));
+  mists = state.mists ? JSON.parse(JSON.stringify(state.mists)) : {};
   phase = state.phase;
   currentPlayer = state.currentPlayer;
   winner = state.winner || 0;
@@ -5446,6 +5816,7 @@ window.GameAPI = {
   /* ---- 锦囊测试钩子 ---- */
   TALISMANS,
   getTalisman(p) { return talisman[p]; },
+  getMists() { return JSON.parse(JSON.stringify(mists)); },
   setTalisman(p, id) { talisman[p] = id; talismanUsed[p] = false; },
   getTalismanUsed() { return Object.assign({}, talismanUsed); },
   setTalismanUsed(p, v) { talismanUsed[p] = !!v; },
@@ -5496,6 +5867,7 @@ window.GameAPI = {
   },
   applyDamage,
   normalAttack,
+  moveHero,
   useSkill,
   activateSkill,
   get activeSkillIdx() { return activeSkillIdx; },
@@ -5544,6 +5916,7 @@ window.GameAPI = {
     extraMoves = 0;
     graveyard = [];
     reviveOptions = [];
+    mists = {};
     // 对局统计 & 结算演出：重置（测试/新局共用）
     matchStats = { damage: { 1: 0, 2: 0 }, kills: { 1: 0, 2: 0 }, startedAt: Date.now(), endedAt: 0, lastKiller: null };
     clearVictoryTimers();
@@ -5574,6 +5947,10 @@ window.GameAPI = {
         chaseMark: spec.chaseMark || 0,
         guixiongUsed: !!spec.guixiongUsed,
         wxtStage: spec.wxtStage || 0,
+        stealth: spec.stealth ? JSON.parse(JSON.stringify(spec.stealth)) : null,
+        ravenBuff: !!spec.ravenBuff,
+        ravenDouble: !!spec.ravenDouble,
+        ravenDoubleUsed: !!spec.ravenDoubleUsed,
       };
       initUnitUses(unit, def);
       if (spec.uses != null) unit.usesLeft = spec.uses;

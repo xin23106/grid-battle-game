@@ -45,7 +45,7 @@
     assassin: "#22d3ee", warlock: "#a5f3fc", cleric: "#86efac", guardian: "#93c5fd",
     asura: "#e2e8f0", lone: "#facc15", cang: "#38bdf8", longren: "#fbbf24",
     thunder: "#c084fc", vampire: "#e11d48", jade: "#a78bfa", xiangyu: "#f87171",
-    tiandao: "#c084fc", huamulan: "#f43f5e", hillking: "#a8a29e",
+    tiandao: "#c084fc", huamulan: "#f43f5e", hillking: "#a8a29e", raven: "#8b5cf6",
   };
   function heroColor(id) { return HERO_COLOR[id] || "#93c5fd"; }
 
@@ -552,6 +552,7 @@
     space:   { alpha: 0.18, ttl: 9000,  rim: true },  // 空间裂隙：中等寿命
     ember:   { alpha: 0.12, ttl: 8000,  rim: true },  // 灼痕：最轻
     frost:   { alpha: 0.14, ttl: 10000, rim: true },  // 霜痕
+    shadow:  { alpha: 0.18, ttl: 9000,  rim: true },  // 暗影残痕
   };
   let occupancyFn = null;   // (r,c) => 该格是否有单位（有则痕迹避开中心）
   let targeting = false;    // 正在选目标 / 显示范围时，痕迹进一步变淡
@@ -1224,6 +1225,70 @@
         if (tg.r !== undefined) addMark("impact", tg.r, tg.c, "#a8a29e");
         break;
       }
+      case "stealth": {
+        // 渡鸦·潜行：暗影散开 → 羽毛残影 → 位移
+        const sc = m.target || m.caster || {};
+        const sx = px(c.c), sy = py(c.r);
+        const dx = sc.c !== undefined ? px(sc.c) : sx, dy = sc.r !== undefined ? py(sc.r) : sy;
+        push({ kind: "ring", x: sx, y: sy, r0: geo.cell * 0.5, r1: geo.cell * 0.12, color: "#8b5cf6", width: 3, dur: dur(380) });
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2;
+          push({ kind: "ghost", x: sx + Math.cos(a) * 6, y: sy + Math.sin(a) * 6, r: geo.cell * 0.12, color: "#c4b5fd", dur: dur(460), delay: dur(i * 25) });
+        }
+        if (dx !== sx || dy !== sy) {
+          push({ kind: "line", x: sx, y: sy, x2: dx, y2: dy, color: "#a78bfa", width: 5, dur: dur(300), alpha: 0.6 });
+          for (let i = 1; i <= 3; i++) {
+            const q = i / 4;
+            push({ kind: "ghost", x: sx + (dx - sx) * q, y: sy + (dy - sy) * q, r: geo.cell * 0.26, color: "#6d28d9", dur: dur(300), delay: dur(i * 40) });
+          }
+        }
+        spawn(sx, sy, 16, { color: "#c4b5fd", speed: 1.4, life: 600, size: 2, angle: -Math.PI / 2, spread: 1.6, grav: 0.02 });
+        if (sc.r !== undefined) addMark("shadow", sc.r, sc.c, "#8b5cf6", 12000);
+        break;
+      }
+      case "stealthBreak": {
+        push({ kind: "ring", x, y, r0: geo.cell * 0.2, r1: geo.cell * 0.9, color: "#8b5cf6", width: 3, dur: dur(360) });
+        for (let i = 0; i < 5; i++) {
+          const a = (i / 5) * Math.PI * 2 + 0.3;
+          push({ kind: "slash", x, y, angle: a, len: geo.cell * 0.55, width: 2.4, color: "#4c1d95", dur: dur(300), delay: dur(i * 20) });
+        }
+        spawn(x, y, 14, { color: "#a78bfa", speed: 2.4, life: 420, size: 2, spread: 1.8 });
+        break;
+      }
+      case "mistdash": {
+        // 渡鸦·雾冲：暗影突进 → 路径残影 → 毒雾
+        const d0 = m.dir || [0, 1];
+        const ex = tg.c !== undefined ? px(tg.c) : x + d0[1] * geo.cell * 2;
+        const ey = tg.r !== undefined ? py(tg.r) : y + d0[0] * geo.cell * 2;
+        const ang = Math.atan2(ey - y, ex - x);
+        push({ kind: "line", x, y, x2: ex, y2: ey, color: "#7c3aed", width: 9, dur: dur(260), alpha: 0.5 });
+        for (let i = 1; i <= 4; i++) {
+          const q = i / 5;
+          push({ kind: "ghost", x: x + (ex - x) * q, y: y + (ey - y) * q, r: geo.cell * 0.25, color: "#8b5cf6", dur: dur(260), delay: dur(i * 28) });
+        }
+        push({ kind: "ring", x: ex, y: ey, r0: 4, r1: geo.cell * 0.6, color: "#a78bfa", width: 3, dur: dur(320), delay: dur(60) });
+        spawn(ex, ey, 18, { color: "#a78bfa", speed: 2.4, life: 480, size: 2, angle: ang, spread: 1.2 });
+        break;
+      }
+      case "shadowfang": {
+        // 渡鸦·影牙：暗色刀光 + 锋利突刺
+        const sx = px(c.c), sy = py(c.r);
+        const tx2 = tg.c !== undefined ? px(tg.c) : x, ty2 = tg.r !== undefined ? py(tg.r) : y;
+        const ang = Math.atan2(ty2 - sy, tx2 - sx);
+        push({ kind: "line", x: sx, y: sy, x2: tx2, y2: ty2, color: "#4c1d95", width: 8, dur: dur(200), alpha: 0.7 });
+        push({ kind: "slash", x: (sx + tx2) / 2, y: (sy + ty2) / 2, angle: ang + Math.PI / 2, len: geo.cell * 0.9, width: 5, color: "#c4b5fd", dur: dur(240), delay: dur(30), curve: 6 });
+        push({ kind: "slash", x: tx2, y: ty2, angle: ang - 0.5, len: geo.cell * 0.8, width: 3, color: "#8b5cf6", dur: dur(280), delay: dur(70) });
+        push({ kind: "ring", x: tx2, y: ty2, r0: 4, r1: geo.cell * 0.55, color: "#7c3aed", width: 3, dur: dur(300), delay: dur(40) });
+        spawn(tx2, ty2, 16, { color: "#c4b5fd", speed: 3, life: 380, size: 1.9, angle: ang, spread: 1.1 });
+        if (tg.r !== undefined) addMark("shadow", tg.r, tg.c, "#8b5cf6");
+        break;
+      }
+      case "refresh": {
+        push({ kind: "ring", x, y, r0: geo.cell * 0.2, r1: geo.cell * 0.9, color: "#fde68a", width: 3, dur: dur(420) });
+        push({ kind: "rune", x, y, r: geo.cell * 0.42, color: "#c4b5fd", sides: 6, dur: dur(520) });
+        spawn(x, y, 18, { color: "#fde68a", speed: 1.8, life: 560, size: 2, angle: -Math.PI / 2, spread: 1.2, grav: -0.02 });
+        break;
+      }
       case "stun": {
         const sx = tx !== null ? tx : x, sy = ty !== null ? ty : y;
         push({ kind: "rune", x: sx, y: sy, r: geo.cell * 0.4, color: "#fbbf24", sides: 5, dur: dur(700) });
@@ -1255,6 +1320,25 @@
         push({ kind: "pillar", x, y, h: geo.cell * 0.9, color: "#a8a29e", dur: dur(420) });
         push({ kind: "ring", x, y: y + geo.cell * 0.22, r0: geo.cell * 0.18, r1: geo.cell * 0.55, color: "#d6d3d1", width: 2.5, dur: dur(380) });
         spawn(x, y + geo.cell * 0.2, 12, { color: "#d6d3d1", speed: 1.4, life: 520, size: 1.8, angle: -Math.PI / 2, spread: 1.4, grav: 0.05 });
+      }
+    }
+  }
+
+  /* 渡鸦·毒雾：生成 / 消散 */
+  function mist(cells, mode) {
+    if (!opts.enabled || !cells || !cells.length) return;
+    for (const cell of cells) {
+      const r = cell.r !== undefined ? cell.r : cell[0];
+      const c = cell.c !== undefined ? cell.c : cell[1];
+      const x = px(c), y = py(r);
+      if (mode === "fade") {
+        spawn(x, y, 10, { color: "#a78bfa", speed: 0.9, life: 620, size: 3.2, spread: 1.6 });
+        push({ kind: "ring", x, y, r0: geo.cell * 0.4, r1: geo.cell * 0.1, color: "#6d28d9", width: 2, dur: dur(500) });
+      } else {
+        for (let i = 0; i < 3; i++) {
+          push({ kind: "ghost", x: x + (Math.random() - 0.5) * geo.cell * 0.4, y: y + (Math.random() - 0.5) * geo.cell * 0.4, r: geo.cell * 0.3, color: i % 2 ? "#7c3aed" : "#4c1d95", dur: dur(700), delay: dur(i * 60) });
+        }
+        spawn(x, y, 8, { color: "#a78bfa", speed: 0.7, life: 900, size: 3, spread: 1.8 });
       }
     }
   }
@@ -1725,7 +1809,7 @@
     init, sync, setOptions, clear, banner, attack, hit, shieldAbsorb: shieldAbsorb,
     dodge, immune, death, move, knockback, grab, heal, shield: shieldFx, revive,
     swordSpawn, cast, drain, mark: addMark, shake, flash, hitstop, heroColor,
-    turnTransition, talismanCast, talismanEffect, pillars,
+    turnTransition, talismanCast, talismanEffect, pillars, mist,
     victoryBurst, victoryTitle, victoryHeroPose, victoryHide,
     setOccupancy(fn) { occupancyFn = fn || null; },
     setTargeting(v) { targeting = !!v; },

@@ -696,6 +696,22 @@
         M(L, { at: 0.24, base: 900, dur: 0.34, peak: 0.06, partials: [1, 2.1, 3.7] });
         break;
 
+      case "stealth": // 渡鸦·潜行：暗影下沉 + 羽毛轻响
+        N(L, { at: 0, dur: 0.30, bp: 1800, q: 0.9, sweepTo: 400, peak: 0.10, attack: 0.05 });
+        T(L, { at: 0, dur: 0.30, wave: "sine", f0: 420, f1: 180, peak: 0.06 });
+        for (let i = 0; i < 4; i++) N(L, { at: 0.08 + i * 0.05, dur: 0.10, bp: 4200 + i * 300, q: 1.3, peak: 0.03 });
+        break;
+      case "mistdash": // 渡鸦·雾冲：掠过 → 低鸣 → 雾气扩散
+        N(L, { at: 0, dur: 0.20, bp: 2600, q: 1.0, sweepTo: 900, peak: 0.12 });
+        HP(L, { at: 0.08, dur: 0.24, f0: 150, f1: 70, peak: 0.12 });
+        N(L, { at: 0.18, dur: 0.34, lp: 520, peak: 0.10 });
+        break;
+      case "shadowfang": // 渡鸦·影牙：短促锋利
+        N(L, { at: 0, dur: 0.10, bp: 3600, q: 1.4, peak: 0.16 });
+        M(L, { at: 0.02, base: 2100, dur: 0.16, peak: 0.06, partials: [1, 2.6, 4.4] });
+        HP(L, { at: 0.05, dur: 0.18, f0: 130, f1: 50, peak: 0.16 });
+        break;
+
       default:
         S(L, { at: 0, f0: h.base * 0.6, f1: h.base * 1.8, dur: 0.22, peak: 0.07, wave: h.wave });
         N(L, { at: 0.02, dur: 0.2, bp: h.air, q: 1.3, peak: 0.05 });
@@ -754,6 +770,26 @@
         HP(L, { at: 0.02, dur: 0.26, f0: 150, f1: 60, peak: 0.18 });
         for (let i = 0; i < 4; i++) M(L, { at: 0.04 + i * 0.035, base: 1800 + i * 260, dur: 0.14, peak: 0.04, partials: [1, 2.6] });
         break;
+      case "stealthEnter":
+        N(L, { at: 0, dur: 0.34, bp: 1600, q: 0.8, sweepTo: 320, peak: 0.12 });
+        T(L, { at: 0.02, dur: 0.30, wave: "sine", f0: 520, f1: 200, peak: 0.06 });
+        break;
+      case "stealthEnd":
+        N(L, { at: 0, dur: 0.18, bp: 2800, q: 1.2, peak: 0.09 });
+        T(L, { at: 0.02, dur: 0.22, wave: "triangle", f0: 300, f1: 160, peak: 0.05 });
+        break;
+      case "mist":
+        N(L, { at: 0, dur: 0.42, lp: 420, peak: 0.10, attack: 0.08 });
+        HP(L, { at: 0.04, dur: 0.32, f0: 120, f1: 55, peak: 0.10 });
+        break;
+      case "poison":
+        T(L, { at: 0, dur: 0.16, wave: "sine", f0: 320, f1: 240, peak: 0.05 });
+        N(L, { at: 0, dur: 0.14, lp: 800, peak: 0.05 });
+        break;
+      case "refresh":
+        [0, 7, 12].forEach((q, i) => T(L, { at: i * 0.06, dur: 0.18, wave: "triangle", f0: 700 * Math.pow(2, q / 12), peak: 0.07 }));
+        N(L, { at: 0, dur: 0.20, bp: 3200, peak: 0.05 });
+        break;
       case "swordSpawn": recipeSwordSpawn(h, o, L); break;
       case "swordPickup": recipeSwordPickup(h, o, L); break;
       case "talisman": recipeTalisman(h, o, L); break;
@@ -790,6 +826,7 @@
     dodge: 80, flank: 70, death: 120, revive: 200, heal: 90, buffUp: 120, buffDown: 120,
     grab: 90, knockback: 60, mark: 60, swordSpawn: 80, swordPickup: 60, stun: 140,
     pillarRise: 120, pillarBreak: 160,
+    stealthEnter: 200, stealthEnd: 120, mist: 220, poison: 180, refresh: 300,
     talisman: 120, dash: 90, dashHit: 60, skill: 60, skillHit: 45, win: 500, lose: 500, draw: 500,
     turnEnd: 220, turnSweep: 200, turnStart: 260, extraTurn: 400,
   };
