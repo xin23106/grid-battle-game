@@ -669,7 +669,7 @@ function handleUnitDeathS(s, target, source, pos) {
   if (!target || !pos) return;
   target.chaseMark = 0;
   if (target.heroId === "assassin") clearChaseMarks(s, target.uid);
-  s.graveyard.push({ player: target.player, heroId: target.heroId, r: pos.r, c: pos.c, usesLeft: target.usesLeft || 0, swords: target.swords || 0, lockUsed: !!target.lockUsed, guixiongUsed: !!target.guixiongUsed });
+  s.graveyard.push({ player: target.player, heroId: target.heroId, r: pos.r, c: pos.c, usesLeft: target.usesLeft || 0, usesArr: target.usesArr ? target.usesArr.slice() : null, swords: target.swords || 0, lockUsed: !!target.lockUsed, guixiongUsed: !!target.guixiongUsed, snapshot: JSON.parse(JSON.stringify(target)) });
   s.board[pos.r][pos.c] = null;
   slog(s, "☠ " + uname(s, target) + " 阵亡！");
   spawnSword(s, pos.r, pos.c);
@@ -1109,10 +1109,19 @@ function applyAction(state, player, action) {
         if (!inB(to.r, to.c) || s.board[to.r][to.c]) return err("该位置已被占用，无法复活");
         const rec = s.graveyard[idx];
         const def = heroDef(rec.heroId);
-        s.board[to.r][to.c] = { uid: s.unitSeq++, heroId: def.id, player, hp: Math.min(3, def.hp), maxHp: def.hp,
-                                shield: 0, frozen: 0, swords: rec.swords || 0, usesLeft: rec.usesLeft || 0,
-                                statuses: {}, lockUsed: !!rec.lockUsed, sdStage: 0, dragonMoves: 0, empowerTurns: 0, chaseStage: 0, chaseMark: 0, guixiongUsed: !!rec.guixiongUsed, wxtStage: 0,
-                                stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false, metalBuff: false, metalTide: 0 };
+        // 复活 = 恢复阵亡瞬间的全部状态，仅生命值变为 3
+        let revived;
+        if (rec.snapshot) {
+          revived = Object.assign({}, JSON.parse(JSON.stringify(rec.snapshot)), { uid: s.unitSeq++, heroId: def.id, player, hp: Math.min(3, def.hp), maxHp: def.hp });
+        } else {
+          revived = { uid: s.unitSeq++, heroId: def.id, player, hp: Math.min(3, def.hp), maxHp: def.hp,
+                      shield: 0, frozen: 0, swords: rec.swords || 0, usesLeft: rec.usesLeft || 0,
+                      usesArr: rec.usesArr && rec.usesArr.length ? rec.usesArr.slice() : undefined,
+                      statuses: {}, lockUsed: !!rec.lockUsed, sdStage: 0, dragonMoves: 0, empowerTurns: 0, chaseStage: 0, chaseMark: 0, guixiongUsed: !!rec.guixiongUsed, wxtStage: 0,
+                      stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false, metalBuff: false, metalTide: 0 };
+        }
+        if (!revived.statuses) revived.statuses = {};
+        s.board[to.r][to.c] = revived;
         s.graveyard.splice(idx, 1);
         slog(s, "💫 " + uname(s, s.board[to.r][to.c]) + " 复活（3 点生命）" + (cell && !cell.origin ? "，原位置被占据，改在最近空格" : ""));
         break;

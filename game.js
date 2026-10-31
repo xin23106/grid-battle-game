@@ -1856,9 +1856,11 @@ function handleUnitDeath(target, source, pos) {
     r: pos.r,
     c: pos.c,
     usesLeft: target.usesLeft || 0,
+    usesArr: target.usesArr ? target.usesArr.slice() : null,
     swords: target.swords || 0,
     lockUsed: !!target.lockUsed,
     guixiongUsed: !!target.guixiongUsed,
+    snapshot: JSON.parse(JSON.stringify(target)), // 复活时原样恢复阵亡瞬间的全部状态
   });
   board[pos.r][pos.c] = null;
   addLog(label(target) + " 阵亡！");
@@ -3687,20 +3689,23 @@ function useTalismanEffect(id, tr, tc) {
       if (!rec) { addLog("该位置没有可复活的己方阵亡英雄。"); ok = false; break; }
       if (!inBounds(tr, tc) || board[tr][tc]) { addLog("该位置已被占用，无法复活。"); ok = false; break; }
       const def = heroDef(rec.heroId);
-      board[tr][tc] = {
+      // 复活 = 恢复阵亡瞬间的全部状态，仅生命值变为 3
+      const snap = rec.snapshot ? JSON.parse(JSON.stringify(rec.snapshot)) : null;
+      const revived = snap ? Object.assign({}, snap, { uid: unitSeq++, heroId: def.id, player, hp: Math.min(3, def.hp), maxHp: def.hp }) : {
         uid: unitSeq++,
         heroId: def.id,
         player,
-        hp: Math.min(3, def.hp),  // 复活恢复至 3 点生命
+        hp: Math.min(3, def.hp),
         maxHp: def.hp,
         shield: 0,
         frozen: 0,
-        swords: rec.swords || 0,          // 保留携带剑数
-        usesLeft: rec.usesLeft || 0,      // 不重置技能次数
+        swords: rec.swords || 0,
+        usesLeft: rec.usesLeft || 0,
+        usesArr: rec.usesArr && rec.usesArr.length ? rec.usesArr.slice() : undefined,
         statuses: {},
-        lockUsed: !!rec.lockUsed,         // 锁血状态保留（每局一次）
-        guixiongUsed: !!rec.guixiongUsed, // 鬼雄触发状态保留（每局一次）
-        wxtStage: 0,                      // 万象天引连招阶段：复活后从第一段重新开始
+        lockUsed: !!rec.lockUsed,
+        guixiongUsed: !!rec.guixiongUsed,
+        wxtStage: 0,
         sdStage: 0,
         dragonMoves: 0,
         empowerTurns: 0,
@@ -3713,13 +3718,15 @@ function useTalismanEffect(id, tr, tc) {
         metalBuff: false,
         metalTide: 0,
       };
+      if (!revived.statuses) revived.statuses = {};
+      board[tr][tc] = revived;
       graveyard = graveyard.filter((g) => g !== rec);
       if (window.SFX) window.SFX.play("revive", { hero: def.id });
       if (window.BFX) window.BFX.revive({ r: tr, c: tc });
       fx.push({ r: tr, c: tc, text: "复活", kind: "heal" });
       addLog("💫 玩家" + player + " 使用【还魂令】：" + def.name + " 在 (" + (tr + 1) + "," + (tc + 1) + ") 复活" +
         (recAtOrigin ? "" : "（原位置已被占据，改在最近的空格）") +
-        "，恢复至 3 点生命（技能剩余 " + (rec.usesLeft || 0) + " 次，携带剑 " + (rec.swords || 0) + "）。");
+        "，恢复至 3 点生命（保留阵亡时的技能次数 / 护盾 / 状态 / 强化阶段）。");
       break;
     }
     default:
