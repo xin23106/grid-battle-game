@@ -1356,3 +1356,57 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   .mist-obj, .cell.stealth-unit .unit { animation: none; }
 }
+
+/* =======================================================================
+   金元素：金属强化 / 金属狂潮 / 定身
+   ======================================================================= */
+.cell.metal-buffed .unit {
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, .9), 0 0 16px rgba(251, 191, 36, .6);
+}
+.cell.metal-buffed::after {
+  content: "⚔";
+  position: absolute;
+  right: 3px;
+  top: 1px;
+  color: #fde68a;
+  font-size: 11px;
+  text-shadow: 0 0 8px rgba(251, 191, 36, .95);
+  pointer-events: none;
+  z-index: 4;
+}
+.cell.metal-tide .unit {
+  box-shadow: 0 0 0 2px rgba(212, 212, 216, .85), 0 0 20px rgba(251, 191, 36, .55);
+  animation: metalTidePulse 2.4s ease-in-out infinite;
+}
+.cell.metal-tide::before {
+  content: "🛡";
+  position: absolute;
+  left: 3px;
+  top: 2px;
+  font-size: 11px;
+  filter: drop-shadow(0 0 4px rgba(251, 191, 36, .9));
+  pointer-events: none;
+  z-index: 4;
+}
+@keyframes metalTidePulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(212, 212, 216, .7), 0 0 14px rgba(251, 191, 36, .4); }
+  50% { box-shadow: 0 0 0 3px rgba(251, 191, 36, .9), 0 0 24px rgba(212, 212, 216, .8); }
+}
+.cell.rooted .unit {
+  filter: grayscale(.35) brightness(.9);
+  box-shadow: 0 0 0 2px rgba(168, 162, 158, .95), 0 0 12px rgba(120, 113, 108, .7);
+}
+.cell.rooted::after {
+  content: "⛓";
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  font-size: 11px;
+  color: #e7e5e4;
+  text-shadow: 0 0 5px rgba(0, 0, 0, .9);
+  pointer-events: none;
+  z-index: 4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cell.metal-tide .unit { animation: none; }
+}

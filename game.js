@@ -604,9 +604,9 @@ function attackerBonus(u) {
   if (!u || u.sword) return 0;
   return assaultBonus(u.player) + (isLoneActive(u) ? 1 : 0);
 }
-/* 技能是否被负面状态禁止（抓取 / 眩晕） */
+/* 技能是否被负面状态禁止（抓取 / 眩晕 / 定身） */
 function skillBlockedByStatus(u) {
-  return !!(u && u.statuses && ((u.statuses.grab && u.statuses.grab.turns > 0) || (u.statuses.stun && u.statuses.stun.turns > 0)));
+  return !!(u && u.statuses && ((u.statuses.grab && u.statuses.grab.turns > 0) || (u.statuses.stun && u.statuses.stun.turns > 0) || (u.statuses.root && u.statuses.root.turns > 0)));
 }
 /* 被抓取：该单位在其回合内不能做任何动作（移动 / 普攻 / 技能） */
 function isGrabbed(u) {
@@ -616,9 +616,17 @@ function isGrabbed(u) {
 function isStunned(u) {
   return !!(u && u.statuses && u.statuses.stun && u.statuses.stun.turns > 0);
 }
+/* 被定身：不能移动 / 普攻 / 使用主动技能；按目标自身行动回合计时 */
+function isRooted(u) {
+  return !!(u && u.statuses && u.statuses.root && u.statuses.root.turns > 0);
+}
+function isDisabled(u) {
+  return isGrabbed(u) || isStunned(u) || isRooted(u);
+}
 function actionBlockReason(u) {
   if (isGrabbed(u)) return "抓取";
   if (isStunned(u)) return "眩晕";
+  if (isRooted(u)) return "定身";
   return "";
 }
 /* 雷电之主：本方的强化英雄（empowerTurns>0） */
@@ -735,7 +743,7 @@ function talismanTargetsFor(id, player) {
 function hasAnyAction(player) {
   for (const u of unitsOf(player)) {
     if (u.frozen > 0) continue;
-    if (isGrabbed(u) || isStunned(u)) continue; // 被抓取 / 眩晕：本回合无法行动
+    if (isDisabled(u)) continue; // 被抓取 / 眩晕：本回合无法行动
     const pos = findPos(u);
     if (!pos) continue;
     const s = heroDef(u.heroId).skill;
@@ -759,6 +767,15 @@ function hasAnyAction(player) {
       }
     }
     if (heroHasFreeUses(u)) return true; // 剑圣仍可使用
+    // 不耗行动步数的主动技能（金元素等）：即使本回合已行动也可用
+    {
+      const skills = heroSkills(heroDef(u.heroId));
+      for (let i = 0; i < skills.length; i++) {
+        const sk = skills[i];
+        if (!sk || isPassiveSkill(sk)) continue;
+        if (sk.free && skillUsesLeft(u, i) > 0) return true;
+      }
+    }
   }
   return false;
 }
@@ -1035,6 +1052,8 @@ function handlePlacement(r, c) {
     ravenBuff: false,           // 渡鸦·影袭强化：下一次主动攻击 +1
     ravenDouble: false,         // 渡鸦·潜行双动：本次潜行是否还有一次双动机会
     ravenDoubleUsed: false,     // 双动的第一次「走」是否已使用
+    metalBuff: false,           // 金元素·金属强化：下一次普通攻击 +1 并定身
+    metalTide: 0,               // 金元素·金属狂潮：剩余自身行动回合（受伤减半）
   };
   initUnitUses(unit, def);
   board[r][c] = unit;
@@ -1163,6 +1182,8 @@ function endTurnOnce() {
   extraTurnPending = false;
   // 渡鸦：潜行时长只在真实回合交接时推进（行军令额外回合不缩短）；双动机会在回合结束时作废
   tickRavenTurn(currentPlayer, !samePlayer);
+  // 金元素·金属狂潮：按自己的行动回合计时（本回合使用后跨 3 个自身回合）
+  tickMetalTurn(currentPlayer);
   // 毒雾：只在真实回合交接时衰减（额外回合不缩短），生成当回合不扣
   if (!samePlayer) tickMists();
   if (!samePlayer) currentPlayer = currentPlayer === 1 ? 2 : 1;
@@ -1333,7 +1354,7 @@ function computeTargets() {
   if (!selected) return;
   const u = board[selected.r][selected.c];
   if (!u || u.sword) return;
-  if (isGrabbed(u) || isStunned(u)) return; // 被抓取 / 眩晕：不能移动或攻击
+  if (isDisabled(u)) return; // 被抓取 / 眩晕：不能移动或攻击
   for (const [dr, dc] of DIRS) {
     const nr = selected.r + dr;
     const nc = selected.c + dc;
@@ -1665,6 +1686,20 @@ function computeSkillTargets() {
       break;
     }
 
+    case "metalpierce": {
+      for (const [dr, dc] of DIRS) {
+        if (metalPierceInfo(u, r, c, dr, dc).length) {
+          skillTargets.push([r + dr, c + dc]);
+        }
+      }
+      break;
+    }
+
+    case "metalarmor":
+    case "metaltide":
+      skillTargets.push([r, c]);
+      break;
+
     case "stealth": {
       // 雷霆万钧范围：3×3 + 上下左右 2 格；空格或原地
       for (let rr = 0; rr < SIZE; rr++) {
@@ -1736,7 +1771,7 @@ function moveHero(r, c) {
   }
   const { r: fr, c: fc } = selected;
   const u = board[fr][fc];
-  if (isGrabbed(u) || isStunned(u)) {
+  if (isDisabled(u)) {
     addLog(label(u) + " 处于【" + actionBlockReason(u) + "】状态，无法移动。");
     clearSelection();
     render();
@@ -1791,6 +1826,60 @@ function moveHero(r, c) {
   afterAction(u);
 }
 
+/* 单位阵亡统一处理（伤害 / 生命代价共用）：记录、移除、音画、锻剑、击杀刷新、战绩 */
+function handleUnitDeath(target, source, pos) {
+  if (!target || !pos) return;
+  // 追猎标记清理：目标阵亡 → 清除其标记；若阵亡者是刺客本人 → 清除其遗留的全部标记
+  target.chaseMark = 0;
+  if (target.heroId === "assassin") clearChaseMarks(target.uid);
+  // 记录阵亡（供还魂令），必须在生成剑刃之前、清空棋盘之前
+  graveyard.push({
+    player: target.player,
+    heroId: target.heroId,
+    name: heroDef(target.heroId).name,
+    r: pos.r,
+    c: pos.c,
+    usesLeft: target.usesLeft || 0,
+    swords: target.swords || 0,
+    lockUsed: !!target.lockUsed,
+    guixiongUsed: !!target.guixiongUsed,
+  });
+  board[pos.r][pos.c] = null;
+  addLog(label(target) + " 阵亡！");
+  if (window.SFX) window.SFX.play("death", { hero: target.heroId });
+  if (window.SFX && target.heroId === "thunder") window.SFX.stopLoop("empower");
+  if (window.BFX) window.BFX.death({ r: pos.r, c: pos.c, color: window.BFX.heroColor(target.heroId) });
+  // 阿修罗·锻剑：阿修罗存活时，阵亡位置留下一把剑
+  if (spawnSword(pos.r, pos.c)) {
+    addLog("⚔ 锻剑：" + label(target) + " 的阵亡处留下了一把剑。");
+    if (window.SFX) window.SFX.play("swordSpawn", { hero: "asura" });
+  }
+  // 击杀刷新：刺客·追猎 / 吸血鬼·血崩（同一次击杀只刷新一次）
+  if (source && !source.sword && source.player !== target.player && findPos(source)) {
+    refreshSkillOnKill(source);
+  }
+  // 真实战绩：击杀数 + 最后击杀者（用于结算演出主角与面板）
+  if (source && !source.sword && source.player !== target.player) {
+    matchStats.kills[source.player] = (matchStats.kills[source.player] || 0) + 1;
+    matchStats.lastKiller = { player: source.player, heroId: source.heroId };
+  }
+}
+
+/* 金元素：主动支付生命值（不吃护盾/闪避/减伤），归零立即按正常阵亡流程处理 */
+function payHpCost(u, amount, reason) {
+  if (!u) return false;
+  u.hp -= amount;
+  addLog("💢 " + label(u) + " 失去 " + amount + " 点生命值（" + (reason || "技能代价") + "）。");
+  if (window.SFX) window.SFX.play("cost", { hero: u.heroId });
+  const p = findPos(u);
+  if (p && window.BFX) window.BFX.cast({ type: "metalCost", heroId: u.heroId, caster: p, amount });
+  if (u.hp <= 0 && p) {
+    handleUnitDeath(u, null, p);
+    return false;
+  }
+  return true;
+}
+
 /* 伤害应用：先扣护盾，再扣生命；生命归零立即从棋盘移除 */
 function applyDamage(target, amount, kind, source) {
   const pos = findPos(target);
@@ -1800,6 +1889,15 @@ function applyDamage(target, amount, kind, source) {
   if (guardOn(target.player) && dmg > 0) {
     dmg = Math.max(0, dmg - 1);
     addLog("🛡 坚守令为 " + label(target) + " 减免 1 点伤害。");
+  }
+
+  // 金属狂潮：受到的伤害减半（只在此处结算一次；之后仍可被护盾/闪避等正常处理）
+  if (dmg > 0 && target.metalTide > 0) {
+    const beforeHalf = dmg;
+    dmg = dmg * 0.5;
+    addLog("🛡 金属狂潮：" + label(target) + " 受到的伤害减半（" + beforeHalf + " → " + dmg + "）。");
+    if (pos) fx.push({ r: pos.r, c: pos.c, text: "减伤50%", kind: "shield" });
+    if (window.SFX) window.SFX.play("metalGuard", { hero: "metal" });
   }
 
   const shieldBefore = target.shield;
@@ -1881,42 +1979,7 @@ function applyDamage(target, amount, kind, source) {
     if (dmg >= 3 || kind === "flank") window.BFX.hitstop(60);
   }
 
-  if (target.hp <= 0 && pos) {
-    // 追猎标记清理：目标阵亡 → 清除其标记；若阵亡者是刺客本人 → 清除其遗留的全部标记
-    target.chaseMark = 0;
-    if (target.heroId === "assassin") clearChaseMarks(target.uid);
-    // 记录阵亡（供还魂令），必须在生成剑刃之前、清空棋盘之前
-    graveyard.push({
-      player: target.player,
-      heroId: target.heroId,
-      name: heroDef(target.heroId).name,
-      r: pos.r,
-      c: pos.c,
-      usesLeft: target.usesLeft || 0,
-      swords: target.swords || 0,
-      lockUsed: !!target.lockUsed,
-      guixiongUsed: !!target.guixiongUsed,
-    });
-    board[pos.r][pos.c] = null;
-    addLog(label(target) + " 阵亡！");
-    if (window.SFX) window.SFX.play("death", { hero: target.heroId });
-    if (window.SFX && target.heroId === "thunder") window.SFX.stopLoop("empower");
-    if (window.BFX) window.BFX.death({ r: pos.r, c: pos.c, color: window.BFX.heroColor(target.heroId) });
-    // 阿修罗·锻剑：阿修罗存活时，阵亡位置留下一把剑
-    if (spawnSword(pos.r, pos.c)) {
-      addLog("⚔ 锻剑：" + label(target) + " 的阵亡处留下了一把剑。");
-      if (window.SFX) window.SFX.play("swordSpawn", { hero: "asura" });
-    }
-    // 击杀刷新：刺客·追猎 / 吸血鬼·血崩（同一次击杀只刷新一次）
-    if (source && !source.sword && source.player !== target.player && findPos(source)) {
-      refreshSkillOnKill(source);
-    }
-    // 真实战绩：击杀数 + 最后击杀者（用于结算演出主角与面板）
-    if (source && !source.sword && source.player !== target.player) {
-      matchStats.kills[source.player] = (matchStats.kills[source.player] || 0) + 1;
-      matchStats.lastKiller = { player: source.player, heroId: source.heroId };
-    }
-  }
+  if (target.hp <= 0 && pos) handleUnitDeath(target, source, pos);
   // 真实战绩：实际造成的生命伤害（护盾/闪避/减伤后的净值）
   if (dmg > 0 && source && !source.sword && source.player !== target.player) {
     matchStats.damage[source.player] = (matchStats.damage[source.player] || 0) + dmg;
@@ -1942,7 +2005,7 @@ function normalAttack(attacker, target) {
     render();
     return;
   }
-  if (isGrabbed(attacker) || isStunned(attacker)) {
+  if (isDisabled(attacker)) {
     addLog(label(attacker) + " 处于【" + actionBlockReason(attacker) + "】状态，无法攻击。");
     clearSelection();
     render();
@@ -1954,16 +2017,17 @@ function normalAttack(attacker, target) {
   const res = resolveNormalAttack(attacker, target);
   const aBonus = attackerBonus(attacker); // 猛攻令 +1 / 孤胆 +1
   const ravenBuff = attacker.ravenBuff ? 1 : 0; // 渡鸦·影袭强化 +1
-  const total = res.damage + aBonus + ravenBuff;
+  const metalBuff = attacker.metalBuff ? 1 : 0; // 金元素·金属强化 +1
+  const total = res.damage + aBonus + ravenBuff + metalBuff;
 
   if (res.flank) {
     addLog("【夹击×" + res.count + "】" + label(attacker) + " 攻击 " + label(target) + "，额外伤害 +" + res.bonus +
-      (res.assassin ? "，刺客·暗杀 +1" : "") + (res.guixiong ? "，鬼雄·绝境 +1" : "") + (aBonus ? "，猛攻令 +1" : "") + (ravenBuff ? "，影袭 +1" : "") + "（共 " + total + " 点）。");
+      (res.assassin ? "，刺客·暗杀 +1" : "") + (res.guixiong ? "，鬼雄·绝境 +1" : "") + (aBonus ? "，猛攻令 +1" : "") + (ravenBuff ? "，影袭 +1" : "") + (metalBuff ? "，金属强化 +1" : "") + "（共 " + total + " 点）。");
     if (res.assassin) addLog("🗡 刺客·暗杀触发：本次夹击额外 +1 点伤害。");
   } else if (res.base && res.protected) {
-    addLog("【队友保护，夹击无效】" + label(attacker) + " 攻击 " + label(target) + "，造成 " + total + " 点伤害" + (res.guixiong ? "（鬼雄·绝境 +1）" : "") + (aBonus ? "（猛攻令 +1）" : "") + (ravenBuff ? "（影袭 +1）" : "") + "。");
+    addLog("【队友保护，夹击无效】" + label(attacker) + " 攻击 " + label(target) + "，造成 " + total + " 点伤害" + (res.guixiong ? "（鬼雄·绝境 +1）" : "") + (aBonus ? "（猛攻令 +1）" : "") + (ravenBuff ? "（影袭 +1）" : "") + (metalBuff ? "（金属强化 +1）" : "") + "。");
   } else {
-    addLog(label(attacker) + " 攻击 " + label(target) + "，造成 " + total + " 点伤害" + (res.guixiong ? "（鬼雄·绝境 +1）" : "") + (aBonus ? "（猛攻令 +1）" : "") + (ravenBuff ? "（影袭 +1）" : "") + "。");
+    addLog(label(attacker) + " 攻击 " + label(target) + "，造成 " + total + " 点伤害" + (res.guixiong ? "（鬼雄·绝境 +1）" : "") + (aBonus ? "（猛攻令 +1）" : "") + (ravenBuff ? "（影袭 +1）" : "") + (metalBuff ? "（金属强化 +1）" : "") + "。");
   }
 
   if (window.SFX) {
@@ -1981,6 +2045,20 @@ function normalAttack(attacker, target) {
   applyDamage(target, total, res.flank ? "flank" : "normal", attacker);
   // 渡鸦：主动攻击成功执行 → 立刻破隐并消耗影袭强化
   if (attacker.heroId === "raven" || attacker.ravenBuff || attacker.stealth) consumeRavenAttackState(attacker);
+  // 金元素·金属强化：伤害 +1 已计入；成功执行后消耗，目标存活则定身 1 回合
+  if (metalBuff) {
+    attacker.metalBuff = false;
+    addLog("🛡 金元素的强化攻击造成额外 1 点伤害。");
+    if (findPos(target) && target.hp > 0) {
+      const rt = applyNegativeStatus(target, "root", { damage: 0, turns: 1, label: "定身", silent: true });
+      if (rt.applied) {
+        addLog("⛓ " + label(target) + " 被定身 1 回合！");
+        const rp = findPos(target);
+        if (rp && window.BFX) window.BFX.cast({ type: "root", heroId: "metal", caster: rp });
+        if (window.SFX) window.SFX.play("root", { hero: target.heroId });
+      }
+    }
+  }
   // 普通攻击击杀 → 攻击者占据目标原先所在的格子（仅限相邻攻击；远程游侠不位移）
   // 仅在「伤害 / 护盾 / 闪避 / 锁血 / 死亡」全部结算完成后判定；夹击击杀同样生效
   const atkAdjacent = !!atkBefore && !!tgtBefore && (Math.abs(atkBefore.r - tgtBefore.r) + Math.abs(atkBefore.c - tgtBefore.c) === 1);
@@ -2293,6 +2371,33 @@ function tickRavenTurn(player, countDuration) {
   for (const u of unitsOf(player)) {
     // 回合结束仍未完成的双动机会作废（本次潜行只给一次）
     if (u.ravenDoubleUsed) { u.ravenDouble = false; u.ravenDoubleUsed = false; }
+  }
+}
+
+/* ============================ 金元素：金属穿刺 / 装甲 / 狂潮 ============================ */
+/* 金属穿刺：正前方 1–2 格；敌人逐格命中，友军 / 石柱 / 剑刃 / 边界阻挡后续格 */
+function metalPierceInfo(u, r, c, dr, dc) {
+  const out = [];
+  for (let k = 1; k <= 2; k++) {
+    const rr = r + dr * k, cc = c + dc * k;
+    if (!inBounds(rr, cc)) break;
+    const cell = board[rr][cc];
+    if (isPillar(cell) || isSword(cell)) break;     // 障碍阻挡
+    if (!cell) continue;
+    if (cell.player === u.player) break;            // 友军阻挡（不伤害、不可越过）
+    out.push({ r: rr, c: cc, unit: cell });
+  }
+  return out;
+}
+/* 金属狂潮：按“自己的行动回合”计时（本回合、下回合、下下回合；额外回合也按真实回合计） */
+function tickMetalTurn(player) {
+  for (const u of unitsOf(player)) {
+    if (!u.metalTide || u.metalTide <= 0) continue;
+    u.metalTide -= 1;
+    if (u.metalTide <= 0) {
+      u.metalTide = 0;
+      addLog("🛡 " + label(u) + " 的【金属狂潮】结束，受到的伤害恢复正常。");
+    }
   }
 }
 
@@ -2615,6 +2720,57 @@ function useSkill(tr, tc) {
         }
       }
       addLog("🌊 " + label(a) + " 释放【" + s.name + "】，前进到 (" + (ddest.r + 1) + "," + (ddest.c + 1) + ")，九宫格命中 " + dhit + " 名敌人。");
+      break;
+    }
+
+    case "metalpierce": {
+      const fd = DIRS.find((d) => r + d[0] === tr && c + d[1] === tc);
+      if (!fd) {
+        addLog("金属穿刺：请点击上/下/左/右选择一个方向。");
+        clearSelection();
+        render();
+        return;
+      }
+      const targets = metalPierceInfo(a, r, c, fd[0], fd[1]);
+      if (!targets.length) {
+        addLog("金属穿刺：该方向没有可命中的敌人（友军 / 障碍会阻挡）。");
+        clearSelection();
+        render();
+        return;
+      }
+      addLog("⚙ " + label(a) + " 发动【金属穿刺】！");
+      if (!payHpCost(a, s.costHp || 1, "金属穿刺")) {
+        addLog("💥 金元素因生命代价倒下，金属穿刺中止，未造成伤害。");
+        break;
+      }
+      if (window.BFX) window.BFX.cast({ type: "metalpierce", heroId: a.heroId, caster: { r, c }, dir: [fd[0], fd[1]], cells: targets.map((t) => [t.r, t.c]) });
+      let hit = 0;
+      for (const t of targets) {
+        if (!findPos(t.unit)) continue;
+        applyDamage(t.unit, s.damage, "skill", a);
+        hit++;
+      }
+      addLog("⚙ 金属穿刺命中 " + hit + " 名敌方英雄，各造成 " + s.damage + " 点伤害。");
+      break;
+    }
+
+    case "metalarmor": {
+      addLog("⚙ " + label(a) + " 发动【金属装甲】！");
+      if (!payHpCost(a, s.costHp || 1, "金属装甲")) {
+        addLog("💥 金元素因生命代价倒下，金属装甲中止，未获得强化。");
+        break;
+      }
+      a.metalBuff = true;
+      addLog("🛡 金元素的下一次普通攻击已强化（伤害 +1，命中后定身目标 1 回合）。");
+      if (window.BFX) window.BFX.cast({ type: "metalarmor", heroId: a.heroId, caster: { r, c } });
+      break;
+    }
+
+    case "metaltide": {
+      a.metalTide = 3;
+      addLog("🛡 " + label(a) + " 发动【金属狂潮】：本回合及之后两个自身行动回合，受到的伤害减半。");
+      if (window.BFX) window.BFX.cast({ type: "metaltide", heroId: a.heroId, caster: { r, c } });
+      if (window.SFX) window.SFX.play("metalTide", { hero: "metal" });
       break;
     }
 
@@ -3515,6 +3671,8 @@ function useTalismanEffect(id, tr, tc) {
         ravenBuff: false,
         ravenDouble: false,
         ravenDoubleUsed: false,
+        metalBuff: false,
+        metalTide: 0,
       };
       graveyard = graveyard.filter((g) => g !== rec);
       if (window.SFX) window.SFX.play("revive", { hero: def.id });
@@ -3576,7 +3734,7 @@ function handleBattle(r, c) {
       render();
       return;
     }
-    if (isGrabbed(clicked) || isStunned(clicked)) {
+    if (isDisabled(clicked)) {
       addLog(label(clicked) + " 处于【" + actionBlockReason(clicked) + "】状态，本回合无法行动。");
       render();
       return;
@@ -3925,6 +4083,9 @@ function render() {
         if (u.chaseMark) cell.classList.add("chase-marked");
         if (isStealthed(u)) cell.classList.add("stealth-unit");
         if (u.ravenBuff) cell.classList.add("raven-buffed");
+        if (u.metalBuff) cell.classList.add("metal-buffed");
+        if (u.metalTide > 0) cell.classList.add("metal-tide");
+        if (isRooted(u)) cell.classList.add("rooted");
 
         cell.appendChild(buildUnit(u));
 
@@ -4255,6 +4416,10 @@ function renderDetailCard() {
     if (isStealthed(u)) st.push("隐身：剩余 " + u.stealth.turns + " 回合");
     if (u.ravenBuff) st.push("影袭强化：下一次普通攻击 / 影牙 +1");
     if (u.ravenDouble) st.push(u.ravenDoubleUsed ? "潜行双动：已走一步，还可移动或普通攻击" : "潜行双动：可用（走+普攻 / 走+走）");
+  }
+  if (u.heroId === "metal") {
+    if (u.metalTide > 0) st.push("金属狂潮：剩余 " + u.metalTide + " 个自身行动回合（受到伤害减半）");
+    if (u.metalBuff) st.push("金属强化：下一次普通攻击 +1 并定身目标 1 回合");
   }
   if (flankImmune(u)) st.push("免疫夹击加成");
   if (u.frozen > 0) st.push("冰封：跳过 " + u.frozen + " 个回合");
@@ -4878,7 +5043,7 @@ function aiEnumerate() {
   const w = AI_DIFF[aiDifficulty] || AI_DIFF.normal;
   for (const u of unitsOf(aiPlayer)) {
     if (u.frozen > 0) continue;
-    if (isGrabbed(u) || isStunned(u)) continue; // 被抓取 / 眩晕：本回合无法行动
+    if (isDisabled(u)) continue; // 被抓取 / 眩晕：本回合无法行动
     if (turnActorUid && u.uid !== turnActorUid) continue; // 强化回合：只能由同一英雄行动
     const pos = findPos(u);
     if (!pos) continue;
@@ -5034,6 +5199,43 @@ function aiEnumerate() {
             if (steps === maxSteps) sc += 2; // 完整推到距自己 2 格
           }
           acts.push({ type: "skill", u, pos, target: { r: info.r, c: info.c }, skillIdx: si, score: sc * w.skillW });
+        }
+        return;
+      }
+
+      // 金元素·金属穿刺：前方两格敌人 ×1 伤害，扣除 1 HP
+      if (s.type === "metalpierce") {
+        if (u.hp <= 1) return; // 支付代价会自灭且技能中止
+        for (const [dr, dc] of DIRS) {
+          const targets = metalPierceInfo(u, pos.r, pos.c, dr, dc);
+          if (!targets.length) continue;
+          let sc = 0;
+          for (const t of targets) sc += w.dmgW * s.damage + (t.unit.hp <= s.damage ? w.killW : 0);
+          sc -= 8; // 生命代价
+          acts.push({ type: "skill", u, pos, target: { r: pos.r + dr, c: pos.c + dc }, skillIdx: si, score: sc * w.skillW });
+        }
+        return;
+      }
+
+      // 金元素·金属装甲：有相邻敌人且自身 HP > 1 时才强化
+      if (s.type === "metalarmor") {
+        if (u.hp <= 1 || u.metalBuff) return;
+        let best = 0;
+        for (const [dr, dc] of DIRS) {
+          const e = unitAt(pos.r + dr, pos.c + dc);
+          if (e && e.player !== u.player && !hiddenFrom(e, u.player)) {
+            best = Math.max(best, w.dmgW + 10 + (e.hp <= w.dmgW + 1 ? w.killW : 0));
+          }
+        }
+        if (best > 0) acts.push({ type: "skill", u, pos, target: { r: pos.r, c: pos.c }, skillIdx: si, score: best * w.skillW });
+        return;
+      }
+
+      // 金元素·金属狂潮：血量偏低或处于危险位置时开启
+      if (s.type === "metaltide") {
+        if (u.metalTide > 0) return;
+        if (u.hp <= 4 || dangerAt(pos.r, pos.c, u) >= 6) {
+          acts.push({ type: "skill", u, pos, target: { r: pos.r, c: pos.c }, skillIdx: si, score: 30 * w.skillW });
         }
         return;
       }
@@ -5951,6 +6153,8 @@ window.GameAPI = {
         ravenBuff: !!spec.ravenBuff,
         ravenDouble: !!spec.ravenDouble,
         ravenDoubleUsed: !!spec.ravenDoubleUsed,
+        metalBuff: !!spec.metalBuff,
+        metalTide: spec.metalTide || 0,
       };
       initUnitUses(unit, def);
       if (spec.uses != null) unit.usesLeft = spec.uses;

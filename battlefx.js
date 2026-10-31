@@ -45,7 +45,7 @@
     assassin: "#22d3ee", warlock: "#a5f3fc", cleric: "#86efac", guardian: "#93c5fd",
     asura: "#e2e8f0", lone: "#facc15", cang: "#38bdf8", longren: "#fbbf24",
     thunder: "#c084fc", vampire: "#e11d48", jade: "#a78bfa", xiangyu: "#f87171",
-    tiandao: "#c084fc", huamulan: "#f43f5e", hillking: "#a8a29e", raven: "#8b5cf6",
+    tiandao: "#c084fc", huamulan: "#f43f5e", hillking: "#a8a29e", raven: "#8b5cf6", metal: "#fbbf24",
   };
   function heroColor(id) { return HERO_COLOR[id] || "#93c5fd"; }
 
@@ -1287,6 +1287,66 @@
         push({ kind: "ring", x, y, r0: geo.cell * 0.2, r1: geo.cell * 0.9, color: "#fde68a", width: 3, dur: dur(420) });
         push({ kind: "rune", x, y, r: geo.cell * 0.42, color: "#c4b5fd", sides: 6, dur: dur(520) });
         spawn(x, y, 18, { color: "#fde68a", speed: 1.8, life: 560, size: 2, angle: -Math.PI / 2, spread: 1.2, grav: -0.02 });
+        break;
+      }
+      case "metalpierce": {
+        // 金元素·金属穿刺：金属尖刺沿正前方 1–2 格穿刺
+        const d0 = m.dir || [0, 1];
+        const cells = m.cells || [];
+        for (let k = 1; k <= 2; k++) {
+          const rr = c.r + d0[0] * k, cc = c.c + d0[1] * k;
+          if (rr < 0 || rr >= 6 || cc < 0 || cc >= 6) continue;
+          const xx = px(cc), yy = py(rr);
+          push({ kind: "line", x, y, x2: xx, y2: yy, color: "#e5e7eb", width: 5, dur: dur(220), delay: dur(k * 30), alpha: 0.65 });
+          push({ kind: "slash", x: xx, y: yy, angle: Math.atan2(d0[0], d0[1]) + Math.PI / 2, len: geo.cell * 0.8, width: 3, color: "#fbbf24", dur: dur(220), delay: dur(k * 30) });
+          spawn(xx, yy, 8, { type: "line", color: "#fef3c7", speed: 3.2, life: 260, size: 1.6, angle: Math.atan2(d0[0], d0[1]), spread: 0.8, delay: dur(k * 30) });
+        }
+        push({ kind: "ring", x, y, r0: geo.cell * 0.45, r1: geo.cell * 0.18, color: "#fbbf24", width: 2.5, dur: dur(260) });
+        break;
+      }
+      case "metalarmor": {
+        // 金元素·金属装甲：金属外壳包裹 + 火花
+        push({ kind: "ring", x, y, r0: geo.cell * 0.2, r1: geo.cell * 0.75, color: "#d4d4d8", width: 4, dur: dur(360) });
+        push({ kind: "rune", x, y, r: geo.cell * 0.46, color: "#fbbf24", sides: 6, dur: dur(420) });
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2;
+          spawn(x + Math.cos(a) * geo.cell * 0.35, y + Math.sin(a) * geo.cell * 0.35, 1, { type: "line", color: "#fef3c7", speed: 2.2, life: 300, size: 1.4, angle: a, spread: 0.2 });
+        }
+        break;
+      }
+      case "metaltide": {
+        // 金元素·金属狂潮：银金能量环 + 环绕碎片
+        push({ kind: "ring", x, y, r0: geo.cell * 0.25, r1: geo.cell * 1.25, color: "#fbbf24", width: 5, dur: dur(700) });
+        push({ kind: "ring", x, y, r0: geo.cell * 0.4, r1: geo.cell * 1.5, color: "#d4d4d8", width: 2.5, dur: dur(800), delay: dur(90) });
+        push({ kind: "rune", x, y, r: geo.cell * 0.55, color: "#fef3c7", sides: 8, dur: dur(800) });
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2;
+          push({ kind: "ghost", x: x + Math.cos(a) * geo.cell * 0.65, y: y + Math.sin(a) * geo.cell * 0.65, r: geo.cell * 0.08, color: "#fbbf24", dur: dur(650), delay: dur(i * 40) });
+        }
+        spawn(x, y, 18, { color: "#fbbf24", speed: 2, life: 700, size: 2, spread: 2 });
+        push({ kind: "text", x, y: y - geo.cell * 0.75, text: "金属狂潮", color: "#fde68a", size: 13, dur: dur(900), rise: 18 });
+        break;
+      }
+      case "metalCost": {
+        // 金元素：主动支付生命值（非受击）
+        push({ kind: "ring", x, y, r0: geo.cell * 0.3, r1: geo.cell * 0.12, color: "#f87171", width: 2.5, dur: dur(260) });
+        push({ kind: "text", x, y: y - geo.cell * 0.42, text: "-" + (m.amount || 1), color: "#fca5a5", size: 14, dur: dur(600), rise: 18 });
+        spawn(x, y, 6, { color: "#fca5a5", speed: 1.6, life: 320, size: 1.8, spread: 1.2, grav: 0.02 });
+        break;
+      }
+      case "root": {
+        // 定身：金属锁链 / 尖刺固定目标
+        push({ kind: "ring", x, y, r0: geo.cell * 0.55, r1: geo.cell * 0.2, color: "#a8a29e", width: 3, dur: dur(360) });
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+          push({ kind: "line", x, y, x2: x + Math.cos(a) * geo.cell * 0.45, y2: y + Math.sin(a) * geo.cell * 0.45, color: "#d6d3d1", width: 2.5, dur: dur(300), delay: dur(i * 30) });
+        }
+        push({ kind: "text", x, y: y - geo.cell * 0.45, text: "定身", color: "#e7e5e4", size: 13, dur: dur(700), rise: 16 });
+        break;
+      }
+      case "metalGuard": {
+        push({ kind: "ring", x, y, r0: geo.cell * 0.5, r1: geo.cell * 0.22, color: "#d4d4d8", width: 3, dur: dur(300) });
+        push({ kind: "ring", x, y, r0: geo.cell * 0.25, r1: geo.cell * 0.6, color: "#fbbf24", width: 2, dur: dur(340), delay: dur(40) });
         break;
       }
       case "stun": {

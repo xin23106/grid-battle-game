@@ -59,4 +59,10 @@ module.exports = [
       { name: "雾冲", type: "mistdash", uses: 1, range: 3, damage: 0.5 },
       { name: "影牙", type: "shadowfang", uses: 1, damage: 2, refreshOnSkillKill: true },
     ] },
+  { id: "metal", name: "金元素", hp: 7, sfx: "heavy",
+    skill: { name: "金属穿刺", type: "metalpierce", uses: 1, perTurn: 1, free: true, costHp: 1, damage: 1 },
+    extraSkills: [
+      { name: "金属装甲", type: "metalarmor", uses: 1, perTurn: 1, free: true, costHp: 1 },
+      { name: "金属狂潮", type: "metaltide", uses: 1, free: true },
+    ] },
 ];

@@ -712,6 +712,22 @@
         HP(L, { at: 0.05, dur: 0.18, f0: 130, f1: 50, peak: 0.16 });
         break;
 
+      case "metalpierce": // 金元素·金属穿刺：金属摩擦 → 尖锐穿刺
+        M(L, { at: 0, base: 1800, dur: 0.14, peak: 0.07, partials: [1, 2.4, 4.2] });
+        N(L, { at: 0.04, dur: 0.16, bp: 4200, q: 1.3, peak: 0.12 });
+        HP(L, { at: 0.08, dur: 0.16, f0: 160, f1: 70, peak: 0.14 });
+        break;
+      case "metalarmor": // 金元素·金属装甲：金属包覆
+        M(L, { at: 0, base: 1100, dur: 0.30, peak: 0.07, partials: [1, 2.1, 3.8] });
+        HP(L, { at: 0.04, dur: 0.24, f0: 170, f1: 100, peak: 0.12 });
+        N(L, { at: 0.10, dur: 0.22, bp: 3000, q: 1.0, peak: 0.05 });
+        break;
+      case "metaltide": // 金元素·金属狂潮：低频轰鸣 + 金属共鸣
+        HP(L, { at: 0, dur: 0.40, f0: 110, f1: 50, peak: 0.26 });
+        M(L, { at: 0.04, base: 900, dur: 0.45, peak: 0.08, partials: [1, 2.4, 4.8] });
+        N(L, { at: 0.02, dur: 0.42, bp: 2400, q: 1.0, peak: 0.08, attack: 0.1 });
+        break;
+
       default:
         S(L, { at: 0, f0: h.base * 0.6, f1: h.base * 1.8, dur: 0.22, peak: 0.07, wave: h.wave });
         N(L, { at: 0.02, dur: 0.2, bp: h.air, q: 1.3, peak: 0.05 });
@@ -790,6 +806,22 @@
         [0, 7, 12].forEach((q, i) => T(L, { at: i * 0.06, dur: 0.18, wave: "triangle", f0: 700 * Math.pow(2, q / 12), peak: 0.07 }));
         N(L, { at: 0, dur: 0.20, bp: 3200, peak: 0.05 });
         break;
+      case "cost":
+        T(L, { at: 0, dur: 0.14, wave: "triangle", f0: 260, f1: 180, peak: 0.05 });
+        N(L, { at: 0, dur: 0.12, lp: 900, peak: 0.05 });
+        break;
+      case "root":
+        M(L, { at: 0, base: 700, dur: 0.22, peak: 0.05, partials: [1, 2.2] });
+        HP(L, { at: 0.02, dur: 0.18, f0: 130, f1: 60, peak: 0.10 });
+        break;
+      case "metalGuard":
+        M(L, { at: 0, base: 1500, dur: 0.20, peak: 0.05, partials: [1, 2.5, 4.2] });
+        N(L, { at: 0, dur: 0.12, bp: 3200, peak: 0.05 });
+        break;
+      case "metalTide":
+        HP(L, { at: 0, dur: 0.34, f0: 120, f1: 55, peak: 0.18 });
+        M(L, { at: 0.02, base: 950, dur: 0.38, peak: 0.06, partials: [1, 2.3, 4.6] });
+        break;
       case "swordSpawn": recipeSwordSpawn(h, o, L); break;
       case "swordPickup": recipeSwordPickup(h, o, L); break;
       case "talisman": recipeTalisman(h, o, L); break;
@@ -827,6 +859,7 @@
     grab: 90, knockback: 60, mark: 60, swordSpawn: 80, swordPickup: 60, stun: 140,
     pillarRise: 120, pillarBreak: 160,
     stealthEnter: 200, stealthEnd: 120, mist: 220, poison: 180, refresh: 300,
+    cost: 220, root: 180, metalGuard: 120, metalTide: 400,
     talisman: 120, dash: 90, dashHit: 60, skill: 60, skillHit: 45, win: 500, lose: 500, draw: 500,
     turnEnd: 220, turnSweep: 200, turnStart: 260, extraTurn: 400,
   };
