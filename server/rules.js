@@ -914,6 +914,23 @@ function hasAnyActionState(s, player) {
   }
   return false;
 }
+/* 是否还有合法“移动”可做（定身 / 冰封 / 抓取 / 眩晕、四周被占或石柱均不算） */
+function hasAnyMoveState(s, player) {
+  for (const u of unitsOf(s, player)) {
+    if (u.frozen > 0) continue;
+    if (isDisabled(u) || isRooted(u)) continue;
+    const pos = findPos(s, u);
+    if (!pos) continue;
+    for (const [dr, dc] of DIRS) {
+      const nr = pos.r + dr, nc = pos.c + dc;
+      if (!inB(nr, nc)) continue;
+      const t = s.board[nr][nc];
+      if (!t) return true;
+      if (isSword(t) && u.heroId === "asura") return true;
+    }
+  }
+  return false;
+}
 /* 行动收尾：不自动结束回合。
  * 行动完成后仍停留在当前回合，玩家可继续使用锦囊 / 不耗步技能 / 行军令额外移动，
  * 最后手动提交 {type:"end"} 结束回合（仍禁止尚未行动就直接跳过）。 */
@@ -1059,7 +1076,7 @@ function applyAction(state, player, action) {
   // 对战阶段
   const act = action.type;
   if (act === "end") {
-    if (s.turnActionsLeft === s.turnActionsMax && hasAnyActionState(s, player)) return err("必须先行动，不能直接跳过回合");
+    if (s.turnActionsLeft === s.turnActionsMax && hasAnyActionState(s, player) && hasAnyMoveState(s, player)) return err("必须先行动，不能直接跳过回合");
     endTurn(s);
     return { ok: true, state: s };
   }

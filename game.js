@@ -788,6 +788,23 @@ function hasAnyAction(player) {
   }
   return false;
 }
+/* 是否还有合法“移动”可做（定身 / 冰封 / 被抓 / 眩晕、四周被占或石柱均不算） */
+function hasAnyMove(player) {
+  for (const u of unitsOf(player)) {
+    if (u.frozen > 0) continue;
+    if (isDisabled(u) || isRooted(u)) continue;
+    const pos = findPos(u);
+    if (!pos) continue;
+    for (const [dr, dc] of DIRS) {
+      const nr = pos.r + dr, nc = pos.c + dc;
+      if (!inBounds(nr, nc)) continue;
+      const t = board[nr][nc];
+      if (!t) return true;
+      if (t.sword && u.heroId === "asura") return true;
+    }
+  }
+  return false;
+}
 function dirName(dir) {
   if (dir[0] === -1) return "上";
   if (dir[0] === 1) return "下";
@@ -4571,7 +4588,7 @@ function updatePanel() {
   renderDetailCard();
   updateSkillBar();
   skipBtn.classList.toggle("hidden", phase !== "battle");
-  const mustAct = phase === "battle" && turnActionsLeft === turnActionsMax && hasAnyAction(currentPlayer);
+  const mustAct = phase === "battle" && turnActionsLeft === turnActionsMax && hasAnyAction(currentPlayer) && hasAnyMove(currentPlayer);
   skipBtn.disabled = mustAct;
   const acted = phase === "battle" && turnActionsLeft < turnActionsMax;
   skipBtn.textContent = mustAct ? "结束回合（请先行动）" : acted ? "结束回合 ▶" : "结束回合";
