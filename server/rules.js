@@ -678,8 +678,10 @@ function handleUnitDeathS(s, target, source, pos) {
 /* 金元素：主动支付生命值（不吃护盾/闪避/减伤），归零立即正常阵亡 */
 function payHpCostS(s, u, amount, reason) {
   if (!u) return false;
-  u.hp -= amount;
-  slog(s, "💢 " + uname(s, u) + " 失去 " + amount + " 点生命值（" + (reason || "技能代价") + "）");
+  // 金属狂潮期间：技能的生命代价同样减半
+  const cost = u.metalTide > 0 ? amount * 0.5 : amount;
+  u.hp -= cost;
+  slog(s, "💢 " + uname(s, u) + " 失去 " + cost + " 点生命值（" + (reason || "技能代价") + (cost !== amount ? "·金属狂潮减半" : "") + "）");
   const p = findPos(s, u);
   if (u.hp <= 0 && p) {
     handleUnitDeathS(s, u, null, p);

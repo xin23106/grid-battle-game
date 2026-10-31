@@ -1868,11 +1868,13 @@ function handleUnitDeath(target, source, pos) {
 /* 金元素：主动支付生命值（不吃护盾/闪避/减伤），归零立即按正常阵亡流程处理 */
 function payHpCost(u, amount, reason) {
   if (!u) return false;
-  u.hp -= amount;
-  addLog("💢 " + label(u) + " 失去 " + amount + " 点生命值（" + (reason || "技能代价") + "）。");
+  // 金属狂潮期间：技能的生命代价同样减半
+  const cost = u.metalTide > 0 ? amount * 0.5 : amount;
+  u.hp -= cost;
+  addLog("💢 " + label(u) + " 失去 " + cost + " 点生命值（" + (reason || "技能代价") + (cost !== amount ? "·金属狂潮减半" : "") + "）。");
   if (window.SFX) window.SFX.play("cost", { hero: u.heroId });
   const p = findPos(u);
-  if (p && window.BFX) window.BFX.cast({ type: "metalCost", heroId: u.heroId, caster: p, amount });
+  if (p && window.BFX) window.BFX.cast({ type: "metalCost", heroId: u.heroId, caster: p, amount: cost });
   if (u.hp <= 0 && p) {
     handleUnitDeath(u, null, p);
     return false;
