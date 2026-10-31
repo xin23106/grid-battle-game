@@ -1121,7 +1121,7 @@ function applyAction(state, player, action) {
       let kills = 0;
       for (const e of victims) {
         const aliveBefore = !!findPos(s, e);
-        totalDealt += applyDamage(s, e, sk.damage, u); // 返回值=实际扣掉的生命
+        totalDealt += applyDamage(s, e, sk.damage + av, u); // 返回值=实际扣掉的生命
         if (aliveBefore && !findPos(s, e)) kills++;
       }
       if (totalDealt > 0) u.hp += totalDealt; // 吸血鬼：按实际总伤害回血（不受 maxHp 限制）
@@ -1143,7 +1143,7 @@ function applyAction(state, player, action) {
         if (Math.abs(r - ct.r) + Math.abs(c - ct.c) !== 1) return err("闪身必须落在目标相邻格");
         s.board[r][c] = u;
         s.board[from.r][from.c] = null;
-        applyDamage(s, target2, sk.damage, u); // 统一伤害结算（击杀 → 刷新追猎）
+        applyDamage(s, target2, sk.damage + av, u); // 统一伤害结算（击杀 → 刷新追猎）
         endChase(s, u);
       } else {
         // 第一段：按方向贯穿整条直线直到边界
@@ -1158,7 +1158,7 @@ function applyAction(state, player, action) {
         // 先扣次数再结算：确保击杀刷新不被尾部扣次数覆盖
         consumedHere = true;
         setSkillUses(s, u, idx, Math.max(0, skillUsesLeft(s, u, idx) - 1));
-        for (const e of hitUnits) applyDamage(s, e, sk.damage, u);
+        for (const e of hitUnits) applyDamage(s, e, sk.damage + av, u);
         u.chaseStage = 1;
       }
     } else if (sk.type === "ziwei") {
@@ -1170,8 +1170,8 @@ function applyAction(state, player, action) {
       s.board[r][c] = u;
       s.board[from.r][from.c] = null;
       const zAfter = box3Enemies(s, r, c, player);
-      for (const e of zBefore) { if (findPos(s, e)) applyDamage(s, e, sk.damage, u); }
-      for (const e of zAfter) { if (findPos(s, e)) applyDamage(s, e, sk.damage, u); } // 重叠区域再结算一次
+      for (const e of zBefore) { if (findPos(s, e)) applyDamage(s, e, sk.damage + av, u); }
+      for (const e of zAfter) { if (findPos(s, e)) applyDamage(s, e, sk.damage + av, u); } // 重叠区域再结算一次
     } else if (sk.type === "exile") {
       const et = action.exileTarget && action.exileTarget.r != null ? action.exileTarget : null;
       const target = et && inB(et.r, et.c) ? s.board[et.r][et.c] : null;
@@ -1193,7 +1193,7 @@ function applyAction(state, player, action) {
       });
       for (const e of victims) {
         if (!findPos(s, e)) continue;
-        applyDamage(s, e, sk.damage, u); // 每名敌人最多一次
+        applyDamage(s, e, sk.damage + av, u); // 每名敌人最多一次
         if (findPos(s, e)) knockOutBox3(s, e, r, c);
       }
     } else if (sk.type === "shenluo") {
@@ -1201,7 +1201,7 @@ function applyAction(state, player, action) {
       const victims = sortUnitsByPosS(s, box3Enemies(s, from.r, from.c, player));
       for (const e of victims) {
         if (!findPos(s, e)) continue;
-        applyDamage(s, e, sk.damage, u);
+        applyDamage(s, e, sk.damage + av, u);
         if (findPos(s, e)) knockOutBoxAwayS(s, e, from.r, from.c, from.r, from.c);
       }
     } else if (sk.type === "wxt") {
@@ -1211,7 +1211,7 @@ function applyAction(state, player, action) {
       if (!wt || wt.player === player) return err("万象天引：请选择一名存活的敌方英雄");
       if (stage === 2) {
         if (Math.abs(r - from.r) + Math.abs(c - from.c) !== 1) return err("万象天引·第三段：只能选择相邻敌人");
-        applyDamage(s, wt, sk.damage, u);
+        applyDamage(s, wt, sk.damage + av, u);
         if (findPos(s, wt)) pushAwayOneS(s, wt, from.r, from.c);
         u.wxtStage = 0; // 连招结束
       } else {
@@ -1225,14 +1225,14 @@ function applyAction(state, player, action) {
           if (!inB(lr, lc) || (s.board[lr][lc] && s.board[lr][lc] !== wt)) return err("万象天引·第一段：正前方两格被占据或越界");
           const tp = findPos(s, wt);
           if (tp.r !== lr || tp.c !== lc) { s.board[lr][lc] = wt; s.board[tp.r][tp.c] = null; }
-          applyDamage(s, wt, sk.damage, u);
+          applyDamage(s, wt, sk.damage + av, u);
           u.wxtStage = 1;
         } else {
           const lr = from.r + dr, lc = from.c + dc;        // 正前方一格
           if (!inB(lr, lc) || (s.board[lr][lc] && s.board[lr][lc] !== wt)) return err("万象天引·第二段：正前方格被占据或越界");
           const tp = findPos(s, wt);
           if (tp.r !== lr || tp.c !== lc) { s.board[lr][lc] = wt; s.board[tp.r][tp.c] = null; }
-          applyDamage(s, wt, sk.damage, u);
+          applyDamage(s, wt, sk.damage + av, u);
           if (findPos(s, wt)) applyNegativeStatus(s, wt, "grab", { damage: 0, turns: 1, label: "万象天引·抓取" });
           u.wxtStage = 2;
         }
@@ -1243,14 +1243,15 @@ function applyAction(state, player, action) {
       const dr = r - from.r, dc = c - from.c;
       if (Math.abs(dr) + Math.abs(dc) !== 1) return err("所向披靡：只能对相邻敌人释放");
       slog(s, "🌺 " + uname(s, u) + " 发动【" + sk.name + "】，目标 " + uname(s, t));
-      applyDamage(s, t, sk.damage, u);
+      const cdmg = sk.damage + av;
+      applyDamage(s, t, cdmg, u);
       if (findPos(s, t)) {
         const res = chargeKnockbackS(s, t, dr, dc);
         for (const pd of res.pushed) {
           const pname = uname(s, pd.unit);
           const ps = { r: pd.to.r + 1, c: pd.to.c + 1 };
-          applyDamage(s, pd.unit, sk.damage, u);
-          slog(s, "↔ " + pname + " 被向侧方推开到 (" + ps.r + "," + ps.c + ")，受到 " + sk.damage + " 点伤害");
+          applyDamage(s, pd.unit, cdmg, u);
+          slog(s, "↔ " + pname + " 被向侧方推开到 (" + ps.r + "," + ps.c + ")，受到 " + cdmg + " 点伤害");
         }
         const np = findPos(s, t);
         if (res.moved > 0 && np) slog(s, "➡ " + uname(s, t) + " 被击退 " + res.moved + " 格到 (" + (np.r + 1) + "," + (np.c + 1) + ")");

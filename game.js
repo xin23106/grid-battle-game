@@ -2437,7 +2437,8 @@ function useSkill(tr, tc) {
       if (window.BFX) {
         window.BFX.cast({ type: "push", heroId: a.heroId, caster: { r, c }, target: { r: info.r, c: info.c }, dir: [dr, dc] });
       }
-      applyDamage(tgt, s.damage, "skill", a);
+      const pushDmg = s.damage + attackerBonus(a);
+      applyDamage(tgt, pushDmg, "skill", a);
       if (!findPos(tgt)) {
         addLog("💥 " + label(tgt) + " 被推山击倒，未发生推动与石柱。");
         break;
@@ -2490,7 +2491,8 @@ function useSkill(tr, tc) {
         });
       }
       const before = findPos(tgt);
-      applyDamage(tgt, s.damage, "skill", a); // 统一伤害结算（护盾 / 闪避 / 锁血 / 阵亡）
+      const cdmg = s.damage + attackerBonus(a);
+      applyDamage(tgt, cdmg, "skill", a); // 统一伤害结算（护盾 / 闪避 / 锁血 / 阵亡）
       if (!findPos(tgt)) {
         addLog("💥 " + label(tgt) + " 被冲锋击倒，未发生击退与眩晕。");
         break;
@@ -2500,8 +2502,8 @@ function useSkill(tr, tc) {
       for (const p of res.pushed) {
         if (window.BFX) window.BFX.knockback({ from: p.from, to: p.to, color: window.BFX.heroColor(p.unit.heroId) });
         if (window.SFX) window.SFX.play("knockback", { hero: p.unit.heroId });
-        addLog("↔ " + label(p.unit) + " 被向侧方推开到 (" + (p.to.r + 1) + "," + (p.to.c + 1) + ")，受到 " + s.damage + " 点伤害。");
-        applyDamage(p.unit, s.damage, "skill", a);
+        addLog("↔ " + label(p.unit) + " 被向侧方推开到 (" + (p.to.r + 1) + "," + (p.to.c + 1) + ")，受到 " + cdmg + " 点伤害。");
+        applyDamage(p.unit, cdmg, "skill", a);
       }
       const np = findPos(tgt);
       if (res.moved > 0 && np) {
@@ -2680,8 +2682,8 @@ function useSkill(tr, tc) {
         board[r][c] = null;
         if (window.BFX) window.BFX.cast({ type: "chase", heroId: a.heroId, caster: { r, c }, from: { r, c }, to: { r: tr, c: tc }, target: { r: skillSub.tR, c: skillSub.tC }, stage: 1 });
         fx.push({ r: tr, c: tc, text: "闪身", kind: "skill" });
-        addLog("🗡 " + label(a) + " 追猎·闪身到 (" + (tr + 1) + "," + (tc + 1) + ")，对 " + label(tgt) + " 造成 " + s.damage + " 点伤害。");
-        applyDamage(tgt, s.damage, "skill", a); // 统一伤害结算（击杀 → 触发追猎刷新）
+        addLog("🗡 " + label(a) + " 追猎·闪身到 (" + (tr + 1) + "," + (tc + 1) + ")，对 " + label(tgt) + " 造成 " + (s.damage + attackerBonus(a)) + " 点伤害。");
+        applyDamage(tgt, s.damage + attackerBonus(a), "skill", a); // 统一伤害结算（击杀 → 触发追猎刷新）
         endChase(a); // 结束连招并清除本次产生的全部标记
         break;
       }
@@ -2708,7 +2710,7 @@ function useSkill(tr, tc) {
         const curU = skillUsesLeft(a, activeSkillIdx);
         if (curU !== Infinity) setSkillUsesLeft(a, activeSkillIdx, curU - 1);
       }
-      for (const t of hitUnits) applyDamage(t, s.damage, "skill", a); // 全部结算（逐个判定，不只命中第一个）
+      for (const t of hitUnits) applyDamage(t, s.damage + attackerBonus(a), "skill", a); // 全部结算（逐个判定，不只命中第一个）
       const marked = hitUnits.filter((t) => findPos(t)).length;
       a.chaseStage = 1; // 进入第二段待释放状态
       if (window.SFX && marked > 0) window.SFX.play("mark", { hero: a.heroId });
@@ -2739,7 +2741,7 @@ function useSkill(tr, tc) {
         const aliveBefore = !!findPos(t);
         // 统一伤害结算：护盾吸收 / 减伤 / 闪避 / 阵亡都在 applyDamage 内完成；
         // 返回值 = 实际扣掉的生命值（被护盾完全吸收或闪避时为 0）
-        const dealt = applyDamage(t, s.damage, "skill", a);
+        const dealt = applyDamage(t, s.damage + attackerBonus(a), "skill", a);
         if (dealt > 0) totalDealt += dealt;
         if (window.BFX && dealt > 0) {
           const vp = findPos(t);
@@ -2782,8 +2784,8 @@ function useSkill(tr, tc) {
       board[r][c] = null;
       const afterU = enemiesInBox3(tr, tc, a.player);  // 位移后的九宫格
       let zHit = 0;
-      for (const t of beforeU) { if (!findPos(t)) continue; applyDamage(t, s.damage, "skill", a); zHit++; }
-      for (const t of afterU) { if (!findPos(t)) continue; applyDamage(t, s.damage, "skill", a); zHit++; } // 重叠区域再结算一次
+      for (const t of beforeU) { if (!findPos(t)) continue; applyDamage(t, s.damage + attackerBonus(a), "skill", a); zHit++; }
+      for (const t of afterU) { if (!findPos(t)) continue; applyDamage(t, s.damage + attackerBonus(a), "skill", a); zHit++; } // 重叠区域再结算一次
       addLog("👑 " + label(a) + " 释放【" + s.name + "】，瞬移到 (" + (tr + 1) + "," + (tc + 1) + ")，位移前后共结算 " + zHit + " 次伤害（重叠区域分别计算）。");
       fx.push({ r: tr, c: tc, text: "神步", kind: "skill" });
       break;
@@ -2835,7 +2837,7 @@ function useSkill(tr, tc) {
       let tHit = 0, tKnock = 0;
       for (const t of victims) {
         if (!findPos(t)) continue;
-        applyDamage(t, s.damage, "skill", a); // 每名敌人最多结算一次
+        applyDamage(t, s.damage + attackerBonus(a), "skill", a); // 每名敌人最多结算一次
         tHit++;
         if (findPos(t) && knockOutOfBox3(t, tr, tc)) tKnock++;
       }
@@ -2850,7 +2852,7 @@ function useSkill(tr, tc) {
       let sHit = 0, sPushed = 0;
       for (const t of victims) {
         if (!findPos(t)) continue;
-        applyDamage(t, s.damage, "skill", a);              // 先伤害
+        applyDamage(t, s.damage + attackerBonus(a), "skill", a);              // 先伤害
         sHit++;
         if (findPos(t) && knockOutBoxAway(t, r, c, r, c)) sPushed++; // 再尝试击退出九宫格
       }
@@ -2875,12 +2877,12 @@ function useSkill(tr, tc) {
           return;
         }
         if (window.BFX) window.BFX.cast({ type: "wxt", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc }, stage: 2 });
-        applyDamage(wt, s.damage, "skill", a);
+        applyDamage(wt, s.damage + attackerBonus(a), "skill", a);
         let pushed = false;
         if (findPos(wt)) pushed = !!pushAwayOne(wt, r, c);
         a.wxtStage = 0; // 连招结束
         fx.push({ r: tr, c: tc, text: "弹射", kind: "skill" });
-        addLog("🌀 " + label(a) + " 释放【" + s.name + "·第三段·引力弹射】，对 " + label(wt) + " 造成 " + s.damage +
+        addLog("🌀 " + label(a) + " 释放【" + s.name + "·第三段·引力弹射】，对 " + label(wt) + " 造成 " + (s.damage + attackerBonus(a)) +
           " 点伤害" + (pushed ? "并沿远离方向击退 1 格" : "（无合法击退位置，仅受伤）") + "，连招结束。");
         break;
       }
@@ -2911,11 +2913,11 @@ function useSkill(tr, tc) {
           board[lr][lc] = wt;
           board[from.r][from.c] = null;
         }
-        applyDamage(wt, s.damage, "skill", a);
+        applyDamage(wt, s.damage + attackerBonus(a), "skill", a);
         a.wxtStage = 1; // 进入第二段
         fx.push({ r: lr, c: lc, text: "引力", kind: "skill" });
         addLog("🌀 " + label(a) + " 释放【" + s.name + "·第一段·引力汇聚】，将 " + label(wt) + " 拉到正前方两格 (" +
-          (lr + 1) + "," + (lc + 1) + ") 并造成 " + s.damage + " 点伤害（第二段待执行，可跨回合）。");
+          (lr + 1) + "," + (lc + 1) + ") 并造成 " + (s.damage + attackerBonus(a)) + " 点伤害（第二段待执行，可跨回合）。");
       } else {
         // 第二段·万象引渡：抓到【正前方一格】+ 抓取 1 回合
         const lr = r + dr, lc = c + dc;
@@ -2930,7 +2932,7 @@ function useSkill(tr, tc) {
           board[lr][lc] = wt;
           board[from.r][from.c] = null;
         }
-        applyDamage(wt, s.damage, "skill", a);
+        applyDamage(wt, s.damage + attackerBonus(a), "skill", a);
         let grabbed = false;
         if (findPos(wt)) {
           applyNegativeStatus(wt, "grab", { damage: 0, turns: 1, label: "万象天引·抓取", from: { r, c } });
@@ -2939,7 +2941,7 @@ function useSkill(tr, tc) {
         a.wxtStage = 2; // 进入第三段
         fx.push({ r: lr, c: lc, text: "引渡", kind: "skill" });
         addLog("🌀 " + label(a) + " 释放【" + s.name + "·第二段·万象引渡】，将 " + label(wt) + " 抓到正前方一格 (" +
-          (lr + 1) + "," + (lc + 1) + ") 并造成 " + s.damage + " 点伤害" + (grabbed ? "，施加【抓取 1 回合】" : "（目标已阵亡，不施加抓取）") + "（第三段待执行，可跨回合）。");
+          (lr + 1) + "," + (lc + 1) + ") 并造成 " + (s.damage + attackerBonus(a)) + " 点伤害" + (grabbed ? "，施加【抓取 1 回合】" : "（目标已阵亡，不施加抓取）") + "（第三段待执行，可跨回合）。");
       }
       break;
     }
