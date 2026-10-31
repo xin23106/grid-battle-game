@@ -604,9 +604,9 @@ function attackerBonus(u) {
   if (!u || u.sword) return 0;
   return assaultBonus(u.player) + (isLoneActive(u) ? 1 : 0);
 }
-/* 技能是否被负面状态禁止（抓取 / 眩晕 / 定身） */
+/* 技能是否被负面状态禁止（抓取 / 眩晕；定身只禁止位移类技能） */
 function skillBlockedByStatus(u) {
-  return !!(u && u.statuses && ((u.statuses.grab && u.statuses.grab.turns > 0) || (u.statuses.stun && u.statuses.stun.turns > 0) || (u.statuses.root && u.statuses.root.turns > 0)));
+  return !!(u && u.statuses && ((u.statuses.grab && u.statuses.grab.turns > 0) || (u.statuses.stun && u.statuses.stun.turns > 0)));
 }
 /* 被抓取：该单位在其回合内不能做任何动作（移动 / 普攻 / 技能） */
 function isGrabbed(u) {
@@ -621,7 +621,15 @@ function isRooted(u) {
   return !!(u && u.statuses && u.statuses.root && u.statuses.root.turns > 0);
 }
 function isDisabled(u) {
-  return isGrabbed(u) || isStunned(u) || isRooted(u);
+  return isGrabbed(u) || isStunned(u);
+}
+/* 定身：不能移动 / 主动位移，但仍可普通攻击与非位移技能 */
+const SELF_MOVE_SKILLS = ["dash", "blink", "ziwei", "tianwei", "shuidiao", "duanlang", "thunder", "mistdash", "stealth"];
+function isSelfMoveSkill(u, s) {
+  if (!s) return false;
+  if (SELF_MOVE_SKILLS.indexOf(s.type) >= 0) return true;
+  if (s.type === "chase" && (u.chaseStage || 0) === 1) return true; // 追猎第二段需要闪身
+  return false;
 }
 function actionBlockReason(u) {
   if (isGrabbed(u)) return "抓取";
@@ -747,14 +755,15 @@ function hasAnyAction(player) {
     const pos = findPos(u);
     if (!pos) continue;
     const s = heroDef(u.heroId).skill;
-    if (!turnActionUsed && s && u.usesLeft > 0) return true; // 仍可用普通技能
+    const canMove = !isRooted(u); // 定身：不能移动，但仍可攻击 / 非位移技能
+    if (!turnActionUsed && s && u.usesLeft > 0 && !(isRooted(u) && isSelfMoveSkill(u, s))) return true; // 仍可用普通技能
     for (const [dr, dc] of DIRS) {
       const nr = pos.r + dr;
       const nc = pos.c + dc;
       if (!inBounds(nr, nc)) continue;
       const t = board[nr][nc];
-      if (!t) { if (!turnActionUsed) return true; continue; }
-      if (t.sword) { if (u.heroId === "asura" && !turnActionUsed) return true; continue; }
+      if (!t) { if (canMove && !turnActionUsed) return true; continue; }
+      if (t.sword) { if (u.heroId === "asura" && canMove && !turnActionUsed) return true; continue; }
       if (isPillar(t)) continue; // 石柱不可攻击、不可进入
       if (t.player !== player && !turnActionUsed) return true;
     }
@@ -773,7 +782,7 @@ function hasAnyAction(player) {
       for (let i = 0; i < skills.length; i++) {
         const sk = skills[i];
         if (!sk || isPassiveSkill(sk)) continue;
-        if (sk.free && skillUsesLeft(u, i) > 0) return true;
+        if (sk.free && skillUsesLeft(u, i) > 0 && !(isRooted(u) && isSelfMoveSkill(u, sk))) return true;
       }
     }
   }
@@ -1355,14 +1364,15 @@ function computeTargets() {
   const u = board[selected.r][selected.c];
   if (!u || u.sword) return;
   if (isDisabled(u)) return; // 被抓取 / 眩晕：不能移动或攻击
+  const canMove = !isRooted(u); // 定身：不能移动，但仍可攻击
   for (const [dr, dc] of DIRS) {
     const nr = selected.r + dr;
     const nc = selected.c + dc;
     if (!inBounds(nr, nc)) continue;
     const t = board[nr][nc];
-    if (!t) moveTargets.push([nr, nc]);
+    if (!t) { if (canMove) moveTargets.push([nr, nc]); }
     else if (t.sword) {
-      if (u.heroId === "asura") moveTargets.push([nr, nc]); // 阿修罗可进入并回收剑
+      if (u.heroId === "asura" && canMove) moveTargets.push([nr, nc]); // 阿修罗可进入并回收剑
     } else if (isPillar(t)) {
       // 石柱：阻挡移动，也不能被普通攻击
     } else if (t.player !== u.player) {
@@ -1773,6 +1783,12 @@ function moveHero(r, c) {
   const u = board[fr][fc];
   if (isDisabled(u)) {
     addLog(label(u) + " 处于【" + actionBlockReason(u) + "】状态，无法移动。");
+    clearSelection();
+    render();
+    return;
+  }
+  if (isRooted(u)) {
+    addLog(label(u) + " 处于【定身】状态，无法移动（仍可攻击或使用非位移技能）。");
     clearSelection();
     render();
     return;
@@ -3487,6 +3503,11 @@ function activateSkill(idx) {
     render();
     return;
   }
+  if (isRooted(u) && isSelfMoveSkill(u, s)) {
+    addLog(label(u) + " 处于【定身】状态，无法使用位移技能（普通攻击与非位移技能仍可用）。");
+    render();
+    return;
+  }
   if (!skillFreeFor(u, s) && !canActNow(u)) {
     addLog("本回合已经行动过了（不耗步技能除外）。");
     render();
@@ -5065,6 +5086,7 @@ function aiEnumerate() {
     if (turnActorUid && u.uid !== turnActorUid) continue; // 强化回合：只能由同一英雄行动
     const pos = findPos(u);
     if (!pos) continue;
+    const rooted = isRooted(u);
 
     // 普通攻击（本回合若已行动则不可）
     if (!turnActionUsed) {
@@ -5106,6 +5128,7 @@ function aiEnumerate() {
       if (!isSd2 && !isChase2 && sl !== Infinity && sl <= 0) return;
       if (!canPaySwords(u, s)) return;
       if (turnActionUsed && !skillFreeFor(u, s)) return;
+      if (rooted && isSelfMoveSkill(u, s)) return; // 定身：不能用主动位移技能
 
       // 刺客·追猎：两段式，需特殊枚举（第二段还要再选一个闪身落点）
       if (s.type === "chase") {
@@ -5318,8 +5341,8 @@ function aiEnumerate() {
       }
     });
 
-    // 移动（本回合若已行动则不可；行军令的额外移动次数可用）
-    if (!turnActionUsed || extraMoves > 0) {
+    // 移动（本回合若已行动则不可；行军令的额外移动次数可用；定身不能移动）
+    if (!rooted && (!turnActionUsed || extraMoves > 0)) {
       for (const [dr, dc] of DIRS) {
         const nr = pos.r + dr;
         const nc = pos.c + dc;

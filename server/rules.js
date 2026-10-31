@@ -47,7 +47,15 @@ function isRooted(u) {
   return !!(u && u.statuses && u.statuses.root && u.statuses.root.turns > 0);
 }
 function isDisabled(u) {
-  return isGrabbed(u) || isStunned(u) || isRooted(u);
+  return isGrabbed(u) || isStunned(u);
+}
+/* 定身：不能移动 / 主动位移，但仍可普通攻击与非位移技能 */
+const SELF_MOVE_SKILLS = ["dash", "blink", "ziwei", "tianwei", "shuidiao", "duanlang", "thunder", "mistdash", "stealth"];
+function isSelfMoveSkillS(u, sk) {
+  if (!sk) return false;
+  if (SELF_MOVE_SKILLS.indexOf(sk.type) >= 0) return true;
+  if (sk.type === "chase" && (u.chaseStage || 0) === 1) return true;
+  return false;
 }
 function actionBlockReason(u) {
   if (isGrabbed(u)) return "抓取";
@@ -871,24 +879,26 @@ function heroHasFreeUses(s, u) {
 function hasAnyActionState(s, player) {
   for (const u of unitsOf(s, player)) {
     if (u.frozen > 0) continue;
-    if (isDisabled(u)) continue; // 抓取 / 眩晕 / 定身：本回合无法移动/攻击/用技能
+    if (isDisabled(u)) continue; // 抓取 / 眩晕：本回合无法移动/攻击/用技能
     const pos = findPos(s, u);
     if (!pos) continue;
+    const rooted = isRooted(u);
+    const canMove = !rooted;
     const sk = heroDef(u.heroId).skill;
-    if (!s.turnActionUsed && sk && u.usesLeft > 0) return true;
+    if (!s.turnActionUsed && sk && u.usesLeft > 0 && !(rooted && isSelfMoveSkillS(u, sk))) return true;
     for (const [dr, dc] of DIRS) {
       const nr = pos.r + dr, nc = pos.c + dc;
       if (!inB(nr, nc)) continue;
       const t = s.board[nr][nc];
-      if (!t) { if (!s.turnActionUsed) return true; continue; }
-      if (isSword(t)) { if (u.heroId === "asura" && !s.turnActionUsed) return true; continue; }
+      if (!t) { if (canMove && !s.turnActionUsed) return true; continue; }
+      if (isSword(t)) { if (u.heroId === "asura" && canMove && !s.turnActionUsed) return true; continue; }
       if (isUnit(t) && t.player !== player && !hiddenFromS(t, player) && !s.turnActionUsed) return true;
     }
     // 额外技能（雾冲 / 影牙 等）仍有次数：避免被误判为“无行动”而自动跳过
     if (!s.turnActionUsed) {
       const extra = heroSkills(heroDef(u.heroId));
       for (let i = 1; i < extra.length; i++) {
-        if (!isPassiveSkill(extra[i]) && skillUsesLeft(s, u, i) > 0) return true;
+        if (!isPassiveSkill(extra[i]) && skillUsesLeft(s, u, i) > 0 && !(rooted && isSelfMoveSkillS(u, extra[i]))) return true;
       }
     }
     if (heroHasFreeUses(s, u)) return true;
@@ -898,7 +908,7 @@ function hasAnyActionState(s, player) {
       for (let i = 0; i < freeSkills.length; i++) {
         const fsk = freeSkills[i];
         if (!fsk || isPassiveSkill(fsk)) continue;
-        if (fsk.free && skillUsesLeft(s, u, i) > 0) return true;
+        if (fsk.free && skillUsesLeft(s, u, i) > 0 && !(rooted && isSelfMoveSkillS(u, fsk))) return true;
       }
     }
   }
@@ -1123,6 +1133,7 @@ function applyAction(state, player, action) {
 
   if (act === "move") {
     if (isGrabbed(u)) return err("该英雄处于【抓取】状态，无法行动");
+    if (isRooted(u)) return err("该英雄处于【定身】状态，无法移动");
     const isExtra = !canActNow(s, u);
     if (isExtra && (s.extraMoves || 0) <= 0) return err("本回合已经行动过了");
     // 渡鸦·潜行双动：隐身期间第一次「走」不消耗行动，之后还可再走一次或普通攻击
@@ -1198,6 +1209,7 @@ function applyAction(state, player, action) {
     const idx = action.idx || 0;
     const sk = heroSkills(heroDef(u.heroId))[idx] || heroDef(u.heroId).skill;
     if (!sk) return err("未知技能");
+    if (isRooted(u) && isSelfMoveSkillS(u, sk)) return err("该英雄处于【定身】状态，无法使用位移技能");
     // 追猎：第二段待释放但已无有效标记目标 → 结束连招，回到第一段
     if (sk.type === "chase" && (u.chaseStage || 0) === 1 && chaseTargetsOf(s, u).length === 0) endChase(s, u);
     const isSd2 = sk.type === "shuidiao" && (u.sdStage || 0) === 1; // 第二段同属一套，不额外占次数
