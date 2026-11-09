@@ -72,6 +72,9 @@ function publicStateFor(state, player) {
   s.talisman[me] = state.talisman ? state.talisman[me] : null;
   s.talismanUsed = { 1: false, 2: false };
   s.talismanUsed[me] = !!(state.talismanUsed && state.talismanUsed[me]);
+  // 选将卡：只下发本人的剩余数量
+  s.wildcards = { 1: null, 2: null };
+  s.wildcards[me] = state.wildcards ? (state.wildcards[me] || 0) : 0;
   // 3) 布阵阶段：对手的半场（英雄与位置）全部不可见
   if (state.phase === "placement") {
     for (let r = 0; r < SIZE; r++) {

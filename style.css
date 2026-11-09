@@ -1410,3 +1410,24 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   .cell.metal-tide .unit { animation: none; }
 }
+
+/* =======================================================================
+   悔棋按钮 / 选将卡
+   ======================================================================= */
+.undo-btn {
+  margin-top: 8px;
+  background: rgba(30, 41, 59, .92);
+  border-color: rgba(148, 163, 184, .55);
+  color: #cbd5e1;
+}
+.undo-btn:hover:not(:disabled) { border-color: #fbbf24; color: #fde68a; }
+.undo-btn:disabled { opacity: .42; cursor: not-allowed; }
+.hero-option.wildcard-card {
+  border: 1px dashed rgba(251, 191, 36, .85);
+  background: rgba(120, 53, 15, .18);
+  color: #fde68a;
+}
+.hero-option.wildcard-card.active {
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, .9), 0 0 18px rgba(251, 191, 36, .35);
+  border-style: solid;
+}

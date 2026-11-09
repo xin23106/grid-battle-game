@@ -425,7 +425,7 @@ function createState() {
   return { board, phase: "placement", currentPlayer: 1, winner: 0, unitSeq: 1,
            toPlace: PER_PLAYER, placed: { 1: [], 2: [] }, pools: drawPools(), turnActionUsed: false,
            turnActionsMax: 1, turnActionsLeft: 1, turnActorUid: 0, empowerTurnActive: false,
-           talisman: { 1: drawTalismanId(), 2: drawTalismanId() }, talismanUsed: { 1: false, 2: false },
+           talisman: { 1: drawTalismanId(), 2: drawTalismanId() }, talismanUsed: { 1: false, 2: false }, wildcards: { 1: 3, 2: 3 },
            assaultPlayer: 0, guardPlayer: 0, extraMoves: 0, extraTurnPending: false, graveyard: [], mists: {},
            stats: { damage: { 1: 0, 2: 0 }, kills: { 1: 0, 2: 0 }, startedAt: 0, endedAt: 0, lastKiller: null },
            log: [], logSeq: 0 };
@@ -1049,7 +1049,16 @@ function applyAction(state, player, action) {
     if (!inB(r, c) || (c < SIDE_COLS ? 1 : 2) !== player) return err("只能放在自己的半场");
     if (s.board[r][c]) return err("该格已被占用");
     if (s.placed[player].length >= PER_PLAYER) return err("你已经完成部署");
-    if (s.pools && s.pools[player] && s.pools[player].indexOf(heroId) < 0) return err("该英雄不在你的候选池中（本局由服务器随机抽取）");
+    let usedWildcard = false;
+    if (s.pools && s.pools[player] && s.pools[player].indexOf(heroId) < 0) {
+      // 选将卡：不在候选池时可消耗 1 张任选英雄
+      if ((s.wildcards && s.wildcards[player] || 0) > 0) {
+        s.wildcards[player] -= 1;
+        usedWildcard = true;
+      } else {
+        return err("该英雄不在你的候选池中，且选将卡已用尽");
+      }
+    }
     if (s.placed[player].includes(heroId)) return err("同阵营不可重复英雄");
     const def = heroDef(heroId);
     if (!def) return err("未知英雄");
@@ -1061,6 +1070,7 @@ function applyAction(state, player, action) {
                       stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false, metalBuff: false, metalTide: 0,
                       usesArr: heroSkills(def).map((sk) => (sk.uses == null ? 9999 : sk.uses)) };
     s.placed[player].push(heroId);
+    if (usedWildcard) slog(s, "🎟 玩家" + player + " 使用选将卡任选了【" + (def.name || heroId) + "】（剩余 " + s.wildcards[player] + " 张）");
     s.toPlace = Math.max(0, PER_PLAYER - s.placed[player].length);
     slog(s, "玩家" + player + " 完成一次部署（" + s.placed[player].length + "/" + PER_PLAYER + "）");
     // 双方都完成部署后才正式开战

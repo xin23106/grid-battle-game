@@ -41,6 +41,7 @@ const rosterListEl = document.getElementById("roster-list");
 const heroCardEl = document.getElementById("hero-card");
 const skillBarEl = document.getElementById("skill-bar");
 const skipBtn = document.getElementById("skip-btn");
+const undoBtn = document.getElementById("undo-btn");
 const logEl = document.getElementById("log");
 const bgmEl = document.getElementById("bgm");
 const bgmBtn = document.getElementById("bgm-btn");
@@ -91,6 +92,12 @@ let currentPlayer = 1;
 let toPlace = SOLDIERS_PER_PLAYER;
 let placedIds = { 1: [], 2: [] };  // 每方已选英雄 id（防重复）
 let onlinePool = null;             // 联机随机选将：本人的候选英雄池（服务端下发，客户端不可指定）
+let localPools = { 1: [], 2: [] };// 本地双人：每局随机抽取的候选英雄（每方 3 名）
+let wildcards = { 1: 3, 2: 3 };    // 本地双人：每方 3 张选将卡（可任选英雄）
+let onlineWildcards = 0;           // 联机：本人的选将卡剩余数量（服务端下发）
+let wildcardMode = false;          // 选将卡：正在从全部英雄中任选
+let pendingWildcard = false;       // 当前待放置英雄是否由选将卡指定
+let history = [];                  // 悔棋：行动前快照栈
 let onlineLogSeq = 0;              // 联机：已合并的服务端日志最大 id（去重，避免重连/重复广播刷屏）
 let bfxPrevSnap = null;            // 联机：上一份权威棋盘快照（用于派生表现事件，不改变任何状态）
 let bfxPillarSnap = null;          // 联机：上一份石柱位置（用于升起 / 碎裂表现）
@@ -967,13 +974,111 @@ function resolveNormalAttack(attacker, target) {
 }
 
 /* ============================ 初始化 / 布阵 ============================ */
+function drawLocalPools() {
+  const ids = HEROES.map((h) => h.id);
+  const sh = ids.slice();
+  for (let i = sh.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const t = sh[i]; sh[i] = sh[j]; sh[j] = t;
+  }
+  localPools = { 1: sh.slice(0, 3), 2: sh.slice(3, 6) };
+  wildcards = { 1: 3, 2: 3 };
+  wildcardMode = false;
+  pendingWildcard = false;
+}
+
 function firstAvailableHero(player) {
   const used = placedIds[player] || [];
-  const list = (gameMode === "online" && onlinePool && onlinePool.length)
-    ? onlinePool.map((id) => heroDef(id)).filter(Boolean)
-    : HEROES;
+  let list;
+  if (gameMode === "online" && onlinePool && onlinePool.length) {
+    list = onlinePool.map((id) => heroDef(id)).filter(Boolean);
+  } else if (gameMode === "local" && localPools[player] && localPools[player].length) {
+    list = localPools[player].map((id) => heroDef(id)).filter(Boolean);
+  } else {
+    list = HEROES;
+  }
   const h = list.find((x) => !used.includes(x.id));
   return h ? h.id : null;
+}
+
+/* ============================ 悔棋（本地 / AI） ============================ */
+function pushHistory() {
+  if (gameMode === "online") return;
+  try {
+    history.push(JSON.stringify({
+      board, phase, currentPlayer, winner, unitSeq, toPlace, placedIds,
+      talisman, talismanUsed, talismanBuff, extraMoves, graveyard, reviveOptions,
+      logs, turnActionUsed, turnActionsLeft, turnActionsMax, turnActorUid,
+      empowerTurnActive, mists, pendingHero, wildcards, localPools,
+      wildcardMode, pendingWildcard, onlineWildcards, turnSerial, matchStats,
+    }));
+    if (history.length > 40) history.shift();
+  } catch (e) { /* 快照失败不影响对局 */ }
+}
+function applyHistorySnapshot(s) {
+  board = s.board || [];
+  phase = s.phase || "placement";
+  currentPlayer = s.currentPlayer || 1;
+  winner = s.winner || 0;
+  unitSeq = s.unitSeq || unitSeq;
+  toPlace = s.toPlace != null ? s.toPlace : toPlace;
+  placedIds = s.placedIds || { 1: [], 2: [] };
+  talisman = s.talisman || talisman;
+  talismanUsed = s.talismanUsed || talismanUsed;
+  talismanBuff = s.talismanBuff || { assaultPlayer: 0, guardPlayer: 0 };
+  extraMoves = s.extraMoves || 0;
+  graveyard = s.graveyard || [];
+  reviveOptions = [];
+  logs = s.logs || [];
+  turnActionUsed = !!s.turnActionUsed;
+  turnActionsLeft = s.turnActionsLeft != null ? s.turnActionsLeft : 1;
+  turnActionsMax = s.turnActionsMax != null ? s.turnActionsMax : 1;
+  turnActorUid = s.turnActorUid || 0;
+  empowerTurnActive = !!s.empowerTurnActive;
+  mists = s.mists || {};
+  pendingHero = s.pendingHero || null;
+  wildcards = s.wildcards || { 1: 0, 2: 0 };
+  localPools = s.localPools || { 1: [], 2: [] };
+  wildcardMode = !!s.wildcardMode;
+  pendingWildcard = !!s.pendingWildcard;
+  onlineWildcards = s.onlineWildcards || 0;
+  turnSerial = s.turnSerial || 0;
+  matchStats = s.matchStats || matchStats;
+}
+function clearVictoryUi() {
+  clearVictoryTimers();
+  victorySeq = { active: false, played: false, resultShown: false, timers: [] };
+  if (window.BFX) window.BFX.victoryHide();
+  overlayEl.classList.add("hidden");
+  const skip = document.getElementById("victory-skip");
+  if (skip) skip.classList.add("hidden");
+}
+function undoStep() {
+  if (gameMode === "online") { addLog("联机对局由服务器结算，不能悔棋。"); render(); return; }
+  if (!history.length) { addLog("没有可回退的步骤。"); render(); return; }
+  applyHistorySnapshot(JSON.parse(history.pop()));
+  // AI 模式：继续回退到玩家自己的决策点，避免刚悔棋 AI 立刻又行动
+  if (gameMode === "ai") {
+    let guard = 0;
+    while (currentPlayer === aiPlayer && history.length && guard++ < 8) {
+      applyHistorySnapshot(JSON.parse(history.pop()));
+    }
+  }
+  clearVictoryUi();
+  selected = null;
+  moveTargets = [];
+  attackTargets = [];
+  skillTargets = [];
+  skillMode = false;
+  skillSub = null;
+  dashOptions = [];
+  talismanMode = null;
+  talismanTargets = [];
+  fx = [];
+  inputLockUntil = 0;
+  if (window.BFX) window.BFX.clear();
+  addLog("↩ 悔棋：已回退到上一步。");
+  render();
 }
 
 function init() {
@@ -987,6 +1092,11 @@ function init() {
   currentPlayer = 1;
   toPlace = SOLDIERS_PER_PLAYER;
   placedIds = { 1: [], 2: [] };
+  // 本地双人：每局重新抽取候选英雄；其它模式不抽
+  if (gameMode === "local") drawLocalPools();
+  else { localPools = { 1: [], 2: [] }; wildcards = { 1: 0, 2: 0 }; wildcardMode = false; pendingWildcard = false; }
+  onlineWildcards = 0;
+  history = [];
   pendingHero = firstAvailableHero(1);
   selected = null;
   moveTargets = [];
@@ -1030,13 +1140,15 @@ function handlePlacement(r, c) {
     const me = mySide();
     if (territoryOf(c) !== me) { addLog("只能在自己的半场放置英雄。"); render(); return; }
     if (!pendingHero) { addLog("请先选择一名候选英雄。"); render(); return; }
-    if (onlinePool && onlinePool.length && onlinePool.indexOf(pendingHero) < 0) {
-      addLog("只能部署候选池中的英雄（本局由服务器随机抽取）。");
+    if (onlinePool && onlinePool.length && onlinePool.indexOf(pendingHero) < 0 && !(pendingWildcard && onlineWildcards > 0)) {
+      addLog("只能部署候选池中的英雄（可使用选将卡任选）。");
       render();
       return;
     }
     if (board[r][c]) { addLog("该格已被占用。"); render(); return; }
     onlineForward({ type: "place", heroId: pendingHero, r, c });
+    wildcardMode = false;
+    pendingWildcard = false;
     return;
   }
   if (territoryOf(c) !== currentPlayer) {
@@ -1055,6 +1167,12 @@ function handlePlacement(r, c) {
     render();
     return;
   }
+  if (gameMode === "local" && !pendingWildcard && localPools[currentPlayer] && localPools[currentPlayer].length && localPools[currentPlayer].indexOf(pendingHero) < 0) {
+    addLog("该英雄不在本局抽取的候选池中；可使用「选将卡」任选一名英雄。");
+    render();
+    return;
+  }
+  pushHistory();
   const def = heroDef(pendingHero);
   const unit = {
     uid: unitSeq++,
@@ -1084,6 +1202,12 @@ function handlePlacement(r, c) {
   initUnitUses(unit, def);
   board[r][c] = unit;
   placedIds[currentPlayer].push(def.id);
+  if (gameMode === "local" && pendingWildcard) {
+    wildcards[currentPlayer] = Math.max(0, wildcards[currentPlayer] - 1);
+    addLog("🎟 选将卡已使用（玩家" + currentPlayer + " 剩余 " + wildcards[currentPlayer] + " 张）。");
+  }
+  pendingWildcard = false;
+  wildcardMode = false;
   toPlace -= 1;
   addLog("玩家" + currentPlayer + " 放置了 " + def.name + "（" + def.hp + " 血）。");
 
@@ -1091,13 +1215,16 @@ function handlePlacement(r, c) {
     if (currentPlayer === 1) {
       currentPlayer = 2;
       toPlace = SOLDIERS_PER_PLAYER;
+      wildcardMode = false; pendingWildcard = false;
       pendingHero = firstAvailableHero(2);
     } else {
       phase = "battle";
       currentPlayer = 1;
+      wildcardMode = false; pendingWildcard = false;
       beginTurn();
     }
   } else {
+    wildcardMode = false; pendingWildcard = false;
     pendingHero = firstAvailableHero(currentPlayer);
   }
   render();
@@ -1226,6 +1353,7 @@ function endTurnOnce() {
 /* 统一结束回合：结束当前玩家回合；若接手的一方没有任何合法行动（全被冰封 / 被抓取等），
  * 自动继续推进（带上限防止双方连续无行动时死循环）。联机由服务端权威处理，客户端只在单机 / AI 执行。 */
 function endTurn() {
+  pushHistory();
   endTurnOnce();
   settleStuckTurns();
 }
@@ -1817,6 +1945,7 @@ function moveHero(r, c) {
     render();
     return;
   }
+  pushHistory();
   // 渡鸦·潜行双动：隐身期间第一次「走」不消耗行动，之后还可再走一次或普通攻击
   const isDoubleFirst = !isExtra && !turnActionUsed && isStealthed(u) && u.ravenDouble && !u.ravenDoubleUsed;
   const isDoubleSecond = !isExtra && !turnActionUsed && u.ravenDoubleUsed;
@@ -2048,6 +2177,7 @@ function normalAttack(attacker, target) {
     render();
     return;
   }
+  pushHistory();
   // 记录攻击前的位置：普通攻击若最终击杀目标，攻击者需占据目标原先所在的格子
   const atkBefore = findPos(attacker);
   const tgtBefore = findPos(target);
@@ -2618,6 +2748,7 @@ function useSkill(tr, tc) {
     window.BFX.banner(heroDef(a.heroId).name, s.name, skillStageLabel(a, s));
   }
 
+  pushHistory();
   switch (s.type) {
     case "damage_single": {
       const rd = resolveSkillDamage(a, target, s);
@@ -3636,6 +3767,7 @@ function handleTalismanClick(r, c) {
 function useTalismanEffect(id, tr, tc) {
   const t = getTalismanById(id);
   if (!t) return false;
+  pushHistory();
   const player = currentPlayer;
   let ok = true;
   switch (t.effect) {
@@ -4234,19 +4366,34 @@ function updateRoster() {
     return;
   }
   heroRosterEl.classList.remove("hidden");
-  // 联机随机选将：只显示本人候选池中的英雄（服务端下发，客户端无法指定）
   const online = gameMode === "online";
-  const pool = online && onlinePool && onlinePool.length ? onlinePool : null;
+  const local = gameMode === "local";
   const me = mySide();
+  const used = placedIds[me] || [];
+  let list;
+  let wildCount = 0;
+  if (online) {
+    list = (wildcardMode
+      ? HEROES
+      : (onlinePool && onlinePool.length ? onlinePool.map((id) => heroDef(id)).filter(Boolean) : HEROES));
+    wildCount = onlineWildcards;
+  } else if (local) {
+    wildCount = wildcards[me] || 0;
+    list = wildcardMode ? HEROES : (localPools[me] || []).map((id) => heroDef(id)).filter(Boolean);
+  } else {
+    list = HEROES;
+  }
   const titleEl = heroRosterEl.querySelector(".roster-title");
   if (titleEl) {
-    titleEl.textContent = online
-      ? "你的候选英雄（本局由服务器随机抽取，仅你可部署）"
-      : "选择要放置的英雄（每方不可重复）";
+    if (online) titleEl.textContent = wildcardMode
+      ? "🎟 选将卡：点击任意英雄直接选择（剩余 " + wildCount + " 张）"
+      : "你的候选英雄（服务器随机）+ 选将卡 ×" + wildCount + "（可任选英雄）";
+    else if (local) titleEl.textContent = wildcardMode
+      ? "🎟 选将卡：点击任意英雄直接选择（剩余 " + wildCount + " 张）"
+      : "本局抽取的候选英雄（每方 3 名）+ 选将卡 ×" + wildCount;
+    else titleEl.textContent = "选择要放置的英雄（每方不可重复）";
   }
   rosterListEl.innerHTML = "";
-  const used = placedIds[me] || [];
-  const list = pool ? pool.map((id) => heroDef(id)).filter(Boolean) : HEROES;
   for (const h of list) {
     const card = document.createElement("button");
     card.type = "button";
@@ -4262,9 +4409,33 @@ function updateRoster() {
       '<span class="ho-hp">♥ ' + h.hp + "</span>";
     card.addEventListener("click", () => {
       pendingHero = h.id;
+      pendingWildcard = wildcardMode; // 从选将卡模式选中 → 放置时消耗一张
+      wildcardMode = false;
       render();
     });
     rosterListEl.appendChild(card);
+  }
+  // 选将卡：本地双人 / 联机都可用（任选一名英雄）
+  if (local || online) {
+    for (let i = 0; i < 3; i++) {
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "hero-option wildcard-card";
+      if (wildcardMode) card.classList.add("active");
+      card.disabled = wildCount <= 0;
+      card.innerHTML =
+        '<span class="ho-icon">🎟</span>' +
+        '<span class="ho-name">选将卡</span>' +
+        '<span class="ho-hp">×' + wildCount + "</span>";
+      card.title = "选将卡：任选一名英雄（剩余 " + wildCount + " 张）";
+      card.addEventListener("click", () => {
+        if (wildCount <= 0) return;
+        wildcardMode = !wildcardMode;
+        pendingWildcard = false;
+        render();
+      });
+      rosterListEl.appendChild(card);
+    }
   }
 }
 
@@ -4588,6 +4759,11 @@ function updatePanel() {
   renderDetailCard();
   updateSkillBar();
   skipBtn.classList.toggle("hidden", phase !== "battle");
+  if (undoBtn) {
+    undoBtn.classList.toggle("hidden", phase === "over" || gameMode === "online");
+    undoBtn.disabled = !history || !history.length;
+    undoBtn.title = gameMode === "online" ? "联机对局不能悔棋" : "悔棋：回退到上一步";
+  }
   const mustAct = phase === "battle" && turnActionsLeft === turnActionsMax && hasAnyAction(currentPlayer) && hasAnyMove(currentPlayer);
   skipBtn.disabled = mustAct;
   const acted = phase === "battle" && turnActionsLeft < turnActionsMax;
@@ -4636,6 +4812,7 @@ function updatePanel() {
         overlayStatsEl.innerHTML = rows.length ? '<div class="os-head">本局战绩</div>' + rows.join("") : "";
       }
       if (overlayMenuBtn) overlayMenuBtn.textContent = gameMode === "online" ? "退出对局" : "返回主菜单";
+      if (overlayBtn) overlayBtn.textContent = gameMode === "online" ? "返回联机大厅" : "再来一局";
       overlayEl.classList.remove("hidden");
     }
   } else {
@@ -5667,6 +5844,7 @@ function applyRemoteState(state) {
   if (state.placed) placedIds = { 1: state.placed[1].slice(), 2: state.placed[2].slice() };
   // 联机随机选将：候选池与双方部署完成状态（对手候选池不会下发）
   onlinePool = state.pools && state.pools[mySide()] ? state.pools[mySide()].slice() : (gameMode === "online" ? onlinePool : null);
+  if (state.wildcards) onlineWildcards = state.wildcards[mySide()] || 0;
   if (state.placementDone) onlinePlacementDone = { 1: !!state.placementDone[1], 2: !!state.placementDone[2] };
   // 锦囊状态同步（对手的锦囊为 null=不可见）
   if (state.talisman) talisman = { 1: state.talisman[1], 2: state.talisman[2] };
@@ -5749,6 +5927,10 @@ window.onNetJoined = () => {
   bfxPrevSnap = null;      // 重连/新房间：不重播历史动画
   bfxPillarSnap = null;
   bfxOnlineLogSeq = 0;
+  wildcardMode = false;
+  pendingWildcard = false;
+  onlineWildcards = 0;
+  history = [];
 };
 window.onNetStart = () => {
   hideMenu();
@@ -5789,7 +5971,14 @@ window.onNetNotice = (m) => {
 
 /* ============================ 事件绑定 ============================ */
 restartBtn.addEventListener("click", init);
-overlayBtn.addEventListener("click", init);
+overlayBtn.addEventListener("click", () => {
+  if (gameMode === "online") {
+    overlayEl.classList.add("hidden");
+    showMenu("online");
+    return;
+  }
+  init();
+});
 // 技能按钮由 updateSkillBar() 动态生成，无需静态绑定
 talismanBtn.addEventListener("click", () => {
   if (talismanBtn.disabled) return;
@@ -5813,6 +6002,12 @@ skipBtn.addEventListener("click", () => {
   }
 });
 
+if (undoBtn) {
+  undoBtn.addEventListener("click", () => {
+    if (undoBtn.disabled) return;
+    undoStep();
+  });
+}
 /* 背景音乐开关：
    1) 若游戏目录存在 bgm.mp3，优先播放该文件（例如你自备的曲子）；
    2) 否则播放 bgm.js 中的原创合成音乐（100% 原创，无版权问题）。
@@ -6064,6 +6259,15 @@ window.GameAPI = {
   get gameMode() { return gameMode; },
   get aiPlayer() { return aiPlayer; },
   get aiDifficulty() { return aiDifficulty; },
+  getLocalPools() { return JSON.parse(JSON.stringify(localPools)); },
+  getWildcards() { return Object.assign({}, wildcards); },
+  get pendingWildcard() { return pendingWildcard; },
+  get pendingHero() { return pendingHero; },
+  get historySize() { return history.length; },
+  setPendingHero(id) { pendingHero = id; },
+  setPendingWildcard(v) { pendingWildcard = !!v; },
+  placeAt(r, c) { handlePlacement(r, c); },
+  undoStep,
   get netState() { return Object.assign({}, netState); },
   setNetState(s) { Object.assign(netState, s); },
   aiTakeTurn,
@@ -6184,6 +6388,7 @@ window.GameAPI = {
     graveyard = [];
     reviveOptions = [];
     mists = {};
+    history = [];
     // 对局统计 & 结算演出：重置（测试/新局共用）
     matchStats = { damage: { 1: 0, 2: 0 }, kills: { 1: 0, 2: 0 }, startedAt: Date.now(), endedAt: 0, lastKiller: null };
     clearVictoryTimers();
