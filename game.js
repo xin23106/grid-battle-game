@@ -1886,13 +1886,35 @@ function computeSkillTargets() {
     }
 
     case "push": {
-      // 目标：正前方 2 格内的第一个敌人；方向由点击的敌人位置推导
+      const rooted = isRooted(u);
+      const stepping = skillSub && skillSub.kind === "push-step";
+      if (!rooted && !stepping) {
+        // 第一步：十字位移（原地 / 上下左右 1–2 格，路径不可穿越单位、剑刃或石柱）
+        skillTargets.push([r, c]); // 原地推山
+        dashOptions.push({ kind: "push-move", path: [[r, c]], stay: true });
+        for (const [dr, dc] of DIRS) {
+          for (let st = 1; st <= 2; st++) {
+            const rr = r + dr * st, cc = c + dc * st;
+            if (!inBounds(rr, cc)) break;
+            if (board[rr][cc]) break; // 路径被占据（英雄 / 剑刃 / 石柱）
+            skillTargets.push([rr, cc]);
+            const path = [];
+            for (let k = 1; k <= st; k++) path.push([r + dr * k, c + dc * k]);
+            dashOptions.push({ kind: "push-move", path });
+          }
+        }
+        break;
+      }
+      // 第二步：从（即将到达的）位置推山
+      const baseR = stepping ? skillSub.r : r;
+      const baseC = stepping ? skillSub.c : c;
+      const ignore = stepping && (baseR !== r || baseC !== c) ? { r, c } : null;
       for (const [dr, dc] of DIRS) {
-        const info = pushDirInfo(u, r, c, dr, dc);
+        const info = pushDirInfo(u, baseR, baseC, dr, dc, ignore);
         if (!info) continue;
         skillTargets.push([info.r, info.c]);
         const line = [[info.r, info.c]];
-        const destR = r + dr * 2, destC = c + dc * 2;
+        const destR = baseR + dr * 2, destC = baseC + dc * 2;
         if (inBounds(destR, destC)) line.push([destR, destC]);
         dashOptions.push({ kind: "push-line", path: line });
       }
@@ -2332,10 +2354,10 @@ function chargePreview(u, tr, tc, dr, dc) {
 const PILLAR_TURNS = 3; // 生成当回合结束不扣；之后每个完整回合结束 -1（对齐需求示例）
 
 /* 该方向上“第一个”可推击的敌方英雄（第一格为友军/障碍时被阻挡，不能越过） */
-function pushDirInfo(u, r, c, dr, dc) {
+function pushDirInfo(u, r, c, dr, dc, ignoreCell) {
   const r1 = r + dr, c1 = c + dc;
   if (!inBounds(r1, c1)) return null;
-  const a = board[r1][c1];
+  const a = (ignoreCell && ignoreCell.r === r1 && ignoreCell.c === c1) ? null : board[r1][c1];
   if (a) {
     if (!isUnit(a)) return null;                 // 剑刃 / 石柱 / 障碍
     if (a.player === u.player) return null;      // 友军挡路
@@ -2343,7 +2365,7 @@ function pushDirInfo(u, r, c, dr, dc) {
   }
   const r2 = r + dr * 2, c2 = c + dc * 2;
   if (!inBounds(r2, c2)) return null;
-  const b = board[r2][c2];
+  const b = (ignoreCell && ignoreCell.r === r2 && ignoreCell.c === c2) ? null : board[r2][c2];
   if (isUnit(b) && b.player !== u.player) return { r: r2, c: c2, unit: b, dist: 2 };
   return null;
 }
@@ -2691,6 +2713,43 @@ function useSkill(tr, tc) {
     return; // 尚未结算，等待目标
   }
 
+  // 山丘之王·推山：第一步先选择十字位移落点（本地选择，不消耗行动/次数）
+  if (s.type === "push" && !isRooted(a) && !(skillSub && skillSub.kind === "push-step")) {
+    const mdr = tr - r, mdc = tc - c;
+    const mdist = Math.abs(mdr) + Math.abs(mdc);
+    const stay = mdr === 0 && mdc === 0;
+    if (!stay && ((mdr !== 0 && mdc !== 0) || mdist < 1 || mdist > 2)) {
+      addLog("推山：位移只能选择原地或上下左右 1–2 格。");
+      render();
+      return;
+    }
+    if (!stay && (!inBounds(tr, tc) || board[tr][tc])) {
+      addLog("推山：位移落点必须是空格。");
+      render();
+      return;
+    }
+    if (!stay && mdist === 2) {
+      const mr = r + Math.sign(mdr), mc = c + Math.sign(mdc);
+      if (board[mr][mc]) {
+        addLog("推山：位移路径被阻挡。");
+        render();
+        return;
+      }
+    }
+    skillSub = { kind: "push-step", r: stay ? r : tr, c: stay ? c : tc };
+    computeSkillTargets();
+    if (skillTargets.length === 0) {
+      skillSub = null;
+      computeSkillTargets();
+      addLog("推山：该位置前方没有可推击的敌人，请重新选择落点。");
+      render();
+      return;
+    }
+    addLog(stay ? "⛰ 已选择原地推山，请点击正前方目标。" : "⛰ 已选择位移到 (" + (tr + 1) + "," + (tc + 1) + ")，请点击正前方目标推山。");
+    render();
+    return;
+  }
+
   // 花木兰·所向披靡：直接选择普通攻击范围内的相邻敌人（方向由目标位置决定）
   if (gameMode === "online") {
     onlineForward({
@@ -2698,6 +2757,7 @@ function useSkill(tr, tc) {
       from: { r, c },
       to: { r: tr, c: tc },
       idx: activeSkillIdx,
+      moveTo: s.type === "push" && skillSub && skillSub.kind === "push-step" ? { r: skillSub.r, c: skillSub.c } : undefined,
       reposition: s.type === "shuidiao" && skillSub ? { r: skillSub.r, c: skillSub.c } : undefined,
       chaseTarget: s.type === "chase" && skillSub && skillSub.kind === "chase-blink" ? { r: skillSub.tR, c: skillSub.tC } : undefined,
       exileTarget: s.type === "exile" && skillSub && skillSub.kind === "exile-target" ? { r: skillSub.tR, c: skillSub.tC } : undefined,
@@ -3061,28 +3121,37 @@ function useSkill(tr, tc) {
     }
 
     case "push": {
+      const baseR = skillSub && skillSub.kind === "push-step" ? skillSub.r : r;
+      const baseC = skillSub && skillSub.kind === "push-step" ? skillSub.c : c;
       const tgt = unitAt(tr, tc);
       if (!tgt || tgt.sword || tgt.player === a.player) {
         addLog("推山：请选择正前方 2 格内的敌方英雄。");
         render();
         return;
       }
-      const dr = Math.sign(tr - r), dc = Math.sign(tc - c);
-      const dist = Math.abs(tr - r) + Math.abs(tc - c);
+      const dr = Math.sign(tr - baseR), dc = Math.sign(tc - baseC);
+      const dist = Math.abs(tr - baseR) + Math.abs(tc - baseC);
       if ((dr !== 0 && dc !== 0) || dist < 1 || dist > 2) {
         addLog("推山：目标必须在正前方 1–2 格内。");
         render();
         return;
       }
-      const info = pushDirInfo(a, r, c, dr, dc);
+      const info = pushDirInfo(a, baseR, baseC, dr, dc);
       if (!info || info.unit !== tgt) {
         addLog("推山：只能推击正前方 2 格内的第一个敌人（友军或障碍会挡住路径）。");
         render();
         return;
       }
+      // 先完成十字位移，再推山
+      if (baseR !== r || baseC !== c) {
+        if (window.BFX) window.BFX.move({ from: { r, c }, to: { r: baseR, c: baseC }, color: window.BFX.heroColor(a.heroId) });
+        board[baseR][baseC] = a;
+        board[r][c] = null;
+        addLog("⛰ " + label(a) + " 踏步到 (" + (baseR + 1) + "," + (baseC + 1) + ")。");
+      }
       addLog("⛰ " + label(a) + " 发动【推山】，向" + dirName([dr, dc]) + "推击 " + label(tgt) + "。");
       if (window.BFX) {
-        window.BFX.cast({ type: "push", heroId: a.heroId, caster: { r, c }, target: { r: info.r, c: info.c }, dir: [dr, dc] });
+        window.BFX.cast({ type: "push", heroId: a.heroId, caster: { r: baseR, c: baseC }, target: { r: info.r, c: info.c }, dir: [dr, dc] });
       }
       const pushDmg = s.damage + attackerBonus(a);
       applyDamage(tgt, pushDmg, "skill", a);
@@ -3915,6 +3984,7 @@ function handleBattle(r, c) {
     }
     // 点击非目标 → 取消技能
     skillMode = false;
+    skillSub = null;
     computeTargets();
     render();
     return;
@@ -5415,32 +5485,47 @@ function aiEnumerate() {
         return;
       }
 
-      // 山丘之王·推山：只对正前方 2 格内第一个敌人释放；评估推击落点与石柱封锁价值
+      // 山丘之王·推山：可先十字位移 1–2 格，再推山；评估位移后的推击/石柱价值
       if (s.type === "push") {
-        for (const [dr, dc] of DIRS) {
-          const info = pushDirInfo(u, pos.r, pos.c, dr, dc);
-          if (!info || hiddenFrom(info.unit, u.player)) continue;
-          const e = info.unit;
-          let sc = w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0) + 6;
-          const from = findPos(e);
-          if (from) {
-            const maxSteps = Math.max(0, 2 - info.dist);
-            let nr = from.r, nc = from.c, steps = 0;
-            for (let k = 0; k < maxSteps; k++) {
-              const tr = nr + dr, tc = nc + dc;
-              if (!inBounds(tr, tc) || board[tr][tc]) break;
-              nr = tr; nc = tc; steps++;
+        const spots = [{ r: pos.r, c: pos.c }];
+        if (!rooted) {
+          for (const [dr, dc] of DIRS) {
+            for (let st = 1; st <= 2; st++) {
+              const rr = pos.r + dr * st, cc = pos.c + dc * st;
+              if (!inBounds(rr, cc)) break;
+              if (board[rr][cc]) break; // 路径被阻挡
+              spots.push({ r: rr, c: cc });
             }
-            if (steps > 0) sc += 6 + steps * 2;
-            let pillars = 0;
-            for (const [ar, ac] of DIRS) {
-              const rr = nr + ar, cc = nc + ac;
-              if (inBounds(rr, cc) && !board[rr][cc]) pillars++;
-            }
-            sc += pillars * 2; // 石柱越多，越能限制敌方走位
-            if (steps === maxSteps) sc += 2; // 完整推到距自己 2 格
           }
-          acts.push({ type: "skill", u, pos, target: { r: info.r, c: info.c }, skillIdx: si, score: sc * w.skillW });
+        }
+        for (const sp of spots) {
+          const ignore = (sp.r !== pos.r || sp.c !== pos.c) ? { r: pos.r, c: pos.c } : null;
+          for (const [dr, dc] of DIRS) {
+            const info = pushDirInfo(u, sp.r, sp.c, dr, dc, ignore);
+            if (!info || hiddenFrom(info.unit, u.player)) continue;
+            const e = info.unit;
+            let sc = w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0) + 6;
+            const from = findPos(e);
+            if (from) {
+              const maxSteps = Math.max(0, 2 - info.dist);
+              let nr = from.r, nc = from.c, steps = 0;
+              for (let k = 0; k < maxSteps; k++) {
+                const tr2 = nr + dr, tc2 = nc + dc;
+                if (!inBounds(tr2, tc2) || board[tr2][tc2]) break;
+                nr = tr2; nc = tc2; steps++;
+              }
+              if (steps > 0) sc += 6 + steps * 2;
+              let pillars = 0;
+              for (const [ar, ac] of DIRS) {
+                const rr = nr + ar, cc = nc + ac;
+                if (inBounds(rr, cc) && !board[rr][cc]) pillars++;
+              }
+              sc += pillars * 2; // 石柱越多，越能限制敌方走位
+              if (steps === maxSteps) sc += 2; // 完整推到距自己 2 格
+            }
+            if (sp.r !== pos.r || sp.c !== pos.c) sc -= dangerAt(sp.r, sp.c, u) * (w.riskW / 10); // 位移风险
+            acts.push({ type: "skill", u, pos, target: { r: info.r, c: info.c }, moveTo: (sp.r !== pos.r || sp.c !== pos.c) ? { r: sp.r, c: sp.c } : undefined, skillIdx: si, score: sc * w.skillW });
+          }
         }
         return;
       }
@@ -5578,7 +5663,14 @@ function aiApplyAction(act) {
     activeSkillIdx = act.skillIdx || 0;
     skillSub = act.wxtDir ? { kind: "wxt-dir-set", dir: [act.wxtDir.dr, act.wxtDir.dc] } : null;
     computeSkillTargets();
-    useSkill(act.target.r, act.target.c);
+    if (mover && mover.heroId === "hillking" && (act.skillIdx || 0) === 0) {
+      // 山丘之王·推山：第一步十字位移（无 moveTo 则原地），第二步推击
+      const mv = act.moveTo || { r: pos.r, c: pos.c };
+      useSkill(mv.r, mv.c);
+      useSkill(act.target.r, act.target.c);
+    } else {
+      useSkill(act.target.r, act.target.c);
+    }
     // 刺客·追猎第二段：第 2 步选择闪身落点
     if (act.landing) useSkill(act.landing.r, act.landing.c);
     // 玉皇大帝·放逐：第 2 步选择墙角

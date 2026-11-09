@@ -175,10 +175,10 @@ const isUnit = (cell) => !!cell && !cell.sword && !cell.pillar;
 /* ============================ 山丘之王·推山 / 石柱（服务端权威） ============================ */
 const PILLAR_TURNS = 3; // 生成当回合结束不扣；之后每个完整回合结束 -1
 
-function pushDirInfoS(s, u, r, c, dr, dc) {
+function pushDirInfoS(s, u, r, c, dr, dc, ignoreCell) {
   const r1 = r + dr, c1 = c + dc;
   if (!inB(r1, c1)) return null;
-  const a = s.board[r1][c1];
+  const a = (ignoreCell && ignoreCell.r === r1 && ignoreCell.c === c1) ? null : s.board[r1][c1];
   if (a) {
     if (!isUnit(a)) return null;
     if (a.player === u.player) return null;
@@ -186,7 +186,7 @@ function pushDirInfoS(s, u, r, c, dr, dc) {
   }
   const r2 = r + dr * 2, c2 = c + dc * 2;
   if (!inB(r2, c2)) return null;
-  const b = s.board[r2][c2];
+  const b = (ignoreCell && ignoreCell.r === r2 && ignoreCell.c === c2) ? null : s.board[r2][c2];
   if (isUnit(b) && b.player !== u.player) return { r: r2, c: c2, unit: b, dist: 2 };
   return null;
 }
@@ -1527,14 +1527,37 @@ function applyAction(state, player, action) {
         slog(s, "💥 " + uname(s, t) + " 被冲锋击倒，未发生击退");
       }
     } else if (sk.type === "push") {
-      // 山丘之王·推山：正前方 2 格内的第一个敌人；方向由目标位置推导
-      if (!isUnit(t) || t.player === player) return err("推山：请选择正前方 2 格内的敌方英雄");
-      const pdr = r - from.r, pdc = c - from.c;
+      // 山丘之王·推山：先可十字位移 1–2 格（原地也可），再推前方 2 格内第一个敌人
+      let sr = from.r, sc = from.c;
+      const mv = action.moveTo;
+      if (mv && mv.r != null) {
+        const mdr = mv.r - from.r, mdc = mv.c - from.c;
+        const mdist = Math.abs(mdr) + Math.abs(mdc);
+        const stay = mdr === 0 && mdc === 0;
+        if (!stay) {
+          if (isRooted(u)) return err("定身状态下无法使用位移");
+          if ((mdr !== 0 && mdc !== 0) || mdist < 1 || mdist > 2) return err("推山：位移只能选择原地或上下左右 1–2 格");
+          if (!inB(mv.r, mv.c) || s.board[mv.r][mv.c]) return err("推山：位移落点必须是空格");
+          if (mdist === 2) {
+            const mr = from.r + Math.sign(mdr), mc = from.c + Math.sign(mdc);
+            if (s.board[mr][mc]) return err("推山：位移路径被阻挡");
+          }
+          sr = mv.r; sc = mv.c;
+        }
+      }
+      if (!isUnit(t) || t.player === player) return err("推山：请选择前方 2 格内的敌方英雄");
+      const pdr = r - sr, pdc = c - sc;
       const pdist = Math.abs(pdr) + Math.abs(pdc);
       if ((pdr !== 0 && pdc !== 0) || pdist < 1 || pdist > 2) return err("推山：目标必须在正前方 1–2 格内");
       const sdr = Math.sign(pdr), sdc = Math.sign(pdc);
-      const pinfo = pushDirInfoS(s, u, from.r, from.c, sdr, sdc);
+      const ignore = (sr !== from.r || sc !== from.c) ? { r: from.r, c: from.c } : null;
+      const pinfo = pushDirInfoS(s, u, sr, sc, sdr, sdc, ignore);
       if (!pinfo || pinfo.unit !== t) return err("推山：只能推击正前方 2 格内的第一个敌人（友军或障碍会阻挡）");
+      if (sr !== from.r || sc !== from.c) {
+        s.board[sr][sc] = u;
+        s.board[from.r][from.c] = null;
+        slog(s, "⛰ " + uname(s, u) + " 踏步到 (" + (sr + 1) + "," + (sc + 1) + ")");
+      }
       const dirTxt = sdr === -1 ? "上" : sdr === 1 ? "下" : sdc === -1 ? "左" : "右";
       slog(s, "⛰ " + uname(s, u) + " 发动【" + sk.name + "】，向" + dirTxt + "推击 " + uname(s, t));
       applyDamage(s, t, sk.damage + av, u);
