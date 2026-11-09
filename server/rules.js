@@ -490,7 +490,7 @@ function createState() {
            talisman: { 1: drawTalismanId(), 2: drawTalismanId() }, talismanUsed: { 1: false, 2: false }, wildcards: { 1: 3, 2: 3 },
            assaultPlayer: 0, guardPlayer: 0, extraMoves: 0, extraTurnPending: false, graveyard: [], mists: {},
            stats: { damage: { 1: 0, 2: 0 }, kills: { 1: 0, 2: 0 }, startedAt: 0, endedAt: 0, lastKiller: null },
-           log: [], logSeq: 0 };
+           log: [], logSeq: 0, _undo: [] };
 }
 const clone = (s) => JSON.parse(JSON.stringify(s));
 const findPos = (s, u) => {
@@ -915,6 +915,7 @@ function computeDash(s, u, r, c, dr, dc, maxSteps) {  const steps = maxSteps || 
 }
 function beginTurn(s) {
   s.turnSerial = (s.turnSerial || 0) + 1;
+  s._undo = []; // 新回合：不能悔到上一回合
   // 金蝉·禅坐：自身行动回合开始时结算九宫格（开启当回合不结算）
   resolveMeditateTurnS(s, s.currentPlayer);
   if (checkVictory(s)) return;
@@ -1157,6 +1158,27 @@ function applyAction(state, player, action) {
 
   // 对战阶段
   const act = action.type;
+  // 联机悔棋：仅本回合、仅自己的上一动作（服务器保留战前快照）
+  const pushUndo = () => {
+    if (!s._undo) s._undo = [];
+    const copy = JSON.parse(JSON.stringify(s));
+    delete copy._undo;
+    s._undo.push(JSON.stringify(copy));
+    if (s._undo.length > 24) s._undo.shift();
+  };
+  if (act === "undo") {
+    if (s.phase !== "battle") return err("当前阶段不能悔棋");
+    if (!s._undo || !s._undo.length) return err("没有可悔棋的步骤");
+    const keepLog = s.log, keepSeq = s.logSeq;
+    const snap = JSON.parse(s._undo.pop());
+    const remaining = s._undo;
+    Object.assign(s, snap);
+    s._undo = remaining;
+    s.log = keepLog;
+    s.logSeq = keepSeq;
+    slog(s, "↩ 玩家" + player + " 悔棋：回退到上一步");
+    return { ok: true, state: s };
+  }
   if (act === "end") {
     if (s.turnActionsLeft === s.turnActionsMax && hasAnyActionState(s, player) && hasAnyMoveState(s, player)) return err("必须先行动，不能直接跳过回合");
     endTurn(s);
@@ -1167,6 +1189,7 @@ function applyAction(state, player, action) {
     if (s.talismanUsed[player] || !s.talisman[player]) return err("没有可用的锦囊");
     const t = talDef(s.talisman[player]);
     if (!t) return err("未知锦囊");
+    pushUndo();
     const to = action.to || {};
     const hasTo = to.r != null && to.c != null;
     switch (t.effect) {
@@ -1239,6 +1262,7 @@ function applyAction(state, player, action) {
   if (u.frozen > 0) return err("该英雄被冰封");
   if (isDisabled(u)) return err("该英雄处于【" + actionBlockReason(u) + "】状态，无法行动");
   if (isMeditatingS(u)) return err("该英雄正在禅坐，无法行动");
+  pushUndo();
 
   if (act === "move") {
     if (isGrabbed(u)) return err("该英雄处于【抓取】状态，无法行动");

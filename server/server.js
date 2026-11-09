@@ -56,6 +56,7 @@ function broadcast(room, obj) {
 /* 按接收者身份生成「可见状态」：隐藏对手的候选池 / 部署 / 锦囊（服务端隔离，前端拿不到隐藏数据） */
 function publicStateFor(state, player) {
   const s = JSON.parse(JSON.stringify(state)); // 深拷贝，绝不改动权威状态
+  delete s._undo; // 悔棋快照绝不下发（可能包含隐藏信息）
   const me = player === 1 ? 1 : 2;
   const opp = me === 1 ? 2 : 1;
   if (!player) { // 尚未入座的连接：不下发任何私密信息
@@ -105,6 +106,9 @@ function publicStateFor(state, player) {
   }
   // 6) 日志：带 only 的条目只发给指定玩家（如隐身单位的移动坐标）
   if (Array.isArray(s.log)) s.log = s.log.filter((e) => !e.only || e.only === me);
+  // 7) 联机悔棋：仅告知本人「当前是否可悔」，不下发快照内容
+  s.canUndo = !!(state._undo && state._undo.length && state.phase === "battle" && state.currentPlayer === me);
+  delete s._undo;
   return s;
 }
 /* 给房间内每位玩家分别发送“按身份过滤”的消息 */

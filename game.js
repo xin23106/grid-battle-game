@@ -95,6 +95,7 @@ let onlinePool = null;             // 联机随机选将：本人的候选英雄
 let localPools = { 1: [], 2: [] };// 本地双人：每局随机抽取的候选英雄（每方 3 名）
 let wildcards = { 1: 3, 2: 3 };    // 本地双人：每方 3 张选将卡（可任选英雄）
 let onlineWildcards = 0;           // 联机：本人的选将卡剩余数量（服务端下发）
+let onlineCanUndo = false;         // 联机：服务端是否允许本人悔棋（本回合且已有动作快照）
 let wildcardMode = false;          // 选将卡：正在从全部英雄中任选
 let pendingWildcard = false;       // 当前待放置英雄是否由选将卡指定
 let history = [];                  // 悔棋：行动前快照栈
@@ -4999,9 +5000,9 @@ function updatePanel() {
   updateSkillBar();
   skipBtn.classList.toggle("hidden", phase !== "battle");
   if (undoBtn) {
-    undoBtn.classList.toggle("hidden", phase === "over" || gameMode === "online");
-    undoBtn.disabled = !history || !history.length || history.length <= historyBase;
-    undoBtn.title = gameMode === "online" ? "联机对局不能悔棋" : "悔棋：回退到上一步";
+    undoBtn.classList.toggle("hidden", phase === "over");
+    undoBtn.disabled = gameMode === "online" ? !onlineCanUndo : (!history || !history.length || history.length <= historyBase);
+    undoBtn.title = gameMode === "online" ? "联机悔棋：回退本回合上一步" : "悔棋：回退到上一步";
   }
   const mustAct = phase === "battle" && turnActionsLeft === turnActionsMax && hasAnyAction(currentPlayer) && hasAnyMove(currentPlayer);
   skipBtn.disabled = mustAct;
@@ -6140,6 +6141,7 @@ function applyRemoteState(state) {
   // 联机随机选将：候选池与双方部署完成状态（对手候选池不会下发）
   onlinePool = state.pools && state.pools[mySide()] ? state.pools[mySide()].slice() : (gameMode === "online" ? onlinePool : null);
   if (state.wildcards) onlineWildcards = state.wildcards[mySide()] || 0;
+  onlineCanUndo = !!state.canUndo;
   if (state.placementDone) onlinePlacementDone = { 1: !!state.placementDone[1], 2: !!state.placementDone[2] };
   // 锦囊状态同步（对手的锦囊为 null=不可见）
   if (state.talisman) talisman = { 1: state.talisman[1], 2: state.talisman[2] };
@@ -6225,6 +6227,7 @@ window.onNetJoined = () => {
   wildcardMode = false;
   pendingWildcard = false;
   onlineWildcards = 0;
+  onlineCanUndo = false;
   history = [];
 };
 window.onNetStart = () => {
@@ -6300,6 +6303,7 @@ skipBtn.addEventListener("click", () => {
 if (undoBtn) {
   undoBtn.addEventListener("click", () => {
     if (undoBtn.disabled) return;
+    if (gameMode === "online") { onlineForward({ type: "undo" }); return; }
     undoStep();
   });
 }
