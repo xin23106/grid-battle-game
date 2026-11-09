@@ -76,7 +76,7 @@
         const ws = new WebSocket(SERVER_URL);
         this._ws = ws;
         // 用守卫避免旧 socket 的回调干扰新连接的状态
-        ws.onopen = () => { if (this._ws !== ws) return; this.connected = true; this.available = true; notifyStatus(); };
+        ws.onopen = () => { if (this._ws !== ws) return; this.connected = true; this.available = true; this._flush(); notifyStatus(); };
         ws.onclose = () => { if (this._ws !== ws) return; this.connected = false; this.available = false; this._ws = null; notifyStatus(); };
         ws.onerror = () => { if (this._ws !== ws) return; this.connected = false; this.available = false; };
         ws.onmessage = (ev) => {
