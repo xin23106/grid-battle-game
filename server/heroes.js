@@ -70,4 +70,9 @@ module.exports = [
     extraSkills: [
       { name: "神掌", type: "divinepalm", uses: 2, damage: 1, push: 3 },
     ] },
+  { id: "eagle", name: "鹰佐", hp: 5, sfx: "thunder",
+    skill: { name: "雷劈", type: "raikiri", uses: 1, damage1: 1, damage2: 2 },
+    extraSkills: [
+      { name: "雷鸣刀", type: "thunderblade", uses: 1, damage: 2, fire: 1, line: 1 },
+    ] },
 ];

@@ -608,6 +608,39 @@
         N(L, { at: 0.36, dur: 0.05, bp: 5200, q: 1.8, peak: 0.024, pan: 0.2 });
         break;
 
+      case "raikiri": // 鹰佐·雷劈：蓄电 → 短雷 → 强雷
+        S(L, { at: 0, f0: 90, f1: 880, dur: 0.20, peak: 0.06, wave: "sawtooth" });
+        N(L, { at: 0, dur: 0.16, bp: 3800, q: 1.6, peak: 0.05, attack: 0.01 });
+        N(L, { at: 0.18, dur: 0.09, hp: 1500, peak: 0.16, attack: 0.001 });
+        HP(L, { at: 0.18, dur: 0.28, f0: 120, f1: 40, peak: 0.24 });
+        N(L, { at: 0.30, dur: 0.10, hp: 1100, peak: 0.22, attack: 0.001 });
+        HP(L, { at: 0.30, dur: 0.34, f0: 90, f1: 30, peak: 0.30 });
+        N(L, { at: 0.34, dur: 0.4, lp: 700, peak: 0.10 });
+        break;
+      case "thunderblade": // 鹰佐·雷鸣刀：三段
+        if (st === 2) {
+          // 第二段：突进 → 插刀 → 火焰
+          N(L, { at: 0, dur: 0.14, bp: 4200, q: 2.0, sweepTo: 900, peak: 0.09 }); // 突进
+          M(L, { at: 0.08, base: 1900, dur: 0.16, peak: 0.07, partials: [1, 2.4, 4.2] }); // 插刀
+          N(L, { at: 0.10, dur: 0.22, lp: 1200, peak: 0.08, attack: 0.01 }); // 雷刀放电
+          N(L, { at: 0.24, dur: 0.42, lp: 2100, lpTo: 500, peak: 0.14, attack: 0.04 }); // 吐火
+          HP(L, { at: 0.24, dur: 0.30, f0: 160, f1: 60, peak: 0.16 });
+          for (let i = 0; i < 4; i++) N(L, { at: 0.34 + i * 0.05, dur: 0.05, bp: 3000, q: 1.8, peak: 0.03, pan: (Math.random() - 0.5) * 0.4 });
+        } else if (st === 3) {
+          // 第三段：瞬移 → 直线雷击 → 爆发
+          N(L, { at: 0, dur: 0.12, bp: 5200, q: 2.2, sweepTo: 1200, peak: 0.08 }); // 闪现
+          N(L, { at: 0.10, dur: 0.28, bp: 2400, q: 1.2, sweepTo: 4200, peak: 0.12 }); // 引雷
+          N(L, { at: 0.18, dur: 0.10, hp: 1400, peak: 0.22, attack: 0.001 });
+          HP(L, { at: 0.18, dur: 0.46, f0: 110, f1: 30, peak: 0.36 }); // 雷暴
+          N(L, { at: 0.28, dur: 0.55, lp: 600, peak: 0.14 });
+        } else {
+          // 第一段：十字突进 + 雷斩
+          N(L, { at: 0, dur: 0.13, bp: 4400, q: 2.0, sweepTo: 900, peak: 0.09 });
+          T(L, { at: 0.02, dur: 0.10, wave: "triangle", f0: 1700, f1: 2500, peak: 0.05 });
+          N(L, { at: 0.10, dur: 0.10, hp: 1900, peak: 0.18, attack: 0.001 });
+          HP(L, { at: 0.10, dur: 0.26, f0: 130, f1: 42, peak: 0.24 });
+        }
+        break;
       case "chase": // 刺客：飞镖 / 瞬步
         if (st >= 1) {
           N(L, { at: 0, dur: 0.18, bp: 4600, q: 2.0, sweepTo: 900, peak: 0.10 });  // 瞬步

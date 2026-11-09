@@ -50,7 +50,7 @@ function isDisabled(u) {
   return isGrabbed(u) || isStunned(u);
 }
 /* 定身：不能移动 / 主动位移，但仍可普通攻击与非位移技能 */
-const SELF_MOVE_SKILLS = ["dash", "blink", "ziwei", "tianwei", "shuidiao", "duanlang", "thunder", "mistdash", "stealth"];
+const SELF_MOVE_SKILLS = ["dash", "blink", "ziwei", "tianwei", "shuidiao", "duanlang", "thunder", "mistdash", "stealth", "thunderblade"];
 function isSelfMoveSkillS(u, sk) {
   if (!sk) return false;
   if (SELF_MOVE_SKILLS.indexOf(sk.type) >= 0) return true;
@@ -326,6 +326,58 @@ function endMeditateS(s, u) {
   if (healed > 0) u.hp += healed;
   slog(s, "🪷 禅坐结束：" + uname(s, u) + " 恢复 " + healed + " 点生命（累计伤害 " + md.dealt + "/3，治疗 " + md.healed + "/3）");
 }
+
+/* ============================ 鹰佐：雷劈 / 雷鸣刀（服务端） ============================ */
+const FACE_NAME_S = { "0,1": "右", "0,-1": "左", "1,0": "下", "-1,0": "上" };
+function faceDirS(u) {
+  if (!u || !Array.isArray(u.facing) || u.facing.length !== 2) return u && u.player === 2 ? [0, -1] : [0, 1];
+  return u.facing;
+}
+function faceNameS(u) { return FACE_NAME_S[faceDirS(u).join(",")] || "右"; }
+function setFaceS(u, dr, dc) { u.facing = [dr, dc]; }
+function resetThunderbladeS(u) {
+  if (!u) return;
+  u.rbStage = 0;
+  u.rbBlade = null;
+  u.rbDir = null;
+}
+function raikiriDirInfoS(s, u, r, c, dr, dc) {
+  const r1 = r + dr, c1 = c + dc;
+  if (!inB(r1, c1)) return null;
+  const cell1 = s.board[r1][c1];
+  if (isSword(cell1) || isPillar(cell1)) return null;
+  if (isUnit(cell1)) {
+    if (cell1.player === u.player) return null;
+    return { hits: [{ r: r1, c: c1, dmg: 1 }] };
+  }
+  const r2 = r + dr * 2, c2 = c + dc * 2;
+  if (!inB(r2, c2)) return null;
+  const cell2 = s.board[r2][c2];
+  if (isSword(cell2) || isPillar(cell2)) return null;
+  if (isUnit(cell2) && cell2.player !== u.player) return { hits: [{ r: r2, c: c2, dmg: 2 }] };
+  return null;
+}
+function tbForwardInfoS(s, u, r, c) {
+  const [dr, dc] = faceDirS(u);
+  const mr = r + dr, mc = c + dc;
+  if (!inB(mr, mc) || s.board[mr][mc]) return null;
+  const br = r + dr * 2, bc = c + dc * 2;
+  if (!inB(br, bc)) return null;
+  const bcell = s.board[br][bc];
+  if (isSword(bcell) || isPillar(bcell)) return null;
+  return { dir: [dr, dc], r: mr, c: mc, br, bc };
+}
+function tbLineCellsS(a, b) {
+  if (!a || !b) return null;
+  const dr = Math.sign(b.r - a.r), dc = Math.sign(b.c - a.c);
+  const adr = Math.abs(b.r - a.r), adc = Math.abs(b.c - a.c);
+  if (!(adr === 0 || adc === 0 || adr === adc)) return null;
+  const n = Math.max(adr, adc);
+  const out = [];
+  for (let k = 0; k <= n; k++) out.push({ r: a.r + dr * k, c: a.c + dc * k });
+  return out;
+}
+
 
 function isStealthedS(u) {
   return !!(u && u.stealth && (u.stealth.turns || 0) > 0);
@@ -733,6 +785,7 @@ function applyDamage(s, target, amount, source) {
 /* 单位阵亡统一处理（伤害 / 生命代价共用） */
 function handleUnitDeathS(s, target, source, pos) {
   if (!target || !pos) return;
+  resetThunderbladeS(target); // 鹰佐阵亡：终止连招并移除雷刀
   target.chaseMark = 0;
   if (target.heroId === "assassin") clearChaseMarks(s, target.uid);
   s.graveyard.push({ player: target.player, heroId: target.heroId, r: pos.r, c: pos.c, usesLeft: target.usesLeft || 0, usesArr: target.usesArr ? target.usesArr.slice() : null, swords: target.swords || 0, lockUsed: !!target.lockUsed, guixiongUsed: !!target.guixiongUsed, snapshot: JSON.parse(JSON.stringify(target)) });
@@ -959,6 +1012,8 @@ function hasAnyActionState(s, player) {
     const canMove = !rooted;
     const sk = heroDef(u.heroId).skill;
     if (!s.turnActionUsed && sk && u.usesLeft > 0 && !(rooted && isSelfMoveSkillS(u, sk))) return true;
+    // 鹰佐：雷鸣刀连招进行中（技能次数已为 0），仍可继续下一段
+    if (!s.turnActionUsed && !rooted && (u.rbStage || 0) > 0) return true;
     for (const [dr, dc] of DIRS) {
       const nr = pos.r + dr, nc = pos.c + dc;
       if (!inB(nr, nc)) continue;
@@ -1064,7 +1119,7 @@ function checkVictory(s) {
     // 对局结束：清理临时石柱 / 毒雾 / 潜行状态
     for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (isPillar(s.board[r][c])) s.board[r][c] = null;
     s.mists = {};
-    for (const u of unitsOf(s, 1).concat(unitsOf(s, 2))) clearRavenStealthS(u);
+    for (const u of unitsOf(s, 1).concat(unitsOf(s, 2))) { clearRavenStealthS(u); resetThunderbladeS(u); }
     if (s.stats && !s.stats.endedAt) s.stats.endedAt = Date.now();
     slog(s, "🏆 玩家" + s.winner + " 获胜，对局结束！");
     return true;
@@ -1141,6 +1196,7 @@ function applyAction(state, player, action) {
                       statuses: {}, lockUsed: false, sdStage: 0, dragonMoves: 0, empowerTurns: 0,
                       chaseStage: 0, chaseMark: 0, guixiongUsed: false, wxtStage: 0,
                       stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false, metalBuff: false, metalTide: 0, meditate: null,
+                      facing: player === 1 ? [0, 1] : [0, -1], rbStage: 0, rbBlade: null, rbDir: null,
                       usesArr: heroSkills(def).map((sk) => (sk.uses == null ? 9999 : sk.uses)) };
     s.placed[player].push(heroId);
     if (usedWildcard) slog(s, "🎟 玩家" + player + " 使用选将卡任选了【" + (def.name || heroId) + "】（剩余 " + s.wildcards[player] + " 张）");
@@ -1206,6 +1262,7 @@ function applyAction(state, player, action) {
           if (skillUsesLeft(s, u, i) !== max) { setSkillUses(s, u, i, max); n++; }
         });
         if (n === 0) return err("该英雄没有可刷新的技能次数");
+        if (u.heroId === "eagle") resetThunderbladeS(u); // 刷新雷鸣刀：清除旧连招与雷刀
         slog(s, "♻️ 刷新了 " + uname(s, u) + " 的技能次数至上限");
         break;
       }
@@ -1240,9 +1297,15 @@ function applyAction(state, player, action) {
                       shield: 0, frozen: 0, swords: rec.swords || 0, usesLeft: rec.usesLeft || 0,
                       usesArr: rec.usesArr && rec.usesArr.length ? rec.usesArr.slice() : undefined,
                       statuses: {}, lockUsed: !!rec.lockUsed, sdStage: 0, dragonMoves: 0, empowerTurns: 0, chaseStage: 0, chaseMark: 0, guixiongUsed: !!rec.guixiongUsed, wxtStage: 0,
-                      stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false, metalBuff: false, metalTide: 0, meditate: null };
+                      stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false, metalBuff: false, metalTide: 0, meditate: null,
+                      facing: player === 1 ? [0, 1] : [0, -1], rbStage: 0, rbBlade: null, rbDir: null };
         }
         if (!revived.statuses) revived.statuses = {};
+        // 鹰佐：复活不恢复未完成的雷鸣刀连招
+        revived.rbStage = 0;
+        revived.rbBlade = null;
+        revived.rbDir = null;
+        if (!Array.isArray(revived.facing)) revived.facing = player === 1 ? [0, 1] : [0, -1];
         s.board[to.r][to.c] = revived;
         s.graveyard.splice(idx, 1);
         slog(s, "💫 " + uname(s, s.board[to.r][to.c]) + " 复活（3 点生命）" + (cell && !cell.origin ? "，原位置被占据，改在最近空格" : ""));
@@ -1348,7 +1411,8 @@ function applyAction(state, player, action) {
     const isSd2 = sk.type === "shuidiao" && (u.sdStage || 0) === 1; // 第二段同属一套，不额外占次数
     const isChase2 = sk.type === "chase" && (u.chaseStage || 0) === 1; // 追猎第二段不额外占次数
     const isWxtCombo = sk.type === "wxt" && (u.wxtStage || 0) >= 1; // 万象天引第二/三段不重复占整套次数
-    if (!isSd2 && !isChase2 && !isWxtCombo && skillUsesLeft(s, u, idx) <= 0) return err("技能次数不足");
+    const isTbCombo = sk.type === "thunderblade" && (u.rbStage || 0) > 0; // 雷鸣刀第二/三段共享整套次数
+    if (!isSd2 && !isChase2 && !isWxtCombo && !isTbCombo && skillUsesLeft(s, u, idx) <= 0) return err("技能次数不足");
     if (sk.costSwords && (u.swords || 0) < sk.costSwords) return err("没有剑，无法发动剑圣");
     if (!skillFreeForS(u, sk) && !canActNow(s, u)) return err("本回合已经行动过了");
     slog(s, uname(s, u) + " 释放【" + sk.name + "】");
@@ -1721,6 +1785,112 @@ function applyAction(state, player, action) {
         else if (isMeditatingS(t)) slog(s, "🛡 " + uname(s, t) + " 处于禅坐，未被击退");
         else slog(s, "🖐 " + uname(s, t) + " 前方受阻，未被击退");
       }
+    } else if (sk.type === "raikiri") {
+      // 鹰佐·雷劈：选择方向，攻击正前方两格（英雄 / 石柱 / 剑刃阻挡后方）
+      const rdr = r - from.r, rdc = c - from.c;
+      if (!DIRS.some(([ddr, ddc]) => ddr === rdr && ddc === rdc)) return err("雷劈：请选择上/下/左/右一个方向");
+      const info = raikiriDirInfoS(s, u, from.r, from.c, rdr, rdc);
+      if (!info) return err("雷劈：该方向没有可命中的敌人");
+      setFaceS(u, rdr, rdc);
+      slog(s, "⚡ " + uname(s, u) + " 发动【雷劈】，朝向【" + faceNameS(u) + "】");
+      for (const hit of info.hits) {
+        const v = s.board[hit.r][hit.c];
+        if (!isUnit(v) || v.player === player) continue;
+        const nominal = hit.dmg + av;
+        applyDamage(s, v, nominal, u);
+        slog(s, "⚡ 雷劈·" + (hit.dmg === 1 ? "第一格" : "第二格") + "：" + uname(s, v) + " 受到 " + nominal + " 点雷电伤害");
+      }
+    } else if (sk.type === "thunderblade") {
+      const stage = u.rbStage || 0;
+      // 幂等 / 防重复请求：客户端必须携带它认为的当前阶段，服务器阶段已变化则拒绝
+      if (action.rbStage == null) return err("雷鸣刀：缺少阶段确认");
+      if ((action.rbStage | 0) !== stage) return err("雷鸣刀阶段已变化，请以最新状态为准");
+      if (stage === 0) {
+        // 第一段：十字位移 1 格 + 对相邻敌人 2 点雷斩
+        const mv = action.moveTo || {};
+        const mdr = (mv.r != null ? mv.r : from.r) - from.r;
+        const mdc = (mv.c != null ? mv.c : from.c) - from.c;
+        if ((mdr !== 0 && mdc !== 0) || Math.abs(mdr) + Math.abs(mdc) !== 1) return err("雷鸣刀·第一段：位移必须选择十字方向 1 格");
+        if (!inB(mv.r, mv.c) || s.board[mv.r][mv.c]) return err("雷鸣刀·第一段：位移落点必须是空格");
+        if (!isUnit(t) || t.player === player || hiddenFromS(t, player)) return err("雷鸣刀·第一段：请选择位移后相邻的敌方英雄");
+        if (Math.abs(r - mv.r) + Math.abs(c - mv.c) !== 1) return err("雷鸣刀·第一段：攻击目标必须与位移后位置相邻");
+        s.board[mv.r][mv.c] = u;
+        s.board[from.r][from.c] = null;
+        setFaceS(u, mdr, mdc);
+        u.rbDir = [mdr, mdc];
+        u.rbStage = 1;
+        slog(s, "⚡ " + uname(s, u) + " 发动【雷鸣刀·第一段·十字突进·雷斩】，位移到 (" + (mv.r + 1) + "," + (mv.c + 1) + ")");
+        applyDamage(s, t, sk.damage + av, u);
+        slog(s, "🗡 雷斩：" + uname(s, t) + " 受到 " + (sk.damage + av) + " 点伤害；第二段已就绪（可跨回合）");
+      } else if (stage === 1) {
+        // 第二段：向前突进 + 插刀（不占格）+ 雷刀放电 + 吐火 + 反向位移
+        const f = tbForwardInfoS(s, u, from.r, from.c);
+        if (!f) return err("雷鸣刀·第二段：前方无法突进或无法插刀");
+        let fireTarget = null;
+        const skipFire = !isUnit(t) || (t === u);
+        if (!skipFire) {
+          if (t.player === player || hiddenFromS(t, player)) return err("雷鸣刀·第二段：吐火目标必须是敌方英雄");
+          if (Math.abs(r - f.r) + Math.abs(c - f.c) !== 1) return err("雷鸣刀·第二段：吐火目标必须与突进后位置相邻");
+          fireTarget = t;
+        }
+        s.board[f.r][f.c] = u;
+        s.board[from.r][from.c] = null;
+        u.rbBlade = { r: f.br, c: f.bc };
+        setFaceS(u, f.dir[0], f.dir[1]);
+        u.rbDir = [f.dir[0], f.dir[1]];
+        u.rbStage = 2;
+        slog(s, "🔪 " + uname(s, u) + " 向前突进一格，在 (" + (f.br + 1) + "," + (f.bc + 1) + ") 插下【雷刀】（不占格）");
+        const bcell = s.board[f.br][f.bc];
+        if (isUnit(bcell) && bcell.player !== player) {
+          applyDamage(s, bcell, 1 + av, u);
+          slog(s, "⚡ 雷刀放电：" + uname(s, bcell) + " 受到 " + (1 + av) + " 点雷电伤害");
+        } else {
+          slog(s, "⚡ 雷刀放电：插刀格没有敌人，未造成伤害");
+        }
+        if (fireTarget) {
+          if (findPos(s, fireTarget)) {
+            applyDamage(s, fireTarget, (sk.fire || 1) + av, u);
+            slog(s, "🔥 " + uname(s, u) + " 吐火：" + uname(s, fireTarget) + " 受到 " + ((sk.fire || 1) + av) + " 点火焰伤害");
+          } else {
+            slog(s, "🔥 吐火目标已被雷刀击倒，跳过吐火");
+          }
+        } else {
+          slog(s, "🔥 吐火：突进后相邻没有合法敌方目标，跳过");
+        }
+        if (inB(from.r, from.c) && !s.board[from.r][from.c]) {
+          s.board[from.r][from.c] = u;
+          s.board[f.r][f.c] = null;
+          slog(s, "💨 反方向位移：回到 (" + (from.r + 1) + "," + (from.c + 1) + ")");
+        } else {
+          slog(s, "💨 反方向位移受阻，留在原地");
+        }
+        slog(s, "🔪 雷鸣刀·第二段完成，第三段已就绪（可跨回合）");
+      } else if (stage === 2) {
+        // 第三段：九宫格位移 + 与雷刀直线雷击
+        const tdr = r - from.r, tdc = c - from.c;
+        if (!inB(r, c) || s.board[r][c] || Math.abs(tdr) > 1 || Math.abs(tdc) > 1 || (tdr === 0 && tdc === 0)) return err("雷鸣刀·第三段：请选择九宫格内的其他合法空格");
+        const blade = u.rbBlade ? { r: u.rbBlade.r, c: u.rbBlade.c } : null;
+        s.board[r][c] = u;
+        s.board[from.r][from.c] = null;
+        slog(s, "🌩 " + uname(s, u) + " 发动【雷鸣刀·第三段·雷遁·终结】，瞬移到 (" + (r + 1) + "," + (c + 1) + ")");
+        if (blade) {
+          const line = tbLineCellsS({ r, c }, blade);
+          if (line) {
+            for (const p of line) {
+              if (p.r === r && p.c === c) continue;
+              const cell = s.board[p.r][p.c];
+              if (isPillar(cell)) { slog(s, "🧱 雷击路径被石柱阻挡"); break; }
+              if (!isUnit(cell) || cell.player === player) continue;
+              applyDamage(s, cell, (sk.line || 1) + av, u);
+              slog(s, "⚡ 直线雷击：" + uname(s, cell) + " 受到 " + ((sk.line || 1) + av) + " 点雷电伤害");
+            }
+          } else {
+            slog(s, "⚡ 雷刀与鹰佐未形成直线，未触发雷击");
+          }
+        }
+        resetThunderbladeS(u);
+        slog(s, "🔚 雷鸣刀·第三段完成，整套连招结束（雷刀已移除）");
+      } else return err("雷鸣刀阶段异常");
     } else if (sk.type === "stealth") {
       // 渡鸦·潜行：位移到雷霆万钧范围的空格（或原地），进入隐身
       const sdr = r - from.r, sdc = c - from.c;
@@ -1773,7 +1943,7 @@ function applyAction(state, player, action) {
       consumeRavenAttackStateS(s, u);
     } else return err("未知技能");
 
-    if (!isSd2 && !isChase2 && !isWxtCombo && !consumedHere) setSkillUses(s, u, idx, Math.max(0, skillUsesLeft(s, u, idx) - 1));
+    if (!isSd2 && !isChase2 && !isWxtCombo && !isTbCombo && !consumedHere) setSkillUses(s, u, idx, Math.max(0, skillUsesLeft(s, u, idx) - 1));
     if (sk.costSwords) u.swords = Math.max(0, (u.swords || 0) - sk.costSwords);
     const isFree = freeAction;
     finish(s, u, isFree, !!(sk.free && !sk.perTurn));

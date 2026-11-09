@@ -1456,3 +1456,40 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   .cell.meditating .unit { animation: none; }
 }
+
+/* =======================================================================
+   鹰佐：雷刀标记 / 朝向
+   ======================================================================= */
+.rb-blade-cell {
+  box-shadow: inset 0 0 12px rgba(139, 92, 246, .45);
+}
+.rb-blade-obj {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -62%) rotate(-12deg);
+  font-size: 18px;
+  color: #c4b5fd;
+  text-shadow: 0 0 8px rgba(139, 92, 246, .95), 0 0 16px rgba(250, 204, 21, .6);
+  pointer-events: none;
+  z-index: 3;
+  animation: rbBladeFloat 2.4s ease-in-out infinite;
+}
+@keyframes rbBladeFloat {
+  0%, 100% { transform: translate(-50%, -62%) rotate(-12deg); }
+  50% { transform: translate(-50%, -72%) rotate(-8deg); }
+}
+.facing-arrow {
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  font-size: 11px;
+  font-weight: 900;
+  color: #ddd6fe;
+  text-shadow: 0 0 5px rgba(139, 92, 246, .95);
+  pointer-events: none;
+  z-index: 4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rb-blade-obj { animation: none; }
+}
