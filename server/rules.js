@@ -78,6 +78,7 @@ function canActNow(s, u) {
 }
 /* 花木兰·所向披靡：沿 (dr,dc) 击退最多 2 格；路径上的英雄向侧方推开（服务端权威） */
 function chargeKnockbackS(s, tgt, dr, dc) {
+  if (isMeditatingS(tgt)) return { moved: 0, pushed: [], stun: false };
   const pushed = [];
   let moved = 0;
   for (let step = 0; step < 2; step++) {
@@ -91,6 +92,7 @@ function chargeKnockbackS(s, tgt, dr, dc) {
       continue;
     }
     if (cell.sword || cell.pillar) break;
+    if (isMeditatingS(cell)) break;
     const perp = [[-dc, dr], [dc, -dr]];
     const opts = [];
     for (const [pr, pc] of perp) {
@@ -110,6 +112,7 @@ function chargeKnockbackS(s, tgt, dr, dc) {
 }
 /* 雷电之主：随机击退到四周一个合法格 */
 function randomKnockback(s, t) {
+  if (isMeditatingS(t)) return null;
   const p = findPos(s, t);
   if (!p) return null;
   const opts = [];
@@ -145,6 +148,10 @@ function applyNegativeStatus(s, target, kind, opts) {
   let dmg = 0;
   if (opts.damage) dmg = applyDamage(s, target, opts.damage);
   if (!findPos(s, target)) return { applied: false, immune: false, damage: dmg, dead: true };
+  if (isMeditatingS(target)) {
+    slog(s, "🛡 禅坐：免疫了【" + (opts.label || kind) + "】");
+    return { applied: false, immune: true, damage: dmg };
+  }
   if (hasSuperArmor(s, target)) {
     slog(s, "🛡 霸体：" + uname(s, target) + " 抵抗了【" + (opts.label || kind) + "】");
     return { applied: false, immune: true, damage: dmg };
@@ -191,6 +198,7 @@ function pushDirInfoS(s, u, r, c, dr, dc, ignoreCell) {
   return null;
 }
 function pushUnitForwardS(s, tgt, dr, dc, steps) {
+  if (isMeditatingS(tgt)) return 0;
   let moved = 0;
   for (let i = 0; i < steps; i++) {
     const p = findPos(s, tgt);
@@ -203,6 +211,7 @@ function pushUnitForwardS(s, tgt, dr, dc, steps) {
   return moved;
 }
 function squeezeOutOfCellS(s, unit, cr, cc, nr, nc) {
+  if (isMeditatingS(unit)) return null;
   const p = findPos(s, unit);
   if (!p) return null;
   const ok = (r, c) => inB(r, c) && !s.board[r][c] && !(r === cr && c === cc);
@@ -264,6 +273,59 @@ function tickPillarsS(s) {
 /* ============================ 渡鸦（服务端权威） ============================ */
 const RAVEN_STEALTH_TURNS = 3;
 const MIST_TURNS = 3;
+
+/* ============================ 金蝉：禅坐 / 神掌（服务端） ============================ */
+function isMeditatingS(u) { return !!(u && u.meditate); }
+function resolveMeditateTurnS(s, player) {
+  for (const u of unitsOf(s, player)) {
+    const md = u.meditate;
+    if (!md) continue;
+    if ((s.turnSerial || 0) <= (md.castTurn || 0)) continue;
+    meditatePulseS(s, u);
+    md.turns -= 1;
+    if (md.turns <= 0) endMeditateS(s, u);
+  }
+}
+function meditatePulseS(s, u) {
+  const p = findPos(s, u);
+  if (!p) return;
+  const md = u.meditate;
+  const cells = [];
+  for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+    if (!dr && !dc) continue;
+    const rr = p.r + dr, cc = p.c + dc;
+    if (inB(rr, cc)) cells.push([rr, cc]);
+  }
+  let remD = Math.max(0, 3 - (md.dealt || 0));
+  let remH = Math.max(0, 3 - (md.healed || 0));
+  const enemies = cells.map(([r, c]) => s.board[r][c]).filter((t) => isUnit(t) && t.player !== u.player);
+  enemies.sort((a, b) => { const pa = findPos(s, a), pb = findPos(s, b); return (pa.r - pb.r) || (pa.c - pb.c); });
+  let hits = 0, heals = 0;
+  for (const e of enemies) {
+    if (remD <= 0) break;
+    if (!findPos(s, e)) continue;
+    const dealt = applyDamage(s, e, Math.min(1, remD), u);
+    if (dealt > 0) { remD -= dealt; md.dealt = (md.dealt || 0) + dealt; hits++; }
+  }
+  const allies = cells.map(([r, c]) => s.board[r][c]).filter((t) => isUnit(t) && t !== u && t.player === u.player);
+  allies.sort((a, b) => { const pa = findPos(s, a), pb = findPos(s, b); return (pa.r - pb.r) || (pa.c - pb.c); });
+  for (const a of allies) {
+    if (remH <= 0) break;
+    if (!findPos(s, a) || a.hp >= a.maxHp) continue;
+    const healed = Math.min(1, remH, a.maxHp - a.hp);
+    if (healed <= 0) continue;
+    a.hp += healed; remH -= healed; md.healed = (md.healed || 0) + healed; heals++;
+  }
+  slog(s, "🧘 禅坐·佛光：" + hits + " 名敌人受到冲击，" + heals + " 名友军恢复生命（累计伤害 " + md.dealt + "/3，治疗 " + md.healed + "/3）");
+}
+function endMeditateS(s, u) {
+  if (!u || !u.meditate) return;
+  const md = u.meditate;
+  u.meditate = null;
+  const healed = Math.max(0, Math.min(2, u.maxHp - u.hp));
+  if (healed > 0) u.hp += healed;
+  slog(s, "🪷 禅坐结束：" + uname(s, u) + " 恢复 " + healed + " 点生命（累计伤害 " + md.dealt + "/3，治疗 " + md.healed + "/3）");
+}
 
 function isStealthedS(u) {
   return !!(u && u.stealth && (u.stealth.turns || 0) > 0);
@@ -626,6 +688,10 @@ function spawnSword(s, r, c) {
 }
 function applyDamage(s, target, amount, source) {
   const pos = findPos(s, target);
+  if (isMeditatingS(target)) {
+    slog(s, "🛡 禅坐·无敌：" + uname(s, target) + " 免疫了本次伤害");
+    return 0;
+  }
   let dmg = amount;
   if (s.guardPlayer === target.player && dmg > 0) { const before = dmg; dmg = Math.max(0, dmg - 1); if (before > dmg) slog(s, "🛡 坚守令为 " + uname(s, target) + " 减免 1 点伤害"); }
   // 金属狂潮：受到伤害减半（只结算一次）
@@ -766,6 +832,7 @@ function sortUnitsByPosS(s, list) {
 }
 /* 神罗天征：击退出 (boxR,boxC) 九宫格，优先远离 (fromR,fromC) */
 function knockOutBoxAwayS(s, t, boxR, boxC, fromR, fromC) {
+  if (isMeditatingS(t)) return null;
   const p = findPos(s, t);
   if (!p) return null;
   const inBox = (r, c) => Math.abs(r - boxR) <= 1 && Math.abs(c - boxC) <= 1;
@@ -791,6 +858,7 @@ function knockOutBoxAwayS(s, t, boxR, boxC, fromR, fromC) {
 }
 /* 万象天引第三段：沿远离 (fromR,fromC) 的方向击退 1 格 */
 function pushAwayOneS(s, t, fromR, fromC) {
+  if (isMeditatingS(t)) return null;
   const p = findPos(s, t);
   if (!p) return null;
   const ok = (r, c) => inB(r, c) && !s.board[r][c] && !(r === fromR && c === fromC);
@@ -847,6 +915,9 @@ function computeDash(s, u, r, c, dr, dc, maxSteps) {  const steps = maxSteps || 
 }
 function beginTurn(s) {
   s.turnSerial = (s.turnSerial || 0) + 1;
+  // 金蝉·禅坐：自身行动回合开始时结算九宫格（开启当回合不结算）
+  resolveMeditateTurnS(s, s.currentPlayer);
+  if (checkVictory(s)) return;
   for (const u of unitsOf(s, s.currentPlayer)) {
     heroSkills(heroDef(u.heroId)).forEach((sk, i) => {
       if (sk && sk.perTurn) setSkillUses(s, u, i, sk.perTurn);
@@ -880,6 +951,7 @@ function hasAnyActionState(s, player) {
   for (const u of unitsOf(s, player)) {
     if (u.frozen > 0) continue;
     if (isDisabled(u)) continue; // 抓取 / 眩晕：本回合无法移动/攻击/用技能
+    if (isMeditatingS(u)) continue; // 禅坐：本回合无法行动
     const pos = findPos(s, u);
     if (!pos) continue;
     const rooted = isRooted(u);
@@ -1067,7 +1139,7 @@ function applyAction(state, player, action) {
                       usesLeft: def.skill.uses == null ? 9999 : def.skill.uses,
                       statuses: {}, lockUsed: false, sdStage: 0, dragonMoves: 0, empowerTurns: 0,
                       chaseStage: 0, chaseMark: 0, guixiongUsed: false, wxtStage: 0,
-                      stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false, metalBuff: false, metalTide: 0,
+                      stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false, metalBuff: false, metalTide: 0, meditate: null,
                       usesArr: heroSkills(def).map((sk) => (sk.uses == null ? 9999 : sk.uses)) };
     s.placed[player].push(heroId);
     if (usedWildcard) slog(s, "🎟 玩家" + player + " 使用选将卡任选了【" + (def.name || heroId) + "】（剩余 " + s.wildcards[player] + " 张）");
@@ -1145,7 +1217,7 @@ function applyAction(state, player, action) {
                       shield: 0, frozen: 0, swords: rec.swords || 0, usesLeft: rec.usesLeft || 0,
                       usesArr: rec.usesArr && rec.usesArr.length ? rec.usesArr.slice() : undefined,
                       statuses: {}, lockUsed: !!rec.lockUsed, sdStage: 0, dragonMoves: 0, empowerTurns: 0, chaseStage: 0, chaseMark: 0, guixiongUsed: !!rec.guixiongUsed, wxtStage: 0,
-                      stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false, metalBuff: false, metalTide: 0 };
+                      stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false, metalBuff: false, metalTide: 0, meditate: null };
         }
         if (!revived.statuses) revived.statuses = {};
         s.board[to.r][to.c] = revived;
@@ -1166,6 +1238,7 @@ function applyAction(state, player, action) {
   if (!isUnit(u) || u.player !== player) return err("无效的单位");
   if (u.frozen > 0) return err("该英雄被冰封");
   if (isDisabled(u)) return err("该英雄处于【" + actionBlockReason(u) + "】状态，无法行动");
+  if (isMeditatingS(u)) return err("该英雄正在禅坐，无法行动");
 
   if (act === "move") {
     if (isGrabbed(u)) return err("该英雄处于【抓取】状态，无法行动");
@@ -1439,6 +1512,7 @@ function applyAction(state, player, action) {
       const et = action.exileTarget && action.exileTarget.r != null ? action.exileTarget : null;
       const target = et && inB(et.r, et.c) ? s.board[et.r][et.c] : null;
       if (!isUnit(target) || target.player === player) return err("放逐目标不合法（需存活敌人）");
+      if (isMeditatingS(target)) return err("该目标处于禅坐，无法放逐");
       const cn = CORNERS.find((x) => x.corner.r === r && x.corner.c === c);
       if (!cn || !cornerOk(s, cn)) return err("该墙角不可选（其四宫格内已有英雄）");
       const tp = findPos(s, target);
@@ -1487,14 +1561,14 @@ function applyAction(state, player, action) {
           const lr = from.r + dr * 2, lc = from.c + dc * 2; // 正前方两格
           if (!inB(lr, lc) || (s.board[lr][lc] && s.board[lr][lc] !== wt)) return err("万象天引·第一段：正前方两格被占据或越界");
           const tp = findPos(s, wt);
-          if (tp.r !== lr || tp.c !== lc) { s.board[lr][lc] = wt; s.board[tp.r][tp.c] = null; }
+          if (!isMeditatingS(wt) && (tp.r !== lr || tp.c !== lc)) { s.board[lr][lc] = wt; s.board[tp.r][tp.c] = null; }
           applyDamage(s, wt, sk.damage + av, u);
           u.wxtStage = 1;
         } else {
           const lr = from.r + dr, lc = from.c + dc;        // 正前方一格
           if (!inB(lr, lc) || (s.board[lr][lc] && s.board[lr][lc] !== wt)) return err("万象天引·第二段：正前方格被占据或越界");
           const tp = findPos(s, wt);
-          if (tp.r !== lr || tp.c !== lc) { s.board[lr][lc] = wt; s.board[tp.r][tp.c] = null; }
+          if (!isMeditatingS(wt) && (tp.r !== lr || tp.c !== lc)) { s.board[lr][lc] = wt; s.board[tp.r][tp.c] = null; }
           applyDamage(s, wt, sk.damage + av, u);
           if (findPos(s, wt)) applyNegativeStatus(s, wt, "grab", { damage: 0, turns: 1, label: "万象天引·抓取" });
           u.wxtStage = 2;
@@ -1602,6 +1676,27 @@ function applyAction(state, player, action) {
     } else if (sk.type === "metaltide") {
       u.metalTide = 3;
       slog(s, "🛡 " + uname(s, u) + " 发动【金属狂潮】：本回合及之后两个自身行动回合，受到的伤害减半");
+    } else if (sk.type === "meditate") {
+      // 金蝉·禅坐：每局一次、免费，持续 3 个自身行动回合
+      if (u.meditate) return err("金蝉已在禅坐中，无法重复开启");
+      u.meditate = { turns: 3, dealt: 0, healed: 0, castTurn: s.turnSerial || 0 };
+      slog(s, "🪷 " + uname(s, u) + " 进入【禅坐】：持续 3 个自身行动回合，期间无敌、无法行动");
+    } else if (sk.type === "divinepalm") {
+      // 金蝉·神掌：相邻敌人 1 伤 + 击退最多 3 格
+      if (!isUnit(t) || t.player === player) return err("神掌：请选择相邻的敌方英雄");
+      if (Math.abs(r - from.r) + Math.abs(c - from.c) !== 1) return err("神掌：只能对相邻敌人发动");
+      const ddr = r - from.r, ddc = c - from.c;
+      slog(s, "🖐 " + uname(s, u) + " 发动【神掌】，击向 " + uname(s, t));
+      applyDamage(s, t, sk.damage + av, u);
+      if (!findPos(s, t)) {
+        slog(s, "💥 " + uname(s, t) + " 被神掌击倒，未发生击退");
+      } else {
+        const moved = pushUnitForwardS(s, t, ddr, ddc, sk.push || 3);
+        const np = findPos(s, t);
+        if (moved > 0 && np) slog(s, "➡ " + uname(s, t) + " 被击退 " + moved + " 格到 (" + (np.r + 1) + "," + (np.c + 1) + ")");
+        else if (isMeditatingS(t)) slog(s, "🛡 " + uname(s, t) + " 处于禅坐，未被击退");
+        else slog(s, "🖐 " + uname(s, t) + " 前方受阻，未被击退");
+      }
     } else if (sk.type === "stealth") {
       // 渡鸦·潜行：位移到雷霆万钧范围的空格（或原地），进入隐身
       const sdr = r - from.r, sdc = c - from.c;

@@ -98,6 +98,7 @@ let onlineWildcards = 0;           // 联机：本人的选将卡剩余数量（
 let wildcardMode = false;          // 选将卡：正在从全部英雄中任选
 let pendingWildcard = false;       // 当前待放置英雄是否由选将卡指定
 let history = [];                  // 悔棋：行动前快照栈
+let historyBase = 0;               // 悔棋下界：当前回合开始时已有的快照数量（不能悔到上一回合）
 let onlineLogSeq = 0;              // 联机：已合并的服务端日志最大 id（去重，避免重连/重复广播刷屏）
 let bfxPrevSnap = null;            // 联机：上一份权威棋盘快照（用于派生表现事件，不改变任何状态）
 let bfxPillarSnap = null;          // 联机：上一份石柱位置（用于升起 / 碎裂表现）
@@ -471,6 +472,7 @@ function cornerExileOk(cn) {
 }
 /* 将单位击飞出 (boxR,boxC) 的九宫格：移到九宫格以外的最近合法空格；无解返回 null */
 function knockOutOfBox3(v, boxR, boxC) {
+  if (isMeditating(v)) return null;
   const p = findPos(v);
   if (!p) return null;
   const inBox = (r, c) => Math.abs(r - boxR) <= 1 && Math.abs(c - boxC) <= 1;
@@ -503,6 +505,7 @@ function sortUnitsByPos(list) {
 }
 /* 神罗天征：把目标击退出 (boxR,boxC) 九宫格；优先沿远离 (fromR,fromC) 的方向 */
 function knockOutBoxAway(t, boxR, boxC, fromR, fromC) {
+  if (isMeditating(t)) return null;
   const p = findPos(t);
   if (!p) return null;
   const inBox = (r, c) => Math.abs(r - boxR) <= 1 && Math.abs(c - boxC) <= 1;
@@ -536,6 +539,7 @@ function knockOutBoxAway(t, boxR, boxC, fromR, fromC) {
 }
 /* 万象天引第三段：沿远离 (fromR,fromC) 的方向击退 1 格 */
 function pushAwayOne(t, fromR, fromC) {
+  if (isMeditating(t)) return null;
   const p = findPos(t);
   if (!p) return null;
   const ok = (r, c) => inBounds(r, c) && !board[r][c] && !(r === fromR && c === fromC);
@@ -665,6 +669,12 @@ function applyNegativeStatus(target, kind, opts) {
   if (opts.damage) dmg = applyDamage(target, opts.damage, opts.fxKind || "skill");
   const alive = !!findPos(target);
   if (!alive) return { applied: false, immune: false, damage: dmg, dead: true };
+  if (isMeditating(target)) {
+    addLog("🛡 禅坐：免疫了【" + (opts.label || kind) + "】。");
+    const p = findPos(target);
+    if (p && window.BFX) window.BFX.cast({ type: "meditateGuard", heroId: "cicada", caster: p });
+    return { applied: false, immune: true, damage: dmg };
+  }
   if (hasSuperArmor(target)) {
     addLog("🛡 霸体：抵抗了【" + (opts.label || kind) + "】的负面效果（伤害仍已结算）。");
     const p = findPos(target);
@@ -759,6 +769,7 @@ function hasAnyAction(player) {
   for (const u of unitsOf(player)) {
     if (u.frozen > 0) continue;
     if (isDisabled(u)) continue; // 被抓取 / 眩晕：本回合无法行动
+    if (isMeditating(u)) continue; // 禅坐：本回合无法行动
     const pos = findPos(u);
     if (!pos) continue;
     const s = heroDef(u.heroId).skill;
@@ -1055,12 +1066,12 @@ function clearVictoryUi() {
 }
 function undoStep() {
   if (gameMode === "online") { addLog("联机对局由服务器结算，不能悔棋。"); render(); return; }
-  if (!history.length) { addLog("没有可回退的步骤。"); render(); return; }
+  if (history.length <= historyBase) { addLog("已经回到本回合的第一步，无法再悔棋。"); render(); return; }
   applyHistorySnapshot(JSON.parse(history.pop()));
-  // AI 模式：继续回退到玩家自己的决策点，避免刚悔棋 AI 立刻又行动
+  // AI 模式：继续回退到本回合的起点，避免刚悔棋 AI 立刻又行动
   if (gameMode === "ai") {
     let guard = 0;
-    while (currentPlayer === aiPlayer && history.length && guard++ < 8) {
+    while (currentPlayer === aiPlayer && history.length > historyBase && guard++ < 8) {
       applyHistorySnapshot(JSON.parse(history.pop()));
     }
   }
@@ -1097,6 +1108,7 @@ function init() {
   else { localPools = { 1: [], 2: [] }; wildcards = { 1: 0, 2: 0 }; wildcardMode = false; pendingWildcard = false; }
   onlineWildcards = 0;
   history = [];
+  historyBase = 0;
   pendingHero = firstAvailableHero(1);
   selected = null;
   moveTargets = [];
@@ -1198,6 +1210,7 @@ function handlePlacement(r, c) {
     ravenDoubleUsed: false,     // 双动的第一次「走」是否已使用
     metalBuff: false,           // 金元素·金属强化：下一次普通攻击 +1 并定身
     metalTide: 0,               // 金元素·金属狂潮：剩余自身行动回合（受伤减半）
+    meditate: null,             // 金蝉·禅坐：{ turns, dealt, healed, castTurn }
   };
   initUnitUses(unit, def);
   board[r][c] = unit;
@@ -1215,6 +1228,7 @@ function handlePlacement(r, c) {
     if (currentPlayer === 1) {
       currentPlayer = 2;
       toPlace = SOLDIERS_PER_PLAYER;
+      historyBase = history.length; // 布阵阶段：换人后不能悔到对方布阵
       wildcardMode = false; pendingWildcard = false;
       pendingHero = firstAvailableHero(2);
     } else {
@@ -1249,6 +1263,10 @@ function clearSelection() {
 /* 一方的回合开始：恢复“每回合型”技能次数（如阿修罗·剑圣），并清空选中 */
 function beginTurn() {
   turnSerial += 1;
+  historyBase = history.length; // 本回合的悔棋下界：不能回退到上一回合
+  // 金蝉·禅坐：自身行动回合开始时结算九宫格（开启当回合不结算）
+  resolveMeditateTurn(currentPlayer);
+  if (checkVictory()) return;
   for (const u of unitsOf(currentPlayer)) {
     const skills = heroSkills(heroDef(u.heroId));
     skills.forEach((s, i) => {
@@ -1509,6 +1527,7 @@ function computeTargets() {
   const u = board[selected.r][selected.c];
   if (!u || u.sword) return;
   if (isDisabled(u)) return; // 被抓取 / 眩晕：不能移动或攻击
+  if (isMeditating(u)) return; // 禅坐：不能移动或攻击
   const canMove = !isRooted(u); // 定身：不能移动，但仍可攻击
   for (const [dr, dc] of DIRS) {
     const nr = selected.r + dr;
@@ -1855,6 +1874,17 @@ function computeSkillTargets() {
       skillTargets.push([r, c]);
       break;
 
+    case "meditate":
+      skillTargets.push([r, c]);
+      break;
+
+    case "divinepalm":
+      for (const [dr, dc] of DIRS) {
+        const t = unitAt(r + dr, c + dc);
+        if (t && t.player !== u.player) skillTargets.push([r + dr, c + dc]);
+      }
+      break;
+
     case "stealth": {
       // 雷霆万钧范围：3×3 + 上下左右 2 格；空格或原地
       for (let rr = 0; rr < SIZE; rr++) {
@@ -1946,6 +1976,12 @@ function moveHero(r, c) {
   const u = board[fr][fc];
   if (isDisabled(u)) {
     addLog(label(u) + " 处于【" + actionBlockReason(u) + "】状态，无法移动。");
+    clearSelection();
+    render();
+    return;
+  }
+  if (isMeditating(u)) {
+    addLog(label(u) + " 正在【禅坐】，无法移动。");
     clearSelection();
     render();
     return;
@@ -2067,6 +2103,13 @@ function payHpCost(u, amount, reason) {
 /* 伤害应用：先扣护盾，再扣生命；生命归零立即从棋盘移除 */
 function applyDamage(target, amount, kind, source) {
   const pos = findPos(target);
+  // 金蝉·禅坐：完全免疫伤害（含毒雾等持续伤害）
+  if (isMeditating(target)) {
+    addLog("🛡 禅坐·无敌：" + label(target) + " 免疫了本次伤害。");
+    if (pos && window.BFX) window.BFX.cast({ type: "meditateGuard", heroId: "cicada", caster: pos });
+    if (window.SFX) window.SFX.play("meditateGuard", { hero: "cicada" });
+    return 0;
+  }
   let dmg = amount;
 
   // 坚守令：己方英雄受到的每次伤害 -1（最低 0）
@@ -2195,6 +2238,12 @@ function normalAttack(attacker, target) {
     render();
     return;
   }
+  if (isMeditating(attacker)) {
+    addLog(label(attacker) + " 正在【禅坐】，无法普通攻击。");
+    clearSelection();
+    render();
+    return;
+  }
   pushHistory();
   // 记录攻击前的位置：普通攻击若最终击杀目标，攻击者需占据目标原先所在的格子
   const atkBefore = findPos(attacker);
@@ -2292,6 +2341,7 @@ function chargeTargets(u, r, c) {
 /* 击退最多 2 格；路径上的英雄向侧方推开。
  * 返回 { moved, pushed, stun }：纯棋盘结算，伤害/眩晕/表现由调用方按实际事件处理。 */
 function chargeKnockback(tgt, dr, dc) {
+  if (isMeditating(tgt)) return { moved: 0, pushed: [], stun: false };
   const pushed = [];
   let moved = 0;
   for (let step = 0; step < 2; step++) {
@@ -2333,6 +2383,7 @@ function chargePreview(u, tr, tc, dr, dc) {
     const cell = board[nr][nc];
     if (!cell) { r = nr; c = nc; moved++; continue; }
     if (cell.sword || isPillar(cell)) break;
+    if (isMeditating(cell)) break; // 禅坐敌人不可被侧推
     const perp = [[-dc, dr], [dc, -dr]];
     let ok = false;
     for (const [pr, pc] of perp) {
@@ -2367,6 +2418,7 @@ function pushDirInfo(u, r, c, dr, dc, ignoreCell) {
 }
 /* 向前推最多 steps 格；遇英雄 / 剑刃 / 石柱 / 边界立刻停下 */
 function pushUnitForward(tgt, dr, dc, steps) {
+  if (isMeditating(tgt)) return 0; // 禅坐：免疫强制位移
   let moved = 0;
   for (let i = 0; i < steps; i++) {
     const p = findPos(tgt);
@@ -2380,6 +2432,7 @@ function pushUnitForward(tgt, dr, dc, steps) {
 }
 /* 强制挤开：占据石柱格的英雄被沿“远离目标”的方向推开；无解则移到最近空格（与天威一致） */
 function squeezeOutOfCell(unit, cr, cc, nr, nc) {
+  if (isMeditating(unit)) return null;
   const p = findPos(unit);
   if (!p) return null;
   const ok = (r, c) => inBounds(r, c) && !board[r][c] && !(r === cr && c === cc);
@@ -2598,6 +2651,68 @@ function tickMetalTurn(player) {
       addLog("🛡 " + label(u) + " 的【金属狂潮】结束，受到的伤害恢复正常。");
     }
   }
+}
+
+/* ============================ 金蝉：禅坐 / 神掌 ============================ */
+function isMeditating(u) {
+  return !!(u && u.meditate);
+}
+/* 自身行动回合开始：结算一次九宫格（开启当回合不结算） */
+function resolveMeditateTurn(player) {
+  for (const u of unitsOf(player)) {
+    const md = u.meditate;
+    if (!md) continue;
+    if (turnSerial <= (md.castTurn || 0)) continue;
+    meditatePulse(u);
+    md.turns -= 1;
+    if (md.turns <= 0) endMeditate(u);
+  }
+}
+function meditatePulse(u) {
+  const p = findPos(u);
+  if (!p) return;
+  const md = u.meditate;
+  const cells = [];
+  for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+    if (!dr && !dc) continue;
+    const rr = p.r + dr, cc = p.c + dc;
+    if (inBounds(rr, cc)) cells.push([rr, cc]);
+  }
+  let remD = Math.max(0, 3 - (md.dealt || 0));
+  let remH = Math.max(0, 3 - (md.healed || 0));
+  const enemies = cells.map(([r, c]) => unitAt(r, c)).filter((t) => t && t.player !== u.player);
+  enemies.sort((a, b) => { const pa = findPos(a), pb = findPos(b); return (pa.r - pb.r) || (pa.c - pb.c); });
+  let hitCount = 0;
+  for (const e of enemies) {
+    if (remD <= 0) break;
+    if (!findPos(e)) continue;
+    const dealt = applyDamage(e, Math.min(1, remD), "skill", u);
+    if (dealt > 0) { remD -= dealt; md.dealt = (md.dealt || 0) + dealt; hitCount++; }
+  }
+  const allies = cells.map(([r, c]) => unitAt(r, c)).filter((t) => t && t !== u && t.player === u.player);
+  allies.sort((a, b) => { const pa = findPos(a), pb = findPos(b); return (pa.r - pb.r) || (pa.c - pb.c); });
+  let healCount = 0;
+  for (const a of allies) {
+    if (remH <= 0) break;
+    if (!findPos(a) || a.hp >= a.maxHp) continue;
+    const healed = Math.min(1, remH, a.maxHp - a.hp);
+    if (healed <= 0) continue;
+    a.hp += healed; remH -= healed; md.healed = (md.healed || 0) + healed; healCount++;
+  }
+  addLog("🧘 禅坐·佛光：" + hitCount + " 名敌人受到冲击，" + healCount + " 名友军恢复生命（累计伤害 " + md.dealt + "/3，治疗 " + md.healed + "/3）。");
+  if (window.BFX) window.BFX.cast({ type: "meditatePulse", heroId: "cicada", caster: p, cells });
+  if (window.SFX) window.SFX.play("meditatePulse", { hero: "cicada" });
+}
+function endMeditate(u) {
+  if (!u || !u.meditate) return;
+  const md = u.meditate;
+  u.meditate = null;
+  const healed = Math.max(0, Math.min(2, u.maxHp - u.hp));
+  if (healed > 0) u.hp += healed;
+  addLog("🪷 禅坐结束：" + label(u) + " 恢复 " + healed + " 点生命（累计伤害 " + md.dealt + "/3，治疗 " + md.healed + "/3）。");
+  const p = findPos(u);
+  if (p && window.BFX) window.BFX.cast({ type: "meditateEnd", heroId: "cicada", caster: p });
+  if (window.SFX) window.SFX.play("meditateEnd", { hero: "cicada" });
 }
 
 function useSkill(tr, tc) {
@@ -3001,6 +3116,54 @@ function useSkill(tr, tc) {
       addLog("🛡 " + label(a) + " 发动【金属狂潮】：本回合及之后两个自身行动回合，受到的伤害减半。");
       if (window.BFX) window.BFX.cast({ type: "metaltide", heroId: a.heroId, caster: { r, c } });
       if (window.SFX) window.SFX.play("metalTide", { hero: "metal" });
+      break;
+    }
+
+    case "meditate": {
+      if (a.meditate) {
+        addLog("金蝉已在禅坐中，无法重复开启。");
+        render();
+        return;
+      }
+      a.meditate = { turns: 3, dealt: 0, healed: 0, castTurn: turnSerial };
+      addLog("🪷 " + label(a) + " 进入【禅坐】：持续 3 个自身行动回合，期间无敌、无法行动。");
+      if (window.BFX) window.BFX.cast({ type: "meditate", heroId: a.heroId, caster: { r, c } });
+      if (window.SFX) window.SFX.play("meditateEnter", { hero: "cicada" });
+      break;
+    }
+
+    case "divinepalm": {
+      const tgt = unitAt(tr, tc);
+      if (!tgt || tgt.player === a.player) {
+        addLog("神掌：请选择普通攻击范围内的敌方英雄。");
+        clearSelection();
+        render();
+        return;
+      }
+      if (Math.abs(tr - r) + Math.abs(tc - c) !== 1) {
+        addLog("神掌：只能对相邻敌人发动。");
+        clearSelection();
+        render();
+        return;
+      }
+      const dr = Math.sign(tr - r), dc = Math.sign(tc - c);
+      addLog("🖐 " + label(a) + " 发动【神掌】，击向 " + label(tgt) + "。");
+      if (window.BFX) window.BFX.cast({ type: "divinepalm", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc }, dir: [dr, dc] });
+      applyDamage(tgt, s.damage, "skill", a);
+      if (!findPos(tgt)) {
+        addLog("💥 " + label(tgt) + " 被神掌击倒，未发生击退。");
+        break;
+      }
+      const moved = pushUnitForward(tgt, dr, dc, s.push || 3);
+      const np = findPos(tgt);
+      if (moved > 0 && np) {
+        if (window.BFX) window.BFX.move({ from: { r: tr, c: tc }, to: { r: np.r, c: np.c }, color: window.BFX.heroColor(tgt.heroId) });
+        addLog("➡ " + label(tgt) + " 被击退 " + moved + " 格到 (" + (np.r + 1) + "," + (np.c + 1) + ")。");
+      } else if (isMeditating(tgt)) {
+        addLog("🛡 " + label(tgt) + " 处于禅坐，未被击退。");
+      } else {
+        addLog("🖐 " + label(tgt) + " 前方受阻，未被击退。");
+      }
       break;
     }
 
@@ -3511,6 +3674,13 @@ function useSkill(tr, tc) {
         render();
         return;
       }
+      if (isMeditating(tgt)) {
+        addLog("🛡 禅坐：免疫放逐。");
+        skillSub = null;
+        clearSelection();
+        render();
+        return;
+      }
       const from = findPos(tgt);
       if (window.BFX) window.BFX.cast({ type: "exile", heroId: a.heroId, caster: { r, c }, target: { r: from.r, c: from.c }, from: { r: from.r, c: from.c }, to: { r: cn.corner.r, c: cn.corner.c } });
       board[cn.corner.r][cn.corner.c] = tgt;
@@ -3613,7 +3783,7 @@ function useSkill(tr, tc) {
         }
         const from = findPos(wt);
         if (window.BFX) window.BFX.cast({ type: "wxt", heroId: a.heroId, caster: { r, c }, target: { r: lr, c: lc }, stage: 0 });
-        if (from.r !== lr || from.c !== lc) {
+        if (!isMeditating(wt) && (from.r !== lr || from.c !== lc)) {
           board[lr][lc] = wt;
           board[from.r][from.c] = null;
         }
@@ -3632,7 +3802,7 @@ function useSkill(tr, tc) {
         }
         const from = findPos(wt);
         if (window.BFX) window.BFX.cast({ type: "wxt", heroId: a.heroId, caster: { r, c }, target: { r: lr, c: lc }, stage: 1 });
-        if (from.r !== lr || from.c !== lc) {
+        if (!isMeditating(wt) && (from.r !== lr || from.c !== lc)) {
           board[lr][lc] = wt;
           board[from.r][from.c] = null;
         }
@@ -3702,6 +3872,11 @@ function activateSkill(idx) {
   // 渡鸦·潜行双动进行中：第二次行动只能是「移动」或「普通攻击」
   if (isStealthed(u) && u.ravenDoubleUsed && !turnActionUsed) {
     addLog("🌑 潜行双动：第一次移动后只能再进行一次移动或普通攻击。");
+    render();
+    return;
+  }
+  if (isMeditating(u)) {
+    addLog(label(u) + " 正在【禅坐】，无法使用其它技能。");
     render();
     return;
   }
@@ -3923,6 +4098,7 @@ function useTalismanEffect(id, tr, tc) {
         ravenDoubleUsed: false,
         metalBuff: false,
         metalTide: 0,
+        meditate: null,
       };
       if (!revived.statuses) revived.statuses = {};
       board[tr][tc] = revived;
@@ -4101,6 +4277,7 @@ function performDragonMove(r, c) {
 
 /* 雷电之主：将目标随机击退到其四周一个合法格（棋盘内、非墙、无单位） */
 function randomKnockback(t) {
+  if (isMeditating(t)) return null;
   const p = findPos(t);
   if (!p) return null;
   const opts = [];
@@ -4339,6 +4516,7 @@ function render() {
         if (u.metalBuff) cell.classList.add("metal-buffed");
         if (u.metalTide > 0) cell.classList.add("metal-tide");
         if (isRooted(u)) cell.classList.add("rooted");
+        if (isMeditating(u)) cell.classList.add("meditating");
 
         cell.appendChild(buildUnit(u));
 
@@ -4713,6 +4891,9 @@ function renderDetailCard() {
     if (u.metalTide > 0) st.push("金属狂潮：剩余 " + u.metalTide + " 个自身行动回合（受到伤害减半）");
     if (u.metalBuff) st.push("金属强化：下一次普通攻击 +1 并定身目标 1 回合");
   }
+  if (u.heroId === "cicada") {
+    if (isMeditating(u)) st.push("禅坐：无敌 · 剩余 " + u.meditate.turns + " 个自身回合 · 累计伤害 " + (u.meditate.dealt || 0) + "/3 · 累计治疗 " + (u.meditate.healed || 0) + "/3");
+  }
   if (flankImmune(u)) st.push("免疫夹击加成");
   if (u.frozen > 0) st.push("冰封：跳过 " + u.frozen + " 个回合");
   if (u.statuses) for (const k of Object.keys(u.statuses)) st.push((u.statuses[k].label || k) + "（剩 " + (u.statuses[k].turns != null ? u.statuses[k].turns : 1) + "）");
@@ -4819,7 +5000,7 @@ function updatePanel() {
   skipBtn.classList.toggle("hidden", phase !== "battle");
   if (undoBtn) {
     undoBtn.classList.toggle("hidden", phase === "over" || gameMode === "online");
-    undoBtn.disabled = !history || !history.length;
+    undoBtn.disabled = !history || !history.length || history.length <= historyBase;
     undoBtn.title = gameMode === "online" ? "联机对局不能悔棋" : "悔棋：回退到上一步";
   }
   const mustAct = phase === "battle" && turnActionsLeft === turnActionsMax && hasAnyAction(currentPlayer) && hasAnyMove(currentPlayer);
@@ -5342,6 +5523,7 @@ function aiEnumerate() {
   for (const u of unitsOf(aiPlayer)) {
     if (u.frozen > 0) continue;
     if (isDisabled(u)) continue; // 被抓取 / 眩晕：本回合无法行动
+    if (isMeditating(u)) continue; // 禅坐：本回合无法行动
     if (turnActorUid && u.uid !== turnActorUid) continue; // 强化回合：只能由同一英雄行动
     const pos = findPos(u);
     if (!pos) continue;
@@ -5548,6 +5730,42 @@ function aiEnumerate() {
         if (u.metalTide > 0) return;
         if (u.hp <= 4 || dangerAt(pos.r, pos.c, u) >= 6) {
           acts.push({ type: "skill", u, pos, target: { r: pos.r, c: pos.c }, skillIdx: si, score: 30 * w.skillW });
+        }
+        return;
+      }
+
+      // 金蝉·禅坐：血量低或被围时开启；离场无敌 + 佛光
+      if (s.type === "meditate") {
+        if (u.meditate) return;
+        let nearE = 0, nearA = 0;
+        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+          if (!dr && !dc) continue;
+          const rr = pos.r + dr, cc = pos.c + dc;
+          if (!inBounds(rr, cc)) continue;
+          const e = unitAt(rr, cc);
+          if (e && e.player !== u.player) nearE++;
+          if (e && e.player === u.player && e !== u) nearA++;
+        }
+        let sc = 18 + nearE * 12 + nearA * 6;
+        if (u.hp <= 2) sc += 10;
+        acts.push({ type: "skill", u, pos, target: { r: pos.r, c: pos.c }, skillIdx: si, score: sc * w.skillW });
+        return;
+      }
+
+      // 金蝉·神掌：伤害 + 击退距离 / 击杀价值
+      if (s.type === "divinepalm") {
+        for (const [dr, dc] of DIRS) {
+          const e = unitAt(pos.r + dr, pos.c + dc);
+          if (!e || e.player === u.player || hiddenFrom(e, u.player)) continue;
+          let sc = w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0) + 8;
+          let nr = pos.r + dr, nc = pos.c + dc, steps = 0;
+          for (let k = 0; k < (s.push || 3); k++) {
+            const tr2 = nr + dr, tc2 = nc + dc;
+            if (!inBounds(tr2, tc2) || board[tr2][tc2]) break;
+            nr = tr2; nc = tc2; steps++;
+          }
+          sc += steps * 3; // 击退越远越好
+          acts.push({ type: "skill", u, pos, target: { r: pos.r + dr, c: pos.c + dc }, skillIdx: si, score: sc * w.skillW });
         }
         return;
       }
@@ -6466,6 +6684,7 @@ window.GameAPI = {
     reviveOptions = [];
     mists = {};
     history = [];
+    historyBase = 0;
     // 对局统计 & 结算演出：重置（测试/新局共用）
     matchStats = { damage: { 1: 0, 2: 0 }, kills: { 1: 0, 2: 0 }, startedAt: Date.now(), endedAt: 0, lastKiller: null };
     clearVictoryTimers();
@@ -6502,6 +6721,7 @@ window.GameAPI = {
         ravenDoubleUsed: !!spec.ravenDoubleUsed,
         metalBuff: !!spec.metalBuff,
         metalTide: spec.metalTide || 0,
+        meditate: spec.meditate ? JSON.parse(JSON.stringify(spec.meditate)) : null,
       };
       initUnitUses(unit, def);
       if (spec.uses != null) unit.usesLeft = spec.uses;

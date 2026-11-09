@@ -696,6 +696,18 @@
         M(L, { at: 0.24, base: 900, dur: 0.34, peak: 0.06, partials: [1, 2.1, 3.7] });
         break;
 
+      case "meditate": // 金蝉·禅坐：低沉钟声 + 金光升起
+        HP(L, { at: 0, dur: 0.40, f0: 130, f1: 55, peak: 0.16 });
+        T(L, { at: 0.02, dur: 0.55, wave: "sine", f0: 330, peak: 0.06 });
+        T(L, { at: 0.10, dur: 0.50, wave: "sine", f0: 495, peak: 0.04 });
+        M(L, { at: 0.05, base: 920, dur: 0.40, peak: 0.05, partials: [1, 2, 3.2] });
+        break;
+      case "divinepalm": // 金蝉·神掌：掌风 → 重击 → 冲击
+        N(L, { at: 0, dur: 0.16, bp: 2200, q: 1.0, sweepTo: 700, peak: 0.14 });
+        HP(L, { at: 0.06, dur: 0.24, f0: 150, f1: 60, peak: 0.22 });
+        M(L, { at: 0.08, base: 1500, dur: 0.20, peak: 0.06, partials: [1, 2.5, 4.8] });
+        break;
+
       case "stealth": // 渡鸦·潜行：暗影下沉 + 羽毛轻响
         N(L, { at: 0, dur: 0.30, bp: 1800, q: 0.9, sweepTo: 400, peak: 0.10, attack: 0.05 });
         T(L, { at: 0, dur: 0.30, wave: "sine", f0: 420, f1: 180, peak: 0.06 });
@@ -810,6 +822,22 @@
         T(L, { at: 0, dur: 0.14, wave: "triangle", f0: 260, f1: 180, peak: 0.05 });
         N(L, { at: 0, dur: 0.12, lp: 900, peak: 0.05 });
         break;
+      case "meditateEnter":
+        HP(L, { at: 0, dur: 0.42, f0: 120, f1: 50, peak: 0.18 });
+        T(L, { at: 0.02, dur: 0.6, wave: "sine", f0: 320, peak: 0.06 });
+        break;
+      case "meditatePulse":
+        T(L, { at: 0, dur: 0.45, wave: "sine", f0: 660, f1: 880, peak: 0.05 });
+        N(L, { at: 0, dur: 0.35, bp: 2800, peak: 0.05 });
+        break;
+      case "meditateEnd":
+        [0, 4, 7, 12].forEach((q, i) => T(L, { at: i * 0.08, dur: 0.4, wave: "triangle", f0: 523 * Math.pow(2, q / 12), peak: 0.06 }));
+        N(L, { at: 0, dur: 0.5, lp: 900, peak: 0.06 });
+        break;
+      case "meditateGuard":
+        T(L, { at: 0, dur: 0.16, wave: "sine", f0: 880, peak: 0.04 });
+        N(L, { at: 0, dur: 0.12, bp: 3200, peak: 0.04 });
+        break;
       case "root":
         M(L, { at: 0, base: 700, dur: 0.22, peak: 0.05, partials: [1, 2.2] });
         HP(L, { at: 0.02, dur: 0.18, f0: 130, f1: 60, peak: 0.10 });
@@ -860,6 +888,7 @@
     pillarRise: 120, pillarBreak: 160,
     stealthEnter: 200, stealthEnd: 120, mist: 220, poison: 180, refresh: 300,
     cost: 220, root: 180, metalGuard: 120, metalTide: 400,
+    meditateEnter: 300, meditatePulse: 180, meditateEnd: 400, meditateGuard: 120,
     talisman: 120, dash: 90, dashHit: 60, skill: 60, skillHit: 45, win: 500, lose: 500, draw: 500,
     turnEnd: 220, turnSweep: 200, turnStart: 260, extraTurn: 400,
   };

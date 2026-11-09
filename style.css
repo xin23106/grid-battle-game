@@ -1431,3 +1431,28 @@ html, body {
   box-shadow: 0 0 0 2px rgba(251, 191, 36, .9), 0 0 18px rgba(251, 191, 36, .35);
   border-style: solid;
 }
+
+/* =======================================================================
+   金蝉：禅坐无敌
+   ======================================================================= */
+.cell.meditating .unit {
+  box-shadow: 0 0 0 2px rgba(253, 230, 138, .95), 0 0 26px rgba(251, 191, 36, .55);
+  animation: meditateGlow 2.2s ease-in-out infinite;
+}
+.cell.meditating::before {
+  content: "🪷";
+  position: absolute;
+  left: 3px;
+  top: 2px;
+  font-size: 12px;
+  filter: drop-shadow(0 0 5px rgba(251, 191, 36, .95));
+  pointer-events: none;
+  z-index: 4;
+}
+@keyframes meditateGlow {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(253, 230, 138, .85), 0 0 16px rgba(251, 191, 36, .4); }
+  50% { box-shadow: 0 0 0 3px rgba(253, 230, 138, 1), 0 0 30px rgba(251, 191, 36, .7); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cell.meditating .unit { animation: none; }
+}

@@ -45,7 +45,7 @@
     assassin: "#22d3ee", warlock: "#a5f3fc", cleric: "#86efac", guardian: "#93c5fd",
     asura: "#e2e8f0", lone: "#facc15", cang: "#38bdf8", longren: "#fbbf24",
     thunder: "#c084fc", vampire: "#e11d48", jade: "#a78bfa", xiangyu: "#f87171",
-    tiandao: "#c084fc", huamulan: "#f43f5e", hillking: "#a8a29e", raven: "#8b5cf6", metal: "#fbbf24",
+    tiandao: "#c084fc", huamulan: "#f43f5e", hillking: "#a8a29e", raven: "#8b5cf6", metal: "#fbbf24", cicada: "#fcd34d",
   };
   function heroColor(id) { return HERO_COLOR[id] || "#93c5fd"; }
 
@@ -1347,6 +1347,65 @@
       case "metalGuard": {
         push({ kind: "ring", x, y, r0: geo.cell * 0.5, r1: geo.cell * 0.22, color: "#d4d4d8", width: 3, dur: dur(300) });
         push({ kind: "ring", x, y, r0: geo.cell * 0.25, r1: geo.cell * 0.6, color: "#fbbf24", width: 2, dur: dur(340), delay: dur(40) });
+        break;
+      }
+      case "meditate": {
+        // 金蝉·禅坐：莲花佛光 + 盘坐光环
+        push({ kind: "ring", x, y, r0: geo.cell * 0.15, r1: geo.cell * 0.95, color: "#fcd34d", width: 4, dur: dur(620) });
+        push({ kind: "ring", x, y, r0: geo.cell * 0.35, r1: geo.cell * 1.15, color: "#fef3c7", width: 2.5, dur: dur(760), delay: dur(90) });
+        push({ kind: "rune", x, y, r: geo.cell * 0.5, color: "#fde68a", sides: 8, dur: dur(760) });
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2;
+          push({ kind: "ghost", x: x + Math.cos(a) * geo.cell * 0.55, y: y + Math.sin(a) * geo.cell * 0.55, r: geo.cell * 0.13, color: "#fde68a", dur: dur(620), delay: dur(i * 30) });
+        }
+        spawn(x, y, 18, { color: "#fde68a", speed: 1.2, life: 800, size: 2, angle: -Math.PI / 2, spread: 1.6, grav: -0.02 });
+        push({ kind: "text", x, y: y - geo.cell * 0.8, text: "禅坐", color: "#fef3c7", size: 15, dur: dur(1000), rise: 20 });
+        break;
+      }
+      case "meditatePulse": {
+        // 九宫格佛光：敌人冲击 / 友军治疗
+        push({ kind: "ring", x, y, r0: geo.cell * 0.3, r1: geo.cell * 1.45, color: "#fcd34d", width: 3.5, dur: dur(560) });
+        const cs = m.cells || [];
+        for (const cell of cs) {
+          const rr = cell.r !== undefined ? cell.r : cell[0];
+          const cc = cell.c !== undefined ? cell.c : cell[1];
+          const xx = px(cc), yy = py(rr);
+          if (rr === c.r && cc === c.c) continue;
+          push({ kind: "ring", x: xx, y: yy, r0: 3, r1: geo.cell * 0.42, color: "#fde68a", width: 2, dur: dur(380), delay: dur(40) });
+          spawn(xx, yy, 6, { color: "#fde68a", speed: 1.6, life: 420, size: 1.8 });
+        }
+        break;
+      }
+      case "meditateEnd": {
+        // 莲华绽放 + 恢复 2 点
+        for (let i = 0; i < 3; i++) push({ kind: "ring", x, y, r0: geo.cell * 0.2, r1: geo.cell * (1.0 + i * 0.45), color: i % 2 ? "#fde68a" : "#86efac", width: 3, dur: dur(700), delay: dur(i * 90) });
+        spawn(x, y, 24, { color: "#bbf7d0", speed: 1.4, life: 800, size: 2.2, angle: -Math.PI / 2, spread: 1.4, grav: -0.02 });
+        push({ kind: "text", x, y: y - geo.cell * 0.7, text: "禅定圆满 +2", color: "#bbf7d0", size: 14, dur: dur(1000), rise: 22 });
+        break;
+      }
+      case "meditateGuard": {
+        push({ kind: "ring", x, y, r0: geo.cell * 0.5, r1: geo.cell * 0.24, color: "#fde68a", width: 3, dur: dur(300) });
+        push({ kind: "rune", x, y, r: geo.cell * 0.4, color: "#fef3c7", sides: 8, dur: dur(420) });
+        break;
+      }
+      case "divinepalm": {
+        // 金蝉·神掌：金色掌印 + 冲击波 + 击退轨迹
+        const d0 = m.dir || [0, 1];
+        const tx2 = tg.c !== undefined ? px(tg.c) : x + d0[1] * geo.cell;
+        const ty2 = tg.r !== undefined ? py(tg.r) : y + d0[0] * geo.cell;
+        const ang = Math.atan2(ty2 - y, tx2 - x);
+        push({ kind: "ring", x, y, r0: geo.cell * 0.4, r1: geo.cell * 0.18, color: "#fbbf24", width: 3, dur: dur(280) });
+        // 掌印：用圆形 + 五道短指节表示
+        push({ kind: "ghost", x: tx2, y: ty2, r: geo.cell * 0.34, color: "#fcd34d", dur: dur(300) });
+        for (let i = -2; i <= 2; i++) {
+          push({ kind: "line", x: tx2 + Math.cos(ang + Math.PI / 2) * i * 3, y: ty2 + Math.sin(ang + Math.PI / 2) * i * 3, x2: tx2 + Math.cos(ang) * geo.cell * 0.34, y2: ty2 + Math.sin(ang) * geo.cell * 0.34, color: "#fde68a", width: 2, dur: dur(320) });
+        }
+        push({ kind: "ring", x: tx2, y: ty2, r0: 4, r1: geo.cell * 0.7, color: "#fbbf24", width: 4, dur: dur(360), delay: dur(50) });
+        for (let i = 1; i <= 3; i++) {
+          push({ kind: "ghost", x: tx2 + d0[1] * geo.cell * i * 0.6, y: ty2 + d0[0] * geo.cell * i * 0.6, r: geo.cell * 0.18, color: "#fcd34d", dur: dur(260), delay: dur(i * 60) });
+        }
+        spawn(tx2, ty2, 16, { color: "#fde68a", speed: 2.6, life: 480, size: 2.2, angle: ang, spread: 1.2 });
+        if (tg.r !== undefined) addMark("impact", tg.r, tg.c, "#fbbf24");
         break;
       }
       case "stun": {

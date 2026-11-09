@@ -65,4 +65,9 @@ module.exports = [
       { name: "金属装甲", type: "metalarmor", uses: 1, perTurn: 1, free: true, costHp: 1 },
       { name: "金属狂潮", type: "metaltide", uses: 1, free: true },
     ] },
+  { id: "cicada", name: "金蝉", hp: 5, sfx: "holy",
+    skill: { name: "禅坐", type: "meditate", uses: 1, free: true },
+    extraSkills: [
+      { name: "神掌", type: "divinepalm", uses: 2, damage: 1, push: 3 },
+    ] },
 ];
