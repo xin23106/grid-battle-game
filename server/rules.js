@@ -1536,12 +1536,8 @@ function applyAction(state, player, action) {
         const stay = mdr === 0 && mdc === 0;
         if (!stay) {
           if (isRooted(u)) return err("定身状态下无法使用位移");
-          if ((mdr !== 0 && mdc !== 0) || mdist < 1 || mdist > 2) return err("推山：位移只能选择原地或上下左右 1–2 格");
+          if ((mdr !== 0 && mdc !== 0) || mdist !== 1) return err("推山：位移只能选择原地或上下左右 1 格");
           if (!inB(mv.r, mv.c) || s.board[mv.r][mv.c]) return err("推山：位移落点必须是空格");
-          if (mdist === 2) {
-            const mr = from.r + Math.sign(mdr), mc = from.c + Math.sign(mdc);
-            if (s.board[mr][mc]) return err("推山：位移路径被阻挡");
-          }
           sr = mv.r; sc = mv.c;
         }
       }

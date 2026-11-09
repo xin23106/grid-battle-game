@@ -1889,19 +1889,15 @@ function computeSkillTargets() {
       const rooted = isRooted(u);
       const stepping = skillSub && skillSub.kind === "push-step";
       if (!rooted && !stepping) {
-        // 第一步：十字位移（原地 / 上下左右 1–2 格，路径不可穿越单位、剑刃或石柱）
+        // 第一步：十字位移（原地 / 上下左右 1 格）
         skillTargets.push([r, c]); // 原地推山
         dashOptions.push({ kind: "push-move", path: [[r, c]], stay: true });
         for (const [dr, dc] of DIRS) {
-          for (let st = 1; st <= 2; st++) {
-            const rr = r + dr * st, cc = c + dc * st;
-            if (!inBounds(rr, cc)) break;
-            if (board[rr][cc]) break; // 路径被占据（英雄 / 剑刃 / 石柱）
-            skillTargets.push([rr, cc]);
-            const path = [];
-            for (let k = 1; k <= st; k++) path.push([r + dr * k, c + dc * k]);
-            dashOptions.push({ kind: "push-move", path });
-          }
+          const rr = r + dr, cc = c + dc;
+          if (!inBounds(rr, cc)) continue;
+          if (board[rr][cc]) continue; // 被英雄 / 剑刃 / 石柱占据
+          skillTargets.push([rr, cc]);
+          dashOptions.push({ kind: "push-move", path: [[rr, cc]] });
         }
         break;
       }
@@ -2718,8 +2714,8 @@ function useSkill(tr, tc) {
     const mdr = tr - r, mdc = tc - c;
     const mdist = Math.abs(mdr) + Math.abs(mdc);
     const stay = mdr === 0 && mdc === 0;
-    if (!stay && ((mdr !== 0 && mdc !== 0) || mdist < 1 || mdist > 2)) {
-      addLog("推山：位移只能选择原地或上下左右 1–2 格。");
+    if (!stay && ((mdr !== 0 && mdc !== 0) || mdist !== 1)) {
+      addLog("推山：位移只能选择原地或上下左右 1 格。");
       render();
       return;
     }
@@ -2727,14 +2723,6 @@ function useSkill(tr, tc) {
       addLog("推山：位移落点必须是空格。");
       render();
       return;
-    }
-    if (!stay && mdist === 2) {
-      const mr = r + Math.sign(mdr), mc = c + Math.sign(mdc);
-      if (board[mr][mc]) {
-        addLog("推山：位移路径被阻挡。");
-        render();
-        return;
-      }
     }
     skillSub = { kind: "push-step", r: stay ? r : tr, c: stay ? c : tc };
     computeSkillTargets();
@@ -5485,17 +5473,14 @@ function aiEnumerate() {
         return;
       }
 
-      // 山丘之王·推山：可先十字位移 1–2 格，再推山；评估位移后的推击/石柱价值
+      // 山丘之王·推山：可先十字位移 1 格，再推山；评估位移后的推击/石柱价值
       if (s.type === "push") {
         const spots = [{ r: pos.r, c: pos.c }];
         if (!rooted) {
           for (const [dr, dc] of DIRS) {
-            for (let st = 1; st <= 2; st++) {
-              const rr = pos.r + dr * st, cc = pos.c + dc * st;
-              if (!inBounds(rr, cc)) break;
-              if (board[rr][cc]) break; // 路径被阻挡
-              spots.push({ r: rr, c: cc });
-            }
+            const rr = pos.r + dr, cc = pos.c + dc;
+            if (!inBounds(rr, cc) || board[rr][cc]) continue;
+            spots.push({ r: rr, c: cc });
           }
         }
         for (const sp of spots) {
