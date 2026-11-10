@@ -406,7 +406,10 @@ function tickBlackFlamesS(s) {
 function applyBlackFlameS(s, player) {
   for (const u of unitsOf(s, player).slice()) {
     const p = findPos(s, u);
-    if (!p || !blackFlameAtS(s, p.r, p.c)) continue;
+    if (!p) continue;
+    const f = blackFlameAtS(s, p.r, p.c);
+    if (!f) continue;
+    if (f.owner === u.player) continue; // 黑炎不伤害施放者一方
     const dealt = applyDamage(s, u, 0.5, null);
     if (dealt > 0) slog(s, "🔥 黑炎：" + uname(s, u) + " 受到 0.5 点伤害（余 " + u.hp + "）");
   }
@@ -848,6 +851,8 @@ function chaseBlinkCells(s, tr, tc) {
 function skillFreeForS(u, sk) {
   if (!sk) return false;
   if (sk.type === "chase") return !!(u && (u.chaseStage || 0) === 1);
+  // 鹰佐·雷鸣刀第三段：不消耗普通行动
+  if (sk.type === "thunderblade") return !!(u && (u.rbStage || 0) === 2);
   return isFreeSkillS(sk);
 }
 function spawnSword(s, r, c) {
@@ -1136,8 +1141,9 @@ function hasAnyActionState(s, player) {
     const canMove = !rooted;
     const sk = heroDef(u.heroId).skill;
     if (!s.turnActionUsed && sk && u.usesLeft > 0 && !(rooted && isSelfMoveSkillS(u, sk))) return true;
-    // 鹰佐：雷鸣刀连招进行中（技能次数已为 0），仍可继续下一段
-    if (!s.turnActionUsed && !rooted && (u.rbStage || 0) > 0) return true;
+    // 鹰佐：雷鸣刀第三段不耗行动；第二段仍需行动
+    if (!rooted && (u.rbStage || 0) === 2) return true;
+    if (!s.turnActionUsed && !rooted && (u.rbStage || 0) === 1) return true;
     for (const [dr, dc] of DIRS) {
       const nr = pos.r + dr, nc = pos.c + dc;
       if (!inB(nr, nc)) continue;

@@ -432,6 +432,8 @@ function refreshChase(a) { return refreshSkillOnKill(a); }
 function skillFreeFor(u, s) {
   if (!s) return false;
   if (s.type === "chase") return !!(u && (u.chaseStage || 0) === 1);
+  // 鹰佐·雷鸣刀第三段：不消耗普通行动
+  if (s.type === "thunderblade") return !!(u && (u.rbStage || 0) === 2);
   return isFreeSkill(s);
 }
 /* 追猎第二段：目标四周的合法闪身落点（越界 / 被占用 / 剑刃所在都不可进入） */
@@ -779,8 +781,9 @@ function hasAnyAction(player) {
     const s = heroDef(u.heroId).skill;
     const canMove = !isRooted(u); // 定身：不能移动，但仍可攻击 / 非位移技能
     if (!turnActionUsed && s && u.usesLeft > 0 && !(isRooted(u) && isSelfMoveSkill(u, s))) return true; // 仍可用普通技能
-    // 鹰佐：雷鸣刀连招进行中（技能次数已为 0），仍可继续下一段
-    if (!turnActionUsed && !isRooted(u) && (u.rbStage || 0) > 0) return true;
+    // 鹰佐：雷鸣刀第三段不耗行动；第二段仍需行动
+    if (!isRooted(u) && (u.rbStage || 0) === 2) return true;
+    if (!turnActionUsed && !isRooted(u) && (u.rbStage || 0) === 1) return true;
     for (const [dr, dc] of DIRS) {
       const nr = pos.r + dr;
       const nc = pos.c + dc;
@@ -2942,7 +2945,10 @@ function tickBlackFlames() {
 function applyBlackFlame(player) {
   for (const u of unitsOf(player).slice()) {
     const p = findPos(u);
-    if (!p || !blackFlameAt(p.r, p.c)) continue;
+    if (!p) continue;
+    const f = blackFlameAt(p.r, p.c);
+    if (!f) continue;
+    if (f.owner === u.player) continue; // 黑炎不伤害施放者一方
     const dealt = applyDamage(u, 0.5, "blackflame", null);
     if (dealt > 0) addLog("🔥 黑炎： " + label(u) + " 受到 0.5 点伤害（余 " + u.hp + "）。");
     if (findPos(u) && window.SFX) window.SFX.play("blackflameTick", { hero: u.heroId });
@@ -5133,7 +5139,7 @@ function buildBlackFlameObj(bf) {
   t.className = "blackflame-turns";
   t.textContent = String(Math.max(0, bf.turns || 0));
   el.appendChild(t);
-  el.title = "黑炎：位于此格的英雄在其回合结束时受到 0.5 点伤害（剩余 " + Math.max(0, bf.turns || 0) + " 回合，敌我均会受伤）";
+  el.title = "黑炎：位于此格的敌方英雄在其回合结束时受到 0.5 点伤害（剩余 " + Math.max(0, bf.turns || 0) + " 回合；只伤害施放者的敌方，己方免疫）";
   return el;
 }
 
@@ -6046,7 +6052,8 @@ function flankHypo(r, c, player) {
 function dangerAt(r, c, u) {
   const f = flankHypo(r, c, u.player);
   let danger = f.enemy * 3;
-  if (blackFlameAt(r, c)) danger += 6; // 黑炎：站上去会在回合结束受 0.5
+  const bf = blackFlameAt(r, c);
+  if (bf && bf.owner !== u.player) danger += 6; // 敌方黑炎：站上去会在回合结束受 0.5（己方黑炎不伤己方）
   if (f.enemy >= 1 && f.total >= 2) danger += 6; // 会被夹击
   for (const [dr, dc] of DIRS) {
     const t = unitAt(r + dr, c + dc);
@@ -6658,9 +6665,11 @@ function aiEnumerate() {
           for (const [rr, cc] of cellsAround3(center.r, center.c)) {
             const e = unitAt(rr, cc);
             if (!e || e === u) continue;
-            if (e.player !== u.player) sc += w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0);
-            else sc -= w.dmgW * 0.5; // 友军可能被黑炎灼烧 / 爆炸不伤友军但黑炎会
-            if (blackFlameAt(rr, cc)) sc += e.player !== u.player ? 2 : -2;
+            if (e.player !== u.player) {
+              sc += w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0);
+              if (blackFlameAt(rr, cc)) sc += 2;
+            }
+            // 黑炎不再伤害己方，友军站在黑炎格不再扣分
           }
           if (plan.mode === "pull") sc += 5;
           // 黑炎四格对敌人的后续价值
@@ -6668,7 +6677,6 @@ function aiEnumerate() {
             const rr = center.r + ddr, cc = center.c + ddc;
             const e = unitAt(rr, cc);
             if (e && e.player !== u.player) sc += 4;
-            if (e && e.player === u.player) sc -= 3;
           }
           acts.push({ type: "skill", u, pos, target: { r: pos.r + dr, c: pos.c + dc }, skillIdx: si, score: sc * w.skillW });
         }
