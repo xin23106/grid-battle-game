@@ -617,7 +617,7 @@ const HEROES = [
   {
     id: "susanoo",
     name: "须佐",
-    icon: "🌀",
+    icon: "🌩️",
     hp: 5,
     tag: "空间·变身",
     sfx: "thunder",
