@@ -2077,6 +2077,7 @@ function applyAction(state, player, action) {
       }
       slog(s, "💥 须佐箭爆炸，命中 " + hit + " 名敌人");
       const flames = [];
+      if (addBlackFlameAtS(s, center.r, center.c, player)) flames.push([center.r, center.c]);
       for (const [ddr, ddc] of DIRS) {
         if (addBlackFlameAtS(s, center.r + ddr, center.c + ddc, player)) flames.push([center.r + ddr, center.c + ddc]);
       }

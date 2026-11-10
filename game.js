@@ -87,6 +87,13 @@ const detailCloseEl = document.getElementById("detail-close");
 let board = [];                    // board[r][c] = 单位对象 或 null
 let mists = {};                    // "r_c" -> { turns, fresh, owner } 毒雾地形（不阻挡移动）
 let blackFlames = {};              // "r_c" -> { turns, fresh, owner } 须佐·黑炎地形（不阻挡移动）
+/* ---- 纯表现层：逻辑坐标与视觉坐标分离 ---- */
+let visualPositions = new Map();   // uid -> { pos:{r,c}, snap:单位快照 }
+let moveQueues = new Map();        // uid -> 排队中的移动 [{from,to,snap,heroId,player}]
+let activeMoveUids = new Set();    // 正在播放移动动画的 uid
+let unitFxQueue = [];              // 待播放的角色动作 {uid,type,delay}
+let ghostLayerEl = null;           // 独立于棋盘重建的移动/死亡幽灵层
+let visualFxToken = 0;             // 重开/重连时作废旧动画
 let turnSerial = 0;                // 回合序号（用于记录潜行开始时间）
 let phase = "placement";           // placement(布阵) / battle(对战) / over(结束)
 let currentPlayer = 1;
@@ -1104,6 +1111,7 @@ function undoStep() {
 
 function init() {
   board = [];
+  clearVisualFx();
   for (let r = 0; r < SIZE; r++) {
     const row = [];
     for (let c = 0; c < SIZE; c++) row.push(null);
@@ -2374,6 +2382,7 @@ function normalAttack(attacker, target) {
     return;
   }
   pushHistory();
+  queueUnitFx(attacker.uid, "attack");
   // 记录攻击前的位置：普通攻击若最终击杀目标，攻击者需占据目标原先所在的格子
   const atkBefore = findPos(attacker);
   const tgtBefore = findPos(target);
@@ -3296,6 +3305,7 @@ function useSkill(tr, tc) {
   }
 
   pushHistory();
+  queueUnitFx(a.uid, "cast");
   switch (s.type) {
     case "damage_single": {
       const rd = resolveSkillDamage(a, target, s);
@@ -3813,8 +3823,9 @@ function useSkill(tr, tc) {
           (dealt > 0 ? "（实际扣血 " + dealt + "）" : "（未造成生命伤害）") + "。");
       }
       addLog("💥 须佐箭在 (" + (center.r + 1) + "," + (center.c + 1) + ") 引爆九宫格，命中 " + hit + " 名敌人。");
-      // 黑炎：中心格上下左右
+      // 黑炎：中心格 + 上下左右
       const flames = [];
+      if (addBlackFlameAt(center.r, center.c, a.player)) flames.push([center.r, center.c]);
       for (const [ddr, ddc] of DIRS) {
         const rr = center.r + ddr, cc = center.c + ddc;
         if (addBlackFlameAt(rr, cc, a.player)) flames.push([rr, cc]);
@@ -5034,6 +5045,8 @@ function buildUnit(u) {
   const el = document.createElement("div");
   el.className = "unit p" + u.player;
   el.dataset.uid = u.uid;
+  el.dataset.hero = u.heroId;
+  if (window.HeroVisuals) window.HeroVisuals.applyVars(el, u.heroId);
   el.title =
     def.name +
     " · 生命 " +
@@ -5043,10 +5056,15 @@ function buildUnit(u) {
     (u.shield ? " · 护盾 " + u.shield : "") +
     (u.frozen ? " · 冰封 " + u.frozen : "");
 
-  const icon = document.createElement("div");
-  icon.className = "unit-icon";
-  icon.textContent = def.icon;
-  el.appendChild(icon);
+  // 角色主体 + 专属光环 / 环绕粒子（装饰层不接收点击）
+  if (window.HeroVisuals) {
+    el.insertAdjacentHTML("afterbegin", window.HeroVisuals.visualHTML(u.heroId));
+  } else {
+    const icon = document.createElement("div");
+    icon.className = "unit-icon";
+    icon.textContent = def.icon;
+    el.appendChild(icon);
+  }
 
   const name = document.createElement("div");
   name.className = "unit-name";
@@ -5159,8 +5177,238 @@ function buildPillarObj(p) {
   return el;
 }
 
+/* ============================ 角色视觉动画（逻辑与视觉分离） ============================ */
+function visualSnapshot(u) {
+  try { return JSON.parse(JSON.stringify(u)); } catch (e) { return Object.assign({}, u); }
+}
+function visualReduce() {
+  const o = window.BFX && window.BFX.options;
+  return !!(o && (o.reduce || !o.enabled));
+}
+function getGhostLayer() {
+  if (ghostLayerEl && document.body.contains(ghostLayerEl)) return ghostLayerEl;
+  ghostLayerEl = document.createElement("div");
+  ghostLayerEl.id = "unit-ghost-layer";
+  ghostLayerEl.setAttribute("aria-hidden", "true");
+  document.body.appendChild(ghostLayerEl);
+  return ghostLayerEl;
+}
+function clearVisualFx() {
+  visualFxToken++;
+  visualPositions = new Map();
+  moveQueues = new Map();
+  activeMoveUids = new Set();
+  unitFxQueue = [];
+  if (ghostLayerEl) ghostLayerEl.innerHTML = "";
+  document.querySelectorAll(".unit-ghost-hidden").forEach((el) => el.classList.remove("unit-ghost-hidden"));
+  document.querySelectorAll(".cell-ghosted").forEach((el) => el.classList.remove("cell-ghosted"));
+  document.querySelectorAll(".unit-anim-attack,.unit-anim-cast,.unit-anim-hit,.unit-anim-guard,.unit-anim-heal").forEach((el) => {
+    el.classList.remove("unit-anim-attack", "unit-anim-cast", "unit-anim-hit", "unit-anim-guard", "unit-anim-heal");
+  });
+}
+function hideVisualUnit(uid) {
+  boardEl.querySelectorAll('.unit[data-uid="' + uid + '"]').forEach((el) => {
+    el.classList.add("unit-ghost-hidden");
+    if (el.parentElement) el.parentElement.classList.add("cell-ghosted");
+  });
+}
+function showVisualUnit(uid) {
+  boardEl.querySelectorAll('.unit[data-uid="' + uid + '"]').forEach((el) => {
+    el.classList.remove("unit-ghost-hidden");
+    if (el.parentElement) el.parentElement.classList.remove("cell-ghosted");
+  });
+}
+function applyGhostedState() {
+  const ids = new Set([...activeMoveUids, ...moveQueues.keys()]);
+  ids.forEach((uid) => hideVisualUnit(uid));
+}
+function queueUnitFx(uid, type, delay) {
+  if (!uid || visualReduce()) return;
+  unitFxQueue.push({ uid, type, delay: delay || 0 });
+}
+function flushUnitFxQueue() {
+  if (!unitFxQueue.length || visualReduce()) { unitFxQueue = []; return; }
+  const list = unitFxQueue.splice(0);
+  for (const ev of list) {
+    const run = () => {
+      const el = boardEl.querySelector('.unit[data-uid="' + ev.uid + '"]');
+      if (!el) return;
+      const cls = "unit-anim-" + ev.type;
+      el.classList.remove("unit-anim-attack", "unit-anim-cast", "unit-anim-hit", "unit-anim-guard", "unit-anim-heal");
+      void el.offsetWidth;
+      el.classList.add(cls);
+      setTimeout(() => el.classList.remove(cls), 460);
+    };
+    if (ev.delay) setTimeout(run, ev.delay); else run();
+  }
+}
+function movePathCells(from, to) {
+  const dr = Math.sign(to.r - from.r), dc = Math.sign(to.c - from.c);
+  const adr = Math.abs(to.r - from.r), adc = Math.abs(to.c - from.c);
+  const aligned = adr === 0 || adc === 0 || adr === adc;
+  const max = Math.max(adr, adc);
+  if (!aligned || max > 4 || max === 0) return { cells: [from, to], blink: true };
+  const cells = [];
+  for (let k = 0; k <= max; k++) cells.push({ r: from.r + dr * k, c: from.c + dc * k });
+  return { cells, blink: false };
+}
+function detectVisualDeltas() {
+  const now = new Map();
+  for (const u of unitsOf(1).concat(unitsOf(2))) {
+    const p = findPos(u);
+    if (p) now.set(u.uid, { pos: p, snap: visualSnapshot(u) });
+  }
+  if (phase === "placement" || visualPositions.size === 0) {
+    visualPositions = now;
+    return;
+  }
+  for (const [uid, prev] of visualPositions) {
+    const cur = now.get(uid);
+    if (!cur) {
+      spawnDeathGhost(prev);
+      continue;
+    }
+    if (cur.pos.r !== prev.pos.r || cur.pos.c !== prev.pos.c) {
+      enqueueMove(uid, prev.pos, cur.pos, cur.snap);
+    }
+    if (cur.snap.hp < prev.snap.hp) queueUnitFx(uid, cur.snap.hp <= 0 ? "hit" : "hit");
+    else if (cur.snap.hp > prev.snap.hp) queueUnitFx(uid, "heal");
+    else if ((cur.snap.shield || 0) < (prev.snap.shield || 0)) queueUnitFx(uid, "guard");
+  }
+  visualPositions = now;
+}
+function enqueueMove(uid, from, to, snap) {
+  const q = moveQueues.get(uid) || [];
+  q.push({ from, to, snap });
+  while (q.length > 4) q.shift();
+  moveQueues.set(uid, q);
+  if (!activeMoveUids.has(uid)) startNextMove(uid);
+}
+function startNextMove(uid) {
+  const q = moveQueues.get(uid);
+  if (!q || !q.length) {
+    activeMoveUids.delete(uid);
+    moveQueues.delete(uid);
+    showVisualUnit(uid);
+    return;
+  }
+  activeMoveUids.add(uid);
+  const mv = q.shift();
+  if (!q.length) moveQueues.delete(uid);
+  hideVisualUnit(uid);
+  if (visualReduce()) {
+    activeMoveUids.delete(uid);
+    showVisualUnit(uid);
+    return;
+  }
+  const cells = boardEl.querySelectorAll(".cell");
+  const aCell = cells[mv.from.r * SIZE + mv.from.c];
+  const bCell = cells[mv.to.r * SIZE + mv.to.c];
+  if (!aCell || !bCell) {
+    setTimeout(() => startNextMove(uid), 0);
+    return;
+  }
+  const ar = aCell.getBoundingClientRect();
+  const br = bCell.getBoundingClientRect();
+  const style = window.HeroVisuals ? window.HeroVisuals.moveStyle(mv.snap.heroId) : { color: "#93c5fd", dur: 320, tilt: 4, dash: false };
+  const path = movePathCells(mv.from, mv.to);
+  const ghost = buildUnit(mv.snap);
+  ghost.classList.add("unit-move-ghost");
+  ghost.style.position = "fixed";
+  ghost.style.left = ar.left + "px";
+  ghost.style.top = ar.top + "px";
+  ghost.style.width = ar.width + "px";
+  ghost.style.height = ar.height + "px";
+  ghost.style.margin = "0";
+  ghost.style.zIndex = "40";
+  getGhostLayer().appendChild(ghost);
+  const token = visualFxToken;
+  const anims = [];
+  const n = path.cells.length;
+  for (let i = 0; i < n; i++) {
+    const p = path.cells[i];
+    const cCell = cells[p.r * SIZE + p.c];
+    if (!cCell) continue;
+    const cr = cCell.getBoundingClientRect();
+    const dx = cr.left - ar.left, dy = cr.top - ar.top;
+    const t = n > 1 ? i / (n - 1) : 0;
+    const mid = t > 0 && t < 1;
+    const dxDir = Math.sign(mv.to.c - mv.from.c);
+    const rot = path.blink ? 0 : (dxDir !== 0 ? dxDir * style.tilt * 0.5 : 0);
+    let frame = { offset: t, transform: "translate3d(" + dx + "px," + dy + "px,0) rotate(" + rot + "deg) scale(" + (mid ? 0.96 : 1) + ")", opacity: 1, easing: "cubic-bezier(.2,.8,.25,1)" };
+    if (path.blink && n === 2) {
+      if (i === 0) frame = { offset: 0, transform: "translate3d(0,0,0) scale(1)", opacity: 1 };
+      else frame = { offset: 1, transform: "translate3d(" + dx + "px," + dy + "px,0) scale(1)", opacity: 1 };
+    }
+    anims.push(frame);
+  }
+  if (path.blink && anims.length === 2) {
+    anims.splice(1, 0, { offset: 0.45, opacity: 0.05, transform: "translate3d(" + ((br.left - ar.left) * 0.45) + "px," + ((br.top - ar.top) * 0.45) + "px,0) scale(.82)" });
+    anims.splice(2, 0, { offset: 0.55, opacity: 1, transform: "translate3d(" + ((br.left - ar.left) * 0.55) + "px," + ((br.top - ar.top) * 0.55) + "px,0) scale(.9)" });
+  }
+  if (window.BFX) {
+    try { window.BFX.move({ from: mv.from, to: mv.to, color: style.color, dash: style.dash, blink: path.blink }); } catch (e) { /* 表现层失败不影响逻辑 */ }
+  }
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    if (ghost.parentNode) ghost.parentNode.removeChild(ghost);
+    if (token !== visualFxToken) { showVisualUnit(uid); return; }
+    if (!path.blink) {
+      bCell.classList.add("cell-move-land");
+      setTimeout(() => bCell.classList.remove("cell-move-land"), 320);
+      if (window.BFX && style.dur >= 400) { try { window.BFX.shake(2); } catch (e) { /* ignore */ } }
+    }
+    if (moveQueues.has(uid) && moveQueues.get(uid).length) setTimeout(() => startNextMove(uid), 24);
+    else {
+      activeMoveUids.delete(uid);
+      showVisualUnit(uid);
+    }
+  };
+  try {
+    const anim = ghost.animate(anims, { duration: style.dur, easing: "cubic-bezier(.22,.8,.28,1)", fill: "forwards" });
+    anim.onfinish = finish;
+    anim.oncancel = finish;
+    setTimeout(() => { if (!finished) finish(); }, style.dur + 420);
+  } catch (e) {
+    finish();
+  }
+}
+function spawnDeathGhost(prev) {
+  if (!prev || !prev.snap || visualReduce()) return;
+  const cells = boardEl.querySelectorAll(".cell");
+  const cell = cells[prev.pos.r * SIZE + prev.pos.c];
+  if (!cell) return;
+  const r = cell.getBoundingClientRect();
+  const ghost = buildUnit(prev.snap);
+  ghost.classList.add("unit-death-ghost");
+  ghost.style.position = "fixed";
+  ghost.style.left = r.left + "px";
+  ghost.style.top = r.top + "px";
+  ghost.style.width = r.width + "px";
+  ghost.style.height = r.height + "px";
+  ghost.style.margin = "0";
+  ghost.style.zIndex = "41";
+  getGhostLayer().appendChild(ghost);
+  try {
+    const anim = ghost.animate([
+      { opacity: 1, transform: "translateY(0) scale(1) rotate(0deg)", filter: "blur(0)" },
+      { opacity: 0.7, transform: "translateY(-6px) scale(1.04) rotate(-2deg)", filter: "blur(0)" },
+      { opacity: 0, transform: "translateY(-16px) scale(.55) rotate(5deg)", filter: "blur(2px)" },
+    ], { duration: 620, easing: "ease-out", fill: "forwards" });
+    anim.onfinish = () => { if (ghost.parentNode) ghost.parentNode.removeChild(ghost); };
+    anim.oncancel = () => { if (ghost.parentNode) ghost.parentNode.removeChild(ghost); };
+  } catch (e) {
+    if (ghost.parentNode) ghost.parentNode.removeChild(ghost);
+  }
+}
+
 function render() {
+  detectVisualDeltas();
   const info = computeFlankInfo();
+  boardEl.classList.toggle("turn-p1", phase === "battle" && currentPlayer === 1);
+  boardEl.classList.toggle("turn-p2", phase === "battle" && currentPlayer === 2);
   const allUnits = unitsOf(1).concat(unitsOf(2));
   boardEl.innerHTML = "";
   boardEl.style.setProperty("--cols", SIZE);
@@ -5340,6 +5588,10 @@ function render() {
     window.BFX.setTargeting(!!(selected && (skillMode || talismanMode ||
       moveTargets.length || attackTargets.length || skillTargets.length)));
   }
+  // 逻辑坐标已更新：隐藏正在做视觉移动的真实棋子，并播放角色动作
+  applyGhostedState();
+  flushUnitFxQueue();
+  document.body.classList.toggle("reduce-visuals", visualReduce());
 }
 
 function updateRoster() {
@@ -5380,13 +5632,15 @@ function updateRoster() {
     const card = document.createElement("button");
     card.type = "button";
     card.className = "hero-option";
+    card.dataset.hero = h.id;
+    if (window.HeroVisuals) window.HeroVisuals.applyVars(card, h.id);
     const isUsed = used.includes(h.id);
     if (isUsed) card.classList.add("used");
     if (pendingHero === h.id) card.classList.add("active");
     card.disabled = isUsed;
     card.title = h.name + "｜" + h.tag + "\n技能【" + h.skill.name + "】：" + h.skill.desc;
     card.innerHTML =
-      '<span class="ho-icon">' + h.icon + "</span>" +
+      '<span class="ho-portrait">' + (window.HeroVisuals ? window.HeroVisuals.visualHTML(h.id, "mini") : h.icon) + "</span>" +
       '<span class="ho-name">' + h.name + "</span>" +
       '<span class="ho-hp">♥ ' + h.hp + "</span>";
     card.addEventListener("click", () => {
@@ -5476,9 +5730,10 @@ function updateHeroCard() {
       '<div class="hc-skill-name">【' + p.name + '】 <span class="hc-cd ready">被动</span></div>' +
       '<div class="hc-skill-desc">' + p.desc + "</div>" +
     "</div>").join("");
+  if (window.HeroVisuals) window.HeroVisuals.applyVars(heroCardEl, u.heroId);
   heroCardEl.innerHTML =
     '<div class="hc-head">' +
-      '<span class="hc-icon">' + def.icon + "</span>" +
+      '<span class="hc-icon">' + (window.HeroVisuals ? window.HeroVisuals.visualHTML(def.id, "hc-portrait") : def.icon) + "</span>" +
       '<div class="hc-title">' +
         '<div class="hc-name">' + def.name + "</div>" +
         '<div class="hc-tag">' + def.tag + "</div>" +
@@ -7062,6 +7317,7 @@ function applyRemoteState(state) {
   if (!state) return;
   mergeServerLog(state);
   const prevSnap = bfxPrevSnap;      // 上一份快照（首个状态 / 重连后为 null → 不重播历史）
+  if (!prevSnap) clearVisualFx();     // 首个权威状态 / 重连：清理旧动画队列，避免跨局残留
   const prevTurn = currentPlayer;
   const prevPending = extraTurnPending;
   const prevPhase = phase;
@@ -7352,6 +7608,11 @@ if (document.getElementById("phone-copy")) {
       const patch = {};
       patch[key] = isCheck ? !!el.checked : parseFloat(el.value);
       window.BFX.setOptions(patch);
+      // 关闭特效 / 减少动态时，立即清理移动幽灵并同步装饰动画状态
+      try {
+        if (patch.reduce === true || patch.enabled === false) clearVisualFx();
+        render();
+      } catch (e) { /* 表现层失败不影响设置保存 */ }
     });
   };
   bind("set-fx", "enabled", true);
@@ -7601,6 +7862,7 @@ window.GameAPI = {
   /* 用紧凑规格快速摆盘：units = [{r,c,player,heroId,hp?,shield?,frozen?,cd?}] */
   setup(units, activePlayer) {
     board = [];
+    clearVisualFx();
     for (let r = 0; r < SIZE; r++) {
       const row = [];
       for (let c = 0; c < SIZE; c++) row.push(null);
