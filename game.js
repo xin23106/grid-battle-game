@@ -5735,7 +5735,7 @@ function updateHeroCard() {
         (sk.free ? " · 不消耗行动" : "") +
         (sk.costSwords ? " · 消耗剑 " + sk.costSwords : "") + " · 释放条件：" + (sk.condition || "无");
     return '<div class="hc-skill">' +
-      '<div class="hc-skill-name">【' + sk.name + '】 <span class="hc-cd ' + (isP || sl === Infinity || sl > 0 ? "ready" : "cool") + '">' + cd + "</span></div>" +
+      '<div class="hc-skill-name">' + (window.HeroVisuals ? window.HeroVisuals.skillIcon(sk.type) : "") + '【' + sk.name + '】 <span class="hc-cd ' + (isP || sl === Infinity || sl > 0 ? "ready" : "cool") + '">' + cd + "</span></div>" +
       '<div class="hc-skill-desc">' + sk.desc + "</div>" +
       '<div class="hc-skill-meta">' + meta + "</div></div>";
   }).join("");
@@ -5854,7 +5854,7 @@ function updateSkillBar() {
       }
     }
     b.disabled = disabled;
-    b.textContent = label;
+    b.innerHTML = (window.HeroVisuals ? window.HeroVisuals.skillIcon(s.type) : "") + label;
     if (skillMode && activeSkillIdx === i) b.classList.add("active");
     b.addEventListener("click", () => activateSkill(i));
     skillBarEl.appendChild(b);

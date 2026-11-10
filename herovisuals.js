@@ -259,6 +259,30 @@
     return ATTACK_POSE_BY_WEAPON[look(heroId).weapon] || "slash";
   }
 
+  /* 技能图标：小尺寸矢量徽记，不用 emoji */
+  function skillIcon(type) {
+    const t = type || "";
+    let inner = "";
+    if (/thunder|raikiri|bolt|discharge|susano_arrow|damage_line|ranged/.test(t)) {
+      inner = '<path d="M13 2 L6 13 H11 L9 22 L19 10 H14 Z"/>';
+    } else if (/thunderblade|slash|charge|dash|duanlang|shuidiao|metalpierce|shadowfang|divinepalm|push/.test(t)) {
+      inner = '<path d="M4 20 L18 6 L21 3 L20 7 L7 21 Z"/><path d="M4 20 L9 15"/>';
+    } else if (/pull|wxt|grab|exile|tianwei/.test(t)) {
+      inner = '<path d="M4 12 Q8 4 12 12 Q16 20 20 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>';
+    } else if (/stealth|raven|mist/.test(t)) {
+      inner = '<path d="M17 3 Q8 5 6 12 Q5 19 14 21 Q8 16 10 10 Q12 6 17 3 Z"/>';
+    } else if (/heal|meditate|cleric/.test(t)) {
+      inner = '<path d="M10 3 H14 V9 H20 V13 H14 V21 H10 V13 H4 V9 H10 Z"/>';
+    } else if (/shield|metalarmor|guard|defense/.test(t)) {
+      inner = '<path d="M12 2 Q19 5 19 12 Q19 18 12 22 Q5 18 5 12 Q5 5 12 2 Z"/>';
+    } else if (/summon|crow|wings/.test(t)) {
+      inner = '<path d="M12 13 Q4 4 2 11 Q6 12 8 16 Q10 13 12 13 Q14 13 16 16 Q18 12 22 11 Q20 4 12 13 Z"/>';
+    } else {
+      inner = '<path d="M12 2 L15 9 L22 12 L15 15 L12 22 L9 15 L2 12 L9 9 Z"/>';
+    }
+    return '<svg class="skill-glyph" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">' + inner + '</svg>';
+  }
+
   /* ---------------------------------------------------------------------
      立绘资源接口（可替换为正式美术资源）
      当前示范：雷电之主 / 鹰佐 / 须佐 的高分辨率透明 SVG 立绘。
@@ -266,19 +290,20 @@
      只需修改这里的路径，游戏内卡片会自动加载并在失败时回退到矢量棋子。
      --------------------------------------------------------------------- */
   const HERO_ART = {
-    thunder: { portrait: "art/thunder.svg?v=2", board: "art/thunder.svg?v=2", avatar: "art/thunder.svg?v=2", icon: "art/thunder.svg?v=2", silhouette: "art/thunder.svg?v=2" },
-    eagle: { portrait: "art/eagle.svg?v=2", board: "art/eagle.svg?v=2", avatar: "art/eagle.svg?v=2", icon: "art/eagle.svg?v=2", silhouette: "art/eagle.svg?v=2" },
-    susanoo: { portrait: "art/susanoo.svg?v=2", board: "art/susanoo.svg?v=2", avatar: "art/susanoo.svg?v=2", icon: "art/susanoo.svg?v=2", silhouette: "art/susanoo.svg?v=2" },
+    thunder: { portrait: "art/thunder-portrait.webp", board: "art/thunder-board.webp", avatar: "art/thunder-avatar.webp", icon: "art/thunder-icon.webp", silhouette: "art/thunder-silhouette.webp" },
+    eagle: { portrait: "art/eagle-portrait.webp", board: "art/eagle-board.webp", avatar: "art/eagle-avatar.webp", icon: "art/eagle-icon.webp", silhouette: "art/eagle-silhouette.webp" },
+    susanoo: { portrait: "art/susanoo-portrait.webp", board: "art/susanoo-board.webp", avatar: "art/susanoo-avatar.webp", icon: "art/susanoo-icon.webp", silhouette: "art/susanoo-silhouette.webp" },
   };
   function portraitHTML(id, extraClass) {
     const art = HERO_ART[id];
     if (!art || !art.portrait) return visualHTML(id, extraClass);
+    const src = (extraClass && extraClass.indexOf("mini") >= 0 && art.avatar) ? art.avatar : art.portrait;
     return '<span class="hero-art-wrap ' + (extraClass || "") + '">' +
-      '<img class="hero-art-img" src="' + art.portrait + '" alt="" ' +
+      '<img class="hero-art-img" src="' + src + '" alt="" ' +
       'onerror="this.style.display=\'none\';this.parentNode.classList.add(\'hero-art-failed\')">' +
       '<span class="hero-art-fallback">' + visualHTML(id) + '</span>' +
       '</span>';
   }
 
-  window.HeroVisuals = { LOOKS, DEFAULT, look, figureSVG, visualHTML, applyVars, moveStyle, poseFor, attackPose, POSE_BY_TYPE, HERO_ART, portraitHTML };
+  window.HeroVisuals = { LOOKS, DEFAULT, look, figureSVG, visualHTML, applyVars, moveStyle, poseFor, attackPose, skillIcon, POSE_BY_TYPE, HERO_ART, portraitHTML };
 })();
