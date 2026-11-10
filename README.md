@@ -332,7 +332,9 @@ node server.js             # 默认 ws://0.0.0.0:3000
 - **全面视觉升级：动态英雄棋子 / 连续移动 / 专属装饰**
   - 新增 `herovisuals.js`：为全部 24 名英雄配置独立主色、副色、武器轮廓、**体型（lean/robed/heavy/armored/winged）**、**头饰（hood/helm/mask/horns/crown/hat/halo）**、**背饰/配件（cape/wings/scarf/halo/orb/tail）**、**胸口徽记**、光环、环绕粒子、待机节奏、移动节奏与技能姿态。
   - 棋子改为“玻璃底座 + 分层原创 SVG 角色 + 名字/血量/徽标”的动态结构；每位英雄有待机呼吸、脚下光环、专属粒子（雷电电弧、渡鸦黑羽、金蝉佛光莲花、须佐查克拉、金元素碎片、山丘石尘、花木兰花瓣等）。
-  - **逐技能身体姿态**：新增 slash / thrust / channel / summon / dash / ranged / area / buff / defense / heal / pull / teleport / stealth / lotus / smash 等 15 类姿态，并按技能类型映射；鹰佐雷鸣刀三段分别使用 slash / thrust / area，须佐箭 ranged、鸦天狗 summon、禅坐 lotus、潜行 stealth。普通攻击也按武器类型选择姿态。
+  - **逐技能身体姿态**：在 15 类通用姿态（slash / thrust / channel / summon / dash / ranged / area / buff / defense / heal / pull / teleport / stealth / lotus / smash）之上，为重点英雄新增 **28 个独立技能姿态类**（如 `eagle-raikiri`、`eagle-tb0/1/2`、`susanoo-arrow`、`susanoo-crow`、`cicada-meditate`、`metal-pierce`、`raven-stealth`、`hillking-push`、`huamulan-charge`、`thunder-discharge` 等）；每个姿态分别对 SVG 子层（武器、躯干、头、披风、翅膀、光环）做独立关键帧，模拟分层骨骼动作，而不是只缩放整个棋子。
+  - 鹰佐雷鸣刀三段分别使用低身蓄势、后仰插刀/吐火、升空下劈三套动作；须佐箭有拉弓蓄力/后坐/爆发，鸦天狗有展翼升腾，金蝉禅坐有下沉盘坐，金元素穿刺/装甲/狂潮分别有突刺、装甲展开、旋转升腾；普通攻击也按武器类型选择姿态。
+  - 说明：这仍不是外部骨骼动画文件（Spine/DragonBones）级别的逐技能完整骨架；当前通过 SVG 分层 + CSS 关键帧实现可运行的“伪骨骼”动作，重点技能已独立，其余技能按姿态类别覆盖。
   - **状态换装层**：渡鸦潜行会整体淡出并压低粒子；金蝉禅坐出现莲花环/花瓣/金色核心；须佐鸦天狗出现黑色骨翼与紫色形态环；金元素强化/狂潮出现金属装甲片与流光；护盾出现能量罩。
   - **连续移动**：逻辑坐标立即更新，视觉上通过独立幽灵层从原格平滑插值到目标格；2–4 格直线/斜线路径会逐格经过，超远或非直线位移使用闪现式过渡；每个英雄有不同移动时长、倾斜、残影与落点反馈；支持同一英雄连续移动排队，不会瞬移冲突。
   - 普通攻击、施法、受击、护盾吸收、治疗、死亡均有独立的棋子动作/幽灵反馈；死亡视觉延迟消散，但规则上的死亡、锻剑、石柱与胜负判定仍立即生效。

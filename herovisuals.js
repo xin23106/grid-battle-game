@@ -209,12 +209,46 @@
   };
   function poseFor(heroId, skill, stage) {
     if (!skill) return "channel";
-    if (skill.type === "thunderblade") return ["slash", "thrust", "area"][stage || 0] || "dash";
-    if (skill.type === "meditate") return "lotus";
-    if (skill.type === "susano_crow") return "summon";
-    if (skill.type === "susano_arrow") return "ranged";
-    if (skill.type === "stealth") return "stealth";
-    return POSE_BY_TYPE[skill.type] || "channel";
+    const type = skill.type;
+    // 重点技能：独立骨骼/姿态类（不再只走 15 类通用姿态）
+    const special = {
+      "thunder:thunder": "thunder-discharge",
+      "eagle:raikiri": "eagle-raikiri",
+      "eagle:thunderblade:0": "eagle-tb0",
+      "eagle:thunderblade:1": "eagle-tb1",
+      "eagle:thunderblade:2": "eagle-tb2",
+      "susanoo:susano_dash": "susanoo-dash",
+      "susanoo:susano_pull": "susanoo-pull",
+      "susanoo:susano_arrow": "susanoo-arrow",
+      "susanoo:susano_crow": "susanoo-crow",
+      "cicada:meditate": "cicada-meditate",
+      "cicada:divinepalm": "cicada-palm",
+      "metal:metalpierce": "metal-pierce",
+      "metal:metalarmor": "metal-armor",
+      "metal:metaltide": "metal-tide",
+      "raven:stealth": "raven-stealth",
+      "raven:mistdash": "raven-mist",
+      "raven:shadowfang": "raven-fang",
+      "hillking:push": "hillking-push",
+      "huamulan:charge": "huamulan-charge",
+      "ranger:damage_line": "ranger-shot",
+      "knight:damage_adjacent_all": "knight-sweep",
+      "cleric:heal": "cleric-pray",
+      "warlock:freeze": "warlock-frost",
+      "jade:exile": "jade-exile",
+      "tiandao:wxt": "tiandao-pull",
+      "cang:shuidiao": "cang-dance",
+      "longren:dragonbreath": "longren-breath",
+      "vampire:bloodburst": "vampire-burst",
+    };
+    const key = heroId + ":" + type + (type === "thunderblade" ? ":" + (stage || 0) : "");
+    if (special[key]) return special[key];
+    if (type === "thunderblade") return ["slash", "thrust", "area"][stage || 0] || "dash";
+    if (type === "meditate") return "lotus";
+    if (type === "susano_crow") return "summon";
+    if (type === "susano_arrow") return "ranged";
+    if (type === "stealth") return "stealth";
+    return POSE_BY_TYPE[type] || "channel";
   }
   const ATTACK_POSE_BY_WEAPON = {
     bow: "ranged", staff: "channel", orb: "channel", spear: "thrust", axe: "smash",

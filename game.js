@@ -5269,11 +5269,11 @@ function flushUnitFxQueue() {
       const cls = "unit-anim-" + ev.type;
       const poseCls = ev.pose ? "unit-pose-" + ev.pose : "";
       el.classList.remove("unit-anim-attack", "unit-anim-cast", "unit-anim-hit", "unit-anim-guard", "unit-anim-heal");
-      if (poseCls) el.classList.remove("unit-pose-slash","unit-pose-thrust","unit-pose-channel","unit-pose-summon","unit-pose-dash","unit-pose-ranged","unit-pose-area","unit-pose-buff","unit-pose-defense","unit-pose-heal","unit-pose-pull","unit-pose-teleport","unit-pose-stealth","unit-pose-lotus","unit-pose-smash");
+      Array.from(el.classList).filter((c) => c.indexOf("unit-pose-") === 0).forEach((c) => el.classList.remove(c));
       void el.offsetWidth;
       el.classList.add(cls);
       if (poseCls) el.classList.add(poseCls);
-      setTimeout(() => { el.classList.remove(cls); if (poseCls) el.classList.remove(poseCls); }, 520);
+      setTimeout(() => { el.classList.remove(cls); if (poseCls) el.classList.remove(poseCls); }, 560);
     };
     if (ev.delay) setTimeout(run, ev.delay); else run();
   }

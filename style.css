@@ -2164,3 +2164,172 @@ html, body {
 .hero-option .hero-art-wrap .hero-art-fallback .hero-figure-wrap,
 .hero-art-wrap .hero-art-fallback .hero-figure-wrap { position: absolute; inset: 0 8% 2%; }
 .hero-option .hero-art-wrap .hero-art-fallback .hero-aura { left: 8%; right: 8%; bottom: 2%; height: 30%; }
+
+/* =======================================================================
+   逐技能专属骨骼/分层动作（重点英雄）
+   通过对 SVG 子层（武器/躯干/头/披风/光效）分别做关键帧，
+   在无外部骨骼资源的情况下模拟“分层骨骼”动作。
+   ======================================================================= */
+.hero-figure .hf-weapon, .hero-figure .hf-armor, .hero-figure .hf-head,
+.hero-figure .hf-cape, .hero-figure .hf-back-cape, .hero-figure .hf-wing,
+.hero-figure .hf-scarf, .hero-figure .hf-cloak {
+  transform-box: fill-box;
+}
+.hero-figure .hf-weapon { transform-origin: 72% 82%; animation: weaponIdle var(--idle-dur, 2.6s) ease-in-out infinite; }
+.hero-figure .hf-armor { transform-origin: 50% 80%; }
+.hero-figure .hf-head { transform-origin: 50% 92%; }
+.hero-figure .hf-cape, .hero-figure .hf-back-cape { transform-origin: 50% 8%; animation: capeSway 4.4s ease-in-out infinite; }
+.hero-figure .hf-wing { transform-origin: 50% 40%; }
+.hero-figure .hf-eye { animation: eyeGlow 2.6s ease-in-out infinite; }
+@keyframes weaponIdle { 0%,100% { transform: rotate(0deg) translateY(0); } 50% { transform: rotate(-2deg) translateY(-1px); } }
+@keyframes capeSway { 0%,100% { transform: rotate(-2deg) skewX(1deg); } 50% { transform: rotate(2.5deg) skewX(-1.5deg); } }
+@keyframes eyeGlow { 0%,100% { opacity: .72; } 50% { opacity: 1; } }
+
+/* 雷电之主：法杖高举 → 落雷 */
+.unit-pose-thunder-discharge .hero-figure-wrap { animation: thunderBody .62s cubic-bezier(.2,.8,.3,1); }
+.unit-pose-thunder-discharge .hf-weapon { animation: thunderStaff .62s ease-out; }
+.unit-pose-thunder-discharge .hero-aura { animation: thunderAura .62s ease-out; }
+@keyframes thunderBody { 0% { transform: translateY(0) scale(1); } 28% { transform: translateY(3px) scale(.97); } 55% { transform: translateY(-6px) scale(1.06); } 100% { transform: translateY(0) scale(1); } }
+@keyframes thunderStaff { 0% { transform: rotate(0); } 30% { transform: rotate(-8deg) translateY(3px); } 58% { transform: rotate(-24deg) translateY(-7px); } 100% { transform: rotate(0); } }
+@keyframes thunderAura { 0% { opacity: .5; transform: scale(.9); } 55% { opacity: 1; transform: scale(1.22); } 100% { opacity: .7; transform: scale(1); } }
+
+/* 鹰佐·雷劈：压低 → 拔刀 → 前刺 */
+.unit-pose-eagle-raikiri .hero-figure-wrap { animation: eagleRaiBody .56s cubic-bezier(.2,.8,.3,1); }
+.unit-pose-eagle-raikiri .hf-weapon { animation: eagleRaiWpn .56s cubic-bezier(.2,.8,.3,1); }
+.unit-pose-eagle-raikiri .hf-armor { animation: eagleRaiTorso .56s ease-out; }
+@keyframes eagleRaiBody { 0% { transform: scale(1); } 20% { transform: translateY(3px) scaleY(.95); } 55% { transform: translateX(5px) rotate(5deg) scale(1.04); } 100% { transform: scale(1); } }
+@keyframes eagleRaiWpn { 0% { transform: rotate(0); } 24% { transform: rotate(-58deg) translate(-2px,2px); } 62% { transform: rotate(26deg) translate(4px,-1px); } 100% { transform: rotate(0); } }
+@keyframes eagleRaiTorso { 0% { transform: rotate(0); } 24% { transform: rotate(-5deg); } 62% { transform: rotate(7deg); } 100% { transform: rotate(0); } }
+
+/* 鹰佐·雷鸣刀第一段：低身蓄势 → 十字斩 */
+.unit-pose-eagle-tb0 .hero-figure-wrap { animation: eagleTb0Body .58s cubic-bezier(.2,.8,.3,1); }
+.unit-pose-eagle-tb0 .hf-weapon { animation: eagleTb0Wpn .58s cubic-bezier(.2,.8,.3,1); }
+.unit-pose-eagle-tb0 .hero-aura { animation: eagleTb0Aura .58s ease-out; }
+@keyframes eagleTb0Body { 0% { transform: scale(1); } 22% { transform: translateY(4px) scaleY(.93) rotate(-3deg); } 58% { transform: translateX(6px) rotate(7deg) scale(1.05); } 100% { transform: translateY(0) scale(1); } }
+@keyframes eagleTb0Wpn { 0% { transform: rotate(0); } 22% { transform: rotate(-72deg) translate(-3px,3px); } 58% { transform: rotate(38deg) translate(5px,-2px); } 100% { transform: rotate(0); } }
+@keyframes eagleTb0Aura { 0% { opacity: .55; transform: scale(.9); } 55% { opacity: 1; transform: scale(1.28); } 100% { opacity: .7; transform: scale(1); } }
+
+/* 鹰佐·雷鸣刀第二段：后仰插刀 → 吐火 */
+.unit-pose-eagle-tb1 .hero-figure-wrap { animation: eagleTb1Body .6s ease-out; }
+.unit-pose-eagle-tb1 .hf-weapon { animation: eagleTb1Wpn .6s ease-out; }
+.unit-pose-eagle-tb1 .hf-head { animation: eagleTb1Head .6s ease-out; }
+@keyframes eagleTb1Body { 0% { transform: translateY(0); } 22% { transform: translateY(-2px) rotate(-4deg) scale(1.02); } 48% { transform: translateY(3px) scaleY(.96); } 74% { transform: translateX(-4px) rotate(-6deg); } 100% { transform: translateY(0); } }
+@keyframes eagleTb1Wpn { 0% { transform: rotate(0); } 30% { transform: rotate(16deg) translateY(-2px); } 52% { transform: rotate(86deg) translate(2px,4px); } 78% { transform: rotate(72deg) translate(2px,2px); } 100% { transform: rotate(0); } }
+@keyframes eagleTb1Head { 0% { transform: rotate(0); } 50% { transform: rotate(6deg) translateX(2px); } 100% { transform: rotate(0); } }
+
+/* 鹰佐·雷鸣刀第三段：升空 → 雷刀下劈 */
+.unit-pose-eagle-tb2 .hero-figure-wrap { animation: eagleTb2Body .64s cubic-bezier(.2,.8,.3,1); }
+.unit-pose-eagle-tb2 .hf-weapon { animation: eagleTb2Wpn .64s cubic-bezier(.2,.8,.3,1); }
+.unit-pose-eagle-tb2 .hero-aura { animation: eagleTb2Aura .64s ease-out; }
+@keyframes eagleTb2Body { 0% { transform: translateY(0) scale(1); } 24% { transform: translateY(-7px) scale(1.07) rotate(-4deg); } 62% { transform: translateY(2px) scale(1.02) rotate(7deg); } 100% { transform: translateY(0) scale(1); } }
+@keyframes eagleTb2Wpn { 0% { transform: rotate(0); } 24% { transform: rotate(-80deg) translateY(-4px); } 62% { transform: rotate(58deg) translate(4px,3px); } 100% { transform: rotate(0); } }
+@keyframes eagleTb2Aura { 0% { opacity: .5; } 35% { opacity: 1; transform: scale(1.3); } 100% { opacity: .7; transform: scale(1); } }
+
+/* 须佐·雷刀 / 雷鸣 / 须佐箭 / 鸦天狗 */
+.unit-pose-susanoo-dash .hero-figure-wrap { animation: susDash .55s ease-out; }
+.unit-pose-susanoo-dash .hf-weapon { animation: susDashWpn .55s ease-out; }
+@keyframes susDash { 0% { transform: translateX(0) rotate(0); } 35% { transform: translateX(-4px) rotate(-3deg) scale(1.02); } 68% { transform: translateX(6px) rotate(4deg); } 100% { transform: translateX(0); } }
+@keyframes susDashWpn { 0% { transform: rotate(0); } 35% { transform: rotate(-30deg); } 68% { transform: rotate(26deg) translateX(4px); } 100% { transform: rotate(0); } }
+.unit-pose-susanoo-pull .hero-figure-wrap { animation: susPull .55s ease-out; }
+.unit-pose-susanoo-pull .hf-weapon { animation: susPullWpn .55s ease-out; }
+.unit-pose-susanoo-pull .hf-armor { animation: susPullTorso .55s ease-out; }
+@keyframes susPull { 0% { transform: translateX(0); } 30% { transform: translateX(4px) scale(.98); } 65% { transform: translateX(-5px) rotate(-4deg); } 100% { transform: translateX(0); } }
+@keyframes susPullWpn { 0% { transform: rotate(0); } 30% { transform: rotate(12deg) translateX(5px); } 65% { transform: rotate(-14deg) translateX(-4px); } 100% { transform: rotate(0); } }
+@keyframes susPullTorso { 0%,100% { transform: rotate(0); } 40% { transform: rotate(5deg); } 70% { transform: rotate(-6deg); } }
+.unit-pose-susanoo-arrow .hero-figure-wrap { animation: susArrowBody .72s cubic-bezier(.2,.8,.3,1); }
+.unit-pose-susanoo-arrow .hf-weapon { animation: susArrowBow .72s cubic-bezier(.2,.8,.3,1); }
+.unit-pose-susanoo-arrow .hero-aura { animation: susArrowAura .72s ease-out; }
+@keyframes susArrowBody { 0% { transform: scale(1); } 26% { transform: translateX(-3px) rotate(-4deg) scale(.98); } 48% { transform: translateX(-5px) rotate(-6deg) scale(1.02); } 66% { transform: translateX(6px) rotate(4deg) scale(1.05); } 100% { transform: scale(1); } }
+@keyframes susArrowBow { 0% { transform: rotate(0); } 28% { transform: rotate(-18deg) translateX(-5px); } 52% { transform: rotate(-24deg) translateX(-7px); } 68% { transform: rotate(20deg) translateX(4px); } 100% { transform: rotate(0); } }
+@keyframes susArrowAura { 0% { opacity: .45; transform: scale(.85); } 40% { opacity: 1; transform: scale(1.18); } 100% { opacity: .7; transform: scale(1); } }
+.unit-pose-susanoo-crow .hero-figure-wrap { animation: susCrowBody .78s ease-out; }
+.unit-pose-susanoo-crow .hf-weapon { animation: susCrowWpn .78s ease-out; }
+.unit-pose-susanoo-crow .hf-armor { animation: susCrowTorso .78s ease-out; }
+@keyframes susCrowBody { 0% { transform: translateY(0) scale(1); } 25% { transform: translateY(4px) scaleY(.94); } 55% { transform: translateY(-7px) scale(1.08); } 100% { transform: translateY(0) scale(1); } }
+@keyframes susCrowWpn { 0% { transform: rotate(0); } 30% { transform: rotate(-20deg) translateY(3px); } 60% { transform: rotate(-48deg) translateY(-5px); } 100% { transform: rotate(0); } }
+@keyframes susCrowTorso { 0%,100% { transform: scaleY(1); } 45% { transform: scaleY(1.05); } }
+
+/* 金蝉：禅坐 / 神掌 */
+.unit-pose-cicada-meditate .hero-figure-wrap { animation: cicadaSit .9s ease-in-out; }
+.unit-pose-cicada-meditate .hf-weapon { animation: cicadaStaff .9s ease-in-out; }
+.unit-pose-cicada-meditate .hf-head { animation: cicadaHead .9s ease-in-out; }
+@keyframes cicadaSit { 0% { transform: translateY(0) scaleY(1); } 40% { transform: translateY(5px) scaleY(.9); } 75% { transform: translateY(6px) scaleY(.88); } 100% { transform: translateY(4px) scaleY(.9); } }
+@keyframes cicadaStaff { 0% { transform: rotate(0); } 50% { transform: rotate(78deg) translate(3px,4px); } 100% { transform: rotate(68deg) translate(2px,3px); } }
+@keyframes cicadaHead { 0% { transform: rotate(0); } 50% { transform: rotate(-5deg); } 100% { transform: rotate(-3deg); } }
+.unit-pose-cicada-palm .hero-figure-wrap { animation: cicadaPalmBody .52s ease-out; }
+.unit-pose-cicada-palm .hf-weapon { animation: cicadaPalmHand .52s ease-out; }
+@keyframes cicadaPalmBody { 0% { transform: translateX(0) rotate(0); } 28% { transform: translateX(-4px) rotate(-4deg); } 62% { transform: translateX(7px) rotate(4deg) scale(1.03); } 100% { transform: translateX(0); } }
+@keyframes cicadaPalmHand { 0% { transform: rotate(0); } 28% { transform: rotate(16deg) translateX(-4px); } 62% { transform: rotate(-18deg) translateX(7px); } 100% { transform: rotate(0); } }
+
+/* 金元素：穿刺 / 装甲 / 狂潮 */
+.unit-pose-metal-pierce .hero-figure-wrap { animation: metalPierceBody .55s ease-out; }
+.unit-pose-metal-pierce .hf-weapon { animation: metalPierceWpn .55s cubic-bezier(.2,.85,.3,1); }
+@keyframes metalPierceBody { 0% { transform: translateX(0); } 25% { transform: translateX(-4px) rotate(-3deg) scale(.98); } 60% { transform: translateX(8px) rotate(4deg) scale(1.03); } 100% { transform: translateX(0); } }
+@keyframes metalPierceWpn { 0% { transform: rotate(0); } 25% { transform: rotate(-16deg) translateX(-5px); } 62% { transform: rotate(18deg) translateX(9px); } 100% { transform: rotate(0); } }
+.unit-pose-metal-armor .hero-figure-wrap { animation: metalArmorBody .6s ease-out; }
+.unit-pose-metal-armor .hf-armor { animation: metalArmorPlate .6s ease-out; }
+@keyframes metalArmorBody { 0% { transform: scale(1); } 35% { transform: scale(1.06) translateY(-2px); } 70% { transform: scale(.99) translateY(1px); } 100% { transform: scale(1); } }
+@keyframes metalArmorPlate { 0% { transform: scaleX(1); } 40% { transform: scaleX(1.08) scaleY(1.05); } 100% { transform: scaleX(1); } }
+.unit-pose-metal-tide .hero-figure-wrap { animation: metalTideBody .72s ease-out; }
+.unit-pose-metal-tide .hf-weapon { animation: metalTideWpn .72s ease-out; }
+@keyframes metalTideBody { 0% { transform: rotate(0) scale(1); } 35% { transform: translateY(-5px) rotate(-8deg) scale(1.05); } 70% { transform: translateY(-3px) rotate(7deg) scale(1.03); } 100% { transform: rotate(0) scale(1); } }
+@keyframes metalTideWpn { 0% { transform: rotate(0); } 40% { transform: rotate(-40deg) translateY(-4px); } 75% { transform: rotate(28deg); } 100% { transform: rotate(0); } }
+
+/* 渡鸦：潜行 / 雾冲 / 影牙 */
+.unit-pose-raven-stealth .hero-figure-wrap { animation: ravenStealthBody .6s ease-out; }
+.unit-pose-raven-stealth .hf-weapon { animation: ravenStealthWpn .6s ease-out; }
+@keyframes ravenStealthBody { 0% { opacity: 1; transform: scale(1) translateY(0); } 45% { opacity: .35; transform: scale(.9) translateY(4px) rotate(-4deg); } 100% { opacity: .55; transform: scale(.94) translateY(2px); } }
+@keyframes ravenStealthWpn { 0% { transform: rotate(0); } 50% { transform: rotate(40deg) translateY(3px); } 100% { transform: rotate(30deg) translateY(2px); } }
+.unit-pose-raven-mist .hero-figure-wrap { animation: ravenMistBody .52s cubic-bezier(.2,.8,.3,1); }
+.unit-pose-raven-mist .hf-weapon { animation: ravenMistWpn .52s ease-out; }
+@keyframes ravenMistBody { 0% { transform: translateX(0) skewX(0); } 28% { transform: translateX(-5px) skewX(-7deg) scale(.97); } 65% { transform: translateX(7px) skewX(6deg) scale(1.03); } 100% { transform: translateX(0); } }
+@keyframes ravenMistWpn { 0% { transform: rotate(0); } 30% { transform: rotate(-34deg); } 65% { transform: rotate(30deg) translateX(5px); } 100% { transform: rotate(0); } }
+.unit-pose-raven-fang .hero-figure-wrap { animation: ravenFangBody .5s ease-out; }
+.unit-pose-raven-fang .hf-weapon { animation: ravenFangWpn .5s ease-out; }
+@keyframes ravenFangBody { 0% { transform: rotate(0); } 30% { transform: rotate(-12deg) translateX(-3px); } 65% { transform: rotate(14deg) translateX(5px); } 100% { transform: rotate(0); } }
+@keyframes ravenFangWpn { 0% { transform: rotate(0); } 30% { transform: rotate(-56deg); } 65% { transform: rotate(34deg) translateX(4px); } 100% { transform: rotate(0); } }
+
+/* 山丘之王·推山：举锤 → 砸地 */
+.unit-pose-hillking-push .hero-figure-wrap { animation: hillPushBody .7s cubic-bezier(.2,.8,.3,1); }
+.unit-pose-hillking-push .hf-weapon { animation: hillPushWpn .7s cubic-bezier(.2,.8,.3,1); }
+@keyframes hillPushBody { 0% { transform: translateY(0); } 26% { transform: translateY(-5px) scale(.98); } 55% { transform: translateY(2px) scaleY(.94); } 72% { transform: translateY(4px) scale(1.02); } 100% { transform: translateY(0); } }
+@keyframes hillPushWpn { 0% { transform: rotate(0); } 28% { transform: rotate(-64deg) translateY(-5px); } 58% { transform: rotate(42deg) translate(3px,4px); } 100% { transform: rotate(0); } }
+
+/* 花木兰·所向披靡：压低 → 冲锋突刺 */
+.unit-pose-huamulan-charge .hero-figure-wrap { animation: hmChargeBody .56s cubic-bezier(.2,.8,.3,1); }
+.unit-pose-huamulan-charge .hf-weapon { animation: hmChargeWpn .56s ease-out; }
+@keyframes hmChargeBody { 0% { transform: translateX(0); } 25% { transform: translateX(-5px) rotate(-5deg) scaleY(.97); } 62% { transform: translateX(8px) rotate(6deg) scale(1.04); } 100% { transform: translateX(0); } }
+@keyframes hmChargeWpn { 0% { transform: rotate(0); } 25% { transform: rotate(-28deg) translateX(-4px); } 62% { transform: rotate(10deg) translateX(7px); } 100% { transform: rotate(0); } }
+
+/* 其他重点技能 */
+.unit-pose-ranger-shot .hf-weapon { animation: rangerDraw .5s ease-out; }
+.unit-pose-ranger-shot .hero-figure-wrap { animation: rangerBody .5s ease-out; }
+@keyframes rangerDraw { 0% { transform: rotate(0); } 35% { transform: rotate(-5deg) translateX(-3px); } 60% { transform: rotate(12deg) translateX(2px); } 100% { transform: rotate(0); } }
+@keyframes rangerBody { 0%,100% { transform: translateX(0); } 35% { transform: translateX(-2px); } 60% { transform: translateX(3px); } }
+.unit-pose-knight-sweep .hf-weapon { animation: knightSweepWpn .52s ease-out; }
+.unit-pose-knight-sweep .hero-figure-wrap { animation: knightSweepBody .52s ease-out; }
+@keyframes knightSweepWpn { 0% { transform: rotate(0); } 25% { transform: rotate(-70deg); } 65% { transform: rotate(58deg); } 100% { transform: rotate(0); } }
+@keyframes knightSweepBody { 0%,100% { transform: rotate(0); } 35% { transform: rotate(-7deg); } 65% { transform: rotate(8deg); } }
+.unit-pose-cleric-pray .hf-weapon { animation: clericPrayWpn .8s ease-in-out; }
+.unit-pose-cleric-pray .hero-figure-wrap { animation: clericPrayBody .8s ease-in-out; }
+@keyframes clericPrayWpn { 0%,100% { transform: rotate(0); } 45% { transform: rotate(-14deg) translateY(-3px); } }
+@keyframes clericPrayBody { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2px) scale(1.02); } }
+.unit-pose-warlock-frost .hf-weapon { animation: warlockFrostWpn .6s ease-out; }
+@keyframes warlockFrostWpn { 0% { transform: rotate(0); } 35% { transform: rotate(-28deg) translateY(-3px); } 65% { transform: rotate(20deg) translateX(4px); } 100% { transform: rotate(0); } }
+.unit-pose-jade-exile .hf-weapon { animation: jadeExileWpn .7s ease-out; }
+.unit-pose-jade-exile .hero-aura { animation: thunderAura .7s ease-out; }
+@keyframes jadeExileWpn { 0% { transform: rotate(0); } 35% { transform: rotate(-30deg) translateY(-4px); } 70% { transform: rotate(26deg) translateX(4px); } 100% { transform: rotate(0); } }
+.unit-pose-tiandao-pull .hf-weapon { animation: tiandaoPullWpn .6s ease-out; }
+.unit-pose-tiandao-pull .hero-figure-wrap { animation: susPull .6s ease-out; }
+@keyframes tiandaoPullWpn { 0% { transform: rotate(0); } 30% { transform: rotate(16deg) translateX(4px); } 65% { transform: rotate(-18deg) translateX(-5px); } 100% { transform: rotate(0); } }
+.unit-pose-cang-dance .hf-weapon { animation: cangDanceWpn .7s ease-in-out; }
+.unit-pose-cang-dance .hero-figure-wrap { animation: cangDanceBody .7s ease-in-out; }
+@keyframes cangDanceWpn { 0%,100% { transform: rotate(0); } 30% { transform: rotate(-35deg); } 65% { transform: rotate(30deg); } }
+@keyframes cangDanceBody { 0%,100% { transform: rotate(0) translateY(0); } 35% { transform: rotate(-6deg) translateY(-2px); } 70% { transform: rotate(6deg) translateY(-1px); } }
+.unit-pose-longren-breath .hero-figure-wrap { animation: dragonBreathBody .8s ease-in-out; }
+.unit-pose-longren-breath .hf-head { animation: dragonBreathHead .8s ease-in-out; }
+@keyframes dragonBreathBody { 0%,100% { transform: translateY(0) scale(1); } 35% { transform: translateY(2px) scale(.96); } 70% { transform: translateX(5px) scale(1.04); } }
+@keyframes dragonBreathHead { 0%,100% { transform: rotate(0); } 45% { transform: rotate(-3deg) translateX(-2px); } 75% { transform: rotate(4deg) translateX(3px); } }
+.unit-pose-vampire-burst .hero-figure-wrap { animation: vampireBurstBody .65s ease-out; }
+.unit-pose-vampire-burst .hero-aura { animation: thunderAura .65s ease-out; }
+@keyframes vampireBurstBody { 0% { transform: scale(1); } 35% { transform: scale(.94) translateY(3px); } 65% { transform: scale(1.08) translateY(-4px); } 100% { transform: scale(1); } }
