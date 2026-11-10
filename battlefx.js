@@ -34,7 +34,7 @@
   "use strict";
 
   const STORE_KEY = "herochess.fx";
-  const DEFAULTS = { enabled: true, traces: true, speed: 1, shake: true, reduce: false };
+  const DEFAULTS = { enabled: true, traces: true, speed: 1, shake: true, flash: true, reduce: false };
   let opts = Object.assign({}, DEFAULTS);
   try { Object.assign(opts, JSON.parse(localStorage.getItem(STORE_KEY) || "{}")); } catch (e) {}
   function saveOpts() { try { localStorage.setItem(STORE_KEY, JSON.stringify(opts)); } catch (e) {} }
@@ -553,6 +553,10 @@
     ember:   { alpha: 0.12, ttl: 8000,  rim: true },  // 灼痕：最轻
     frost:   { alpha: 0.14, ttl: 10000, rim: true },  // 霜痕
     shadow:  { alpha: 0.18, ttl: 9000,  rim: true },  // 暗影残痕
+    burn:    { alpha: 0.18, ttl: 9000,  rim: true },  // 火焰灼痕
+    blackflame:{ alpha: 0.24, ttl: 12000, rim: true }, // 黑炎残留
+    cut:     { alpha: 0.20, ttl: 9000,  rim: true },  // 剑气切痕
+    shock:   { alpha: 0.14, ttl: 7000,  rim: true },  // 冲击波地面纹路
   };
   let occupancyFn = null;   // (r,c) => 该格是否有单位（有则痕迹避开中心）
   let targeting = false;    // 正在选目标 / 显示范围时，痕迹进一步变淡
@@ -694,6 +698,55 @@
           ctx.moveTo(x + Math.cos(ang) * 3, y + Math.sin(ang) * 3);
           ctx.lineTo(x + Math.cos(ang) * L, y + Math.sin(ang) * L);
           ctx.stroke();
+        }
+        break;
+      }
+      case "burn": {
+        ctx.fillStyle = hexA(m.color || "#f97316", 0.55);
+        for (let i = 0; i < 5; i++) {
+          const ang = m.seed + i * 1.37;
+          const d = s * (0.08 + pseudo(m.seed + i * 5) * 0.24);
+          ctx.beginPath();
+          ctx.ellipse(x + Math.cos(ang) * d, y + Math.sin(ang) * d, s * (0.05 + pseudo(i) * 0.07), s * 0.035, ang, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.strokeStyle = hexA("#fbbf24", 0.28);
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = alpha * 0.6;
+        ctx.beginPath(); ctx.arc(x, y, s * 0.23, 0.3, Math.PI * 1.7); ctx.stroke();
+        break;
+      }
+      case "blackflame": {
+        ctx.fillStyle = hexA("#1e1b4b", 0.62);
+        ctx.beginPath(); ctx.arc(x, y, s * 0.23, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = hexA(m.color || "#7c3aed", 0.7);
+        ctx.lineWidth = 1.6;
+        for (let i = 0; i < 3; i++) {
+          ctx.globalAlpha = alpha * (0.7 - i * 0.16);
+          const cx = x + (pseudo(m.seed + i) - 0.5) * s * 0.25;
+          ctx.beginPath();
+          ctx.moveTo(cx, y + s * 0.2);
+          ctx.quadraticCurveTo(cx - s * 0.1, y, cx + (pseudo(i + m.seed) - 0.5) * s * 0.12, y - s * (0.16 + i * 0.04));
+          ctx.stroke();
+        }
+        break;
+      }
+      case "cut": {
+        ctx.strokeStyle = m.color || "#f8fafc";
+        ctx.lineWidth = 1.4;
+        ctx.globalAlpha = alpha * 0.7;
+        ctx.beginPath();
+        ctx.moveTo(x - s * 0.32, y + s * 0.12);
+        ctx.quadraticCurveTo(x, y - s * 0.12, x + s * 0.3, y + s * 0.04);
+        ctx.stroke();
+        break;
+      }
+      case "shock": {
+        ctx.strokeStyle = m.color || "#cbd5e1";
+        ctx.lineWidth = 1.2;
+        for (let i = 0; i < 3; i++) {
+          ctx.globalAlpha = alpha * (0.5 - i * 0.12);
+          ctx.beginPath(); ctx.arc(x, y, s * (0.12 + i * 0.08), 0, Math.PI * 2); ctx.stroke();
         }
         break;
       }
@@ -1658,6 +1711,120 @@
     hitStopUntil = Math.max(hitStopUntil, now() + dur(ms || 70));
   }
 
+  /* ---------------- 武器轨迹：剑气 / 火焰 / 雷电 ---------------- */
+  function weaponTrail(m) {
+    if (!opts.enabled || !m || !m.from || !m.to) return;
+    const x0 = px(m.from.c), y0 = py(m.from.r), x1 = px(m.to.c), y1 = py(m.to.r);
+    const ang = Math.atan2(y1 - y0, x1 - x0);
+    const kind = m.kind || "blade";
+    const col = m.color || (kind === "fire" ? "#fb923c" : kind === "lightning" ? "#a78bfa" : "#f8fafc");
+    const midX = (x0 + x1) / 2, midY = (y0 + y1) / 2;
+    if (kind === "fire") {
+      push({ kind: "slash", x: midX, y: midY, angle: ang + Math.PI / 2, len: geo.cell * 1.02, width: 7, color: "#f97316", lines: 2, curve: 10, dur: dur(300) });
+      push({ kind: "slash", x: midX, y: midY, angle: ang + Math.PI / 2, len: geo.cell * 0.86, width: 3, color: "#fde047", curve: 6, dur: dur(240), delay: 30 });
+      spawn(x1, y1, 20, { color: "#fb923c", speed: 2.8, life: 460, size: 2.2, angle: ang, spread: 1.4, grav: 0.02 });
+      spawn(midX, midY, 12, { color: "#f97316", speed: 1.6, life: 520, size: 2.6, angle: -Math.PI / 2, spread: 1.2, grav: -0.02 });
+      addMark("burn", m.to.r, m.to.c, "#f97316", 9000);
+    } else if (kind === "lightning") {
+      push({ kind: "bolt", x: x0, y: y0, x2: x1, y2: y1, color: col, width: 4.5, dur: dur(240), seed: Math.random() * 99 });
+      push({ kind: "slash", x: midX, y: midY, angle: ang + Math.PI / 2, len: geo.cell * 0.9, width: 4, color: "#e0f2fe", curve: 7, dur: dur(220), delay: 20 });
+      for (let i = 0; i < 3; i++) push({ kind: "bolt", x: midX, y: midY, x2: midX + Math.cos(ang + (i - 1) * 0.5) * geo.cell * 0.4, y2: midY + Math.sin(ang + (i - 1) * 0.5) * geo.cell * 0.4, color: "#a78bfa", width: 1.8, dur: dur(200), delay: dur(20 + i * 30), seed: Math.random() * 99 });
+      spawn(x1, y1, 18, { color: "#c4b5fd", speed: 3.2, life: 380, size: 2, angle: ang, spread: 1.1 });
+      addMark("thunder", m.to.r, m.to.c, col, 12000);
+    } else {
+      push({ kind: "slash", x: midX, y: midY, angle: ang + Math.PI / 2, len: geo.cell * 0.98, width: 5.5, color: col, lines: 2, curve: 8, dur: dur(260) });
+      push({ kind: "slash", x: midX, y: midY, angle: ang + Math.PI / 2, len: geo.cell * 0.74, width: 2.2, color: "#ffffff", curve: 4, dur: dur(200), delay: 20 });
+      spawn(x1, y1, 14, { color: "#f8fafc", speed: 3.4, life: 300, size: 1.8, angle: ang, spread: 1.2 });
+      addMark("cut", m.to.r, m.to.c, col, 9000);
+    }
+  }
+
+  /* ---------------- 全屏电影反馈 ---------------- */
+  let screenEl = null, screenFlash = null, screenVignette = null, screenShock = null, screenParts = null;
+  let lastScreenFx = 0;
+  function ensureScreenFx() {
+    if (screenEl && document.body.contains(screenEl)) return;
+    screenEl = document.createElement("div");
+    screenEl.className = "bfx-screen";
+    screenEl.setAttribute("aria-hidden", "true");
+    screenEl.innerHTML = '<div class="bfx-screen-flash"></div><div class="bfx-screen-vignette"></div><div class="bfx-screen-shock"></div><div class="bfx-screen-parts"></div>';
+    document.body.appendChild(screenEl);
+    screenFlash = screenEl.querySelector(".bfx-screen-flash");
+    screenVignette = screenEl.querySelector(".bfx-screen-vignette");
+    screenShock = screenEl.querySelector(".bfx-screen-shock");
+    screenParts = screenEl.querySelector(".bfx-screen-parts");
+  }
+  function screenFX(o) {
+    o = o || {};
+    if (!opts.enabled || opts.reduce) return;
+    const tier = Math.max(1, Math.min(3, o.tier || 2));
+    if (tier < 2) return;
+    const t = now();
+    if (t - lastScreenFx < 110) return;
+    lastScreenFx = t;
+    ensureScreenFx();
+    const col = o.color || "#c4b5fd";
+    const sx = (() => {
+      if (!boardEl || o.r == null || o.c == null) return window.innerWidth / 2;
+      return boardEl.getBoundingClientRect().left + px(o.c);
+    })();
+    const sy = (() => {
+      if (!boardEl || o.r == null || o.c == null) return window.innerHeight / 2;
+      return boardEl.getBoundingClientRect().top + py(o.r);
+    })();
+    if (opts.flash !== false && screenFlash) {
+      screenFlash.style.background = col;
+      screenFlash.classList.remove("show");
+      void screenFlash.offsetWidth;
+      screenFlash.style.setProperty("--fx-alpha", tier >= 3 ? "0.34" : "0.18");
+      screenFlash.classList.add("show");
+      setTimeout(() => screenFlash.classList.remove("show"), 180);
+    }
+    if (screenVignette) {
+      screenVignette.classList.remove("show");
+      void screenVignette.offsetWidth;
+      screenVignette.style.setProperty("--fx-color", col);
+      screenVignette.classList.add("show");
+      setTimeout(() => screenVignette.classList.remove("show"), 460);
+    }
+    if (screenShock) {
+      screenShock.classList.remove("show");
+      screenShock.style.left = sx + "px";
+      screenShock.style.top = sy + "px";
+      screenShock.style.setProperty("--fx-color", col);
+      void screenShock.offsetWidth;
+      screenShock.classList.add("show");
+      setTimeout(() => screenShock.classList.remove("show"), 620);
+    }
+    if (screenParts) {
+      screenParts.innerHTML = "";
+      const n = tier >= 3 ? 22 : 10;
+      for (let i = 0; i < n; i++) {
+        const p = document.createElement("i");
+        const ang = Math.random() * Math.PI * 2;
+        const dist = 60 + Math.random() * (tier >= 3 ? 260 : 150);
+        p.style.left = sx + "px";
+        p.style.top = sy + "px";
+        p.style.setProperty("--dx", Math.cos(ang) * dist + "px");
+        p.style.setProperty("--dy", Math.sin(ang) * dist + "px");
+        p.style.setProperty("--d", (420 + Math.random() * 260) + "ms");
+        p.style.setProperty("--sz", (2 + Math.random() * 3) + "px");
+        p.style.background = col;
+        p.style.boxShadow = "0 0 6px " + col;
+        screenParts.appendChild(p);
+      }
+      setTimeout(() => { if (screenParts) screenParts.innerHTML = ""; }, 780);
+    }
+    if (wrap && tier >= 3) {
+      wrap.classList.remove("bfx-camera-zoom");
+      void wrap.offsetWidth;
+      wrap.classList.add("bfx-camera-zoom");
+      setTimeout(() => wrap.classList.remove("bfx-camera-zoom"), 420);
+    }
+    shake(tier >= 3 ? 6 : 3);
+    hitstop(tier >= 3 ? 90 : 45);
+  }
+
   function banner(hero, skill, stage) {
     if (!bannerEl) return;
     const txt = hero + (skill ? " · " + skill : "") + (stage ? "　" + stage : "");
@@ -2088,6 +2255,13 @@
     effects.length = 0; particles.length = 0; marks.length = 0;
     if (ctx) ctx.clearRect(0, 0, W, H);
     if (bannerEl) bannerEl.classList.remove("show");
+    if (screenEl) {
+      if (screenFlash) screenFlash.classList.remove("show");
+      if (screenVignette) screenVignette.classList.remove("show");
+      if (screenShock) screenShock.classList.remove("show");
+      if (screenParts) screenParts.innerHTML = "";
+    }
+    if (wrap) wrap.classList.remove("bfx-camera-zoom");
     clearTimeout(turnTimer);
     if (turnEl) turnEl.classList.remove("show");
     clearTimeout(cardTimer);
@@ -2099,6 +2273,7 @@
     init, sync, setOptions, clear, banner, attack, hit, shieldAbsorb: shieldAbsorb,
     dodge, immune, death, move, knockback, grab, heal, shield: shieldFx, revive,
     swordSpawn, cast, drain, mark: addMark, shake, flash, hitstop, heroColor,
+    screenFX, weaponTrail,
     turnTransition, talismanCast, talismanEffect, pillars, mist,
     victoryBurst, victoryTitle, victoryHeroPose, victoryHide,
     setOccupancy(fn) { occupancyFn = fn || null; },

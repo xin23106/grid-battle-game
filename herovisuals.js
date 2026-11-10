@@ -225,5 +225,26 @@
     return ATTACK_POSE_BY_WEAPON[look(heroId).weapon] || "slash";
   }
 
-  window.HeroVisuals = { LOOKS, DEFAULT, look, figureSVG, visualHTML, applyVars, moveStyle, poseFor, attackPose, POSE_BY_TYPE };
+  /* ---------------------------------------------------------------------
+     立绘资源接口（可替换为正式美术资源）
+     当前示范：雷电之主 / 鹰佐 / 须佐 的高分辨率透明 SVG 立绘。
+     同一资源可派生 board / avatar / icon / silhouette；后续换成 PNG/WebP
+     只需修改这里的路径，游戏内卡片会自动加载并在失败时回退到矢量棋子。
+     --------------------------------------------------------------------- */
+  const HERO_ART = {
+    thunder: { portrait: "art/thunder.svg", board: "art/thunder.svg", avatar: "art/thunder.svg", icon: "art/thunder.svg", silhouette: "art/thunder.svg" },
+    eagle: { portrait: "art/eagle.svg", board: "art/eagle.svg", avatar: "art/eagle.svg", icon: "art/eagle.svg", silhouette: "art/eagle.svg" },
+    susanoo: { portrait: "art/susanoo.svg", board: "art/susanoo.svg", avatar: "art/susanoo.svg", icon: "art/susanoo.svg", silhouette: "art/susanoo.svg" },
+  };
+  function portraitHTML(id, extraClass) {
+    const art = HERO_ART[id];
+    if (!art || !art.portrait) return visualHTML(id, extraClass);
+    return '<span class="hero-art-wrap ' + (extraClass || "") + '">' +
+      '<img class="hero-art-img" src="' + art.portrait + '" alt="" ' +
+      'onerror="this.style.display=\'none\';this.parentNode.classList.add(\'hero-art-failed\')">' +
+      '<span class="hero-art-fallback">' + visualHTML(id) + '</span>' +
+      '</span>';
+  }
+
+  window.HeroVisuals = { LOOKS, DEFAULT, look, figureSVG, visualHTML, applyVars, moveStyle, poseFor, attackPose, POSE_BY_TYPE, HERO_ART, portraitHTML };
 })();

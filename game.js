@@ -2413,6 +2413,12 @@ function normalAttack(attacker, target) {
       from: atkBefore, to: tgtBefore, flank: !!res.flank,
       color: window.BFX.heroColor(attacker.heroId), heroId: attacker.heroId,
     });
+    if (window.BFX.weaponTrail) {
+      const _id = attacker.heroId;
+      const _kind = /^(thunder|eagle|susanoo|tiandao)$/.test(_id) ? "lightning"
+        : /^(longren|vampire|berserker|lone)$/.test(_id) ? "fire" : "blade";
+      window.BFX.weaponTrail({ from: atkBefore, to: tgtBefore, color: window.BFX.heroColor(_id), kind: _kind });
+    }
   }
   applyDamage(target, total, res.flank ? "flank" : "normal", attacker);
   // 渡鸦：主动攻击成功执行 → 立刻破隐并消耗影袭强化
@@ -2466,6 +2472,16 @@ function skillStageLabel(a, s) {
   if (s.type === "thunderblade") return ["第一段·雷斩", "第二段·火遁反斩", "第三段·雷遁终结"][a.rbStage || 0] || "";
   if (s.type === "raikiri") return "选择朝向";
   return "";
+}
+/* 全屏演出的强度分级：普通技能 2，终结/大范围 3，位移/治疗/防御 1 */
+function screenTierFor(a, s) {
+  if (!s) return 1;
+  if (s.type === "thunderblade") return (a.rbStage || 0) >= 2 ? 3 : 2;
+  if (s.type === "susano_arrow" || s.type === "susano_crow" || s.type === "meditate") return 3;
+  if (s.type === "wxt") return (a.wxtStage || 0) >= 2 ? 3 : 2;
+  if (/^(thunder|shenluo|bloodburst|charge|tianwei|raikiri|dragonbreath|metaltide)$/.test(s.type)) return 3;
+  if (/^(heal|shield_self|shield_ally|metalarmor|stealth|blink|ziwei|duanlang|exile)$/.test(s.type)) return 1;
+  return 2;
 }
 
 /* ============================ 花木兰·所向披靡 ============================ */
@@ -4520,6 +4536,14 @@ function useSkill(tr, tc) {
     }
   }
 
+  // 全屏电影反馈：等技能真实结算完成后再播放（不修改伤害/位置）
+  if (window.BFX && window.BFX.screenFX) {
+    try {
+      const _fxColor = /^(thunder|eagle|susanoo|tiandao)$/.test(a.heroId) ? "#dbeafe" : window.BFX.heroColor(a.heroId);
+      window.BFX.screenFX({ tier: screenTierFor(a, s), color: _fxColor, r: tr, c: tc });
+    } catch (e) { /* 表现层失败不影响规则 */ }
+  }
+
   // 消耗一次释放次数（无限次技能不减少；水调歌头 / 追猎第二段不额外消耗；追猎第一段已在分支内提前扣除）
   if (!sd2 && !chase2 && !wxtCombo && !tbCombo && !consumedHere) {
     const curUses = skillUsesLeft(a, activeSkillIdx);
@@ -5652,7 +5676,7 @@ function updateRoster() {
     card.disabled = isUsed;
     card.title = h.name + "｜" + h.tag + "\n技能【" + h.skill.name + "】：" + h.skill.desc;
     card.innerHTML =
-      '<span class="ho-portrait">' + (window.HeroVisuals ? window.HeroVisuals.visualHTML(h.id, "mini") : h.icon) + "</span>" +
+      '<span class="ho-portrait">' + (window.HeroVisuals ? window.HeroVisuals.portraitHTML(h.id, "mini") : h.icon) + "</span>" +
       '<span class="ho-name">' + h.name + "</span>" +
       '<span class="ho-hp">♥ ' + h.hp + "</span>";
     card.addEventListener("click", () => {
@@ -5745,7 +5769,7 @@ function updateHeroCard() {
   if (window.HeroVisuals) window.HeroVisuals.applyVars(heroCardEl, u.heroId);
   heroCardEl.innerHTML =
     '<div class="hc-head">' +
-      '<span class="hc-icon">' + (window.HeroVisuals ? window.HeroVisuals.visualHTML(def.id, "hc-portrait") : def.icon) + "</span>" +
+      '<span class="hc-icon">' + (window.HeroVisuals ? window.HeroVisuals.portraitHTML(def.id, "hc-portrait") : def.icon) + "</span>" +
       '<div class="hc-title">' +
         '<div class="hc-name">' + def.name + "</div>" +
         '<div class="hc-tag">' + def.tag + "</div>" +
@@ -7630,6 +7654,7 @@ if (document.getElementById("phone-copy")) {
   bind("set-fx", "enabled", true);
   bind("set-fx-traces", "traces", true);
   bind("set-fx-shake", "shake", true);
+  bind("set-fx-flash", "flash", true);
   bind("set-fx-reduce", "reduce", true);
   bind("set-fx-speed", "speed", false);
   // 字体/布局稳定后校正一次画布几何

@@ -2076,3 +2076,91 @@ html, body {
   .hero-option { min-height: 52px; }
   .ho-portrait { width: 32px; height: 32px; flex-basis: 32px; }
 }
+
+/* ---- 全屏电影反馈（闪光/暗角/冲击波/粒子/镜头缩放） ---- */
+.bfx-screen {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 80;
+  overflow: hidden;
+  contain: strict;
+}
+.bfx-screen-flash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: var(--fx-color, #c4b5fd);
+  mix-blend-mode: screen;
+}
+.bfx-screen-flash.show { animation: bfxScreenFlash 180ms ease-out; }
+@keyframes bfxScreenFlash {
+  0% { opacity: 0; }
+  18% { opacity: var(--fx-alpha, .2); }
+  100% { opacity: 0; }
+}
+.bfx-screen-vignette {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(circle at 50% 50%, transparent 38%, color-mix(in srgb, var(--fx-color, #c4b5fd) 28%, transparent) 66%, rgba(2,6,23,.55));
+}
+.bfx-screen-vignette.show { animation: bfxScreenVignette 460ms ease-out; }
+@keyframes bfxScreenVignette {
+  0% { opacity: 0; }
+  18% { opacity: .85; }
+  100% { opacity: 0; }
+}
+.bfx-screen-shock {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border: 2px solid var(--fx-color, #c4b5fd);
+  border-radius: 50%;
+  opacity: 0;
+  box-shadow: 0 0 18px var(--fx-color, #c4b5fd), 0 0 40px color-mix(in srgb, var(--fx-color, #c4b5fd) 40%, transparent);
+}
+.bfx-screen-shock.show { animation: bfxScreenShock 620ms cubic-bezier(.16,.8,.3,1); }
+@keyframes bfxScreenShock {
+  0% { opacity: .9; transform: scale(.25); }
+  35% { opacity: .65; }
+  100% { opacity: 0; transform: scale(16); }
+}
+.bfx-screen-parts i {
+  position: absolute;
+  width: var(--sz, 3px);
+  height: var(--sz, 3px);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  animation: bfxScreenParticle var(--d, 520ms) cubic-bezier(.12,.7,.25,1) forwards;
+}
+@keyframes bfxScreenParticle {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(.25); }
+}
+.bfx-camera-zoom {
+  animation: bfxCameraZoom 420ms cubic-bezier(.2,.8,.25,1);
+  transform-origin: 50% 50%;
+  will-change: transform;
+}
+@keyframes bfxCameraZoom {
+  0% { transform: scale(1); }
+  18% { transform: scale(1.028); }
+  100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bfx-screen-flash, .bfx-screen-vignette, .bfx-screen-shock, .bfx-screen-parts i, .bfx-camera-zoom { animation: none !important; }
+}
+
+/* ---- 立绘资源 (portrait/board/avatar/icon/silhouette 接口) ---- */
+.hero-art-wrap { position: relative; display: block; width: 100%; height: 100%; overflow: hidden; border-radius: inherit; }
+.hero-art-img { width: 100%; height: 100%; object-fit: contain; object-position: center bottom; display: block; filter: drop-shadow(0 4px 8px rgba(0,0,0,.45)); }
+.hero-art-fallback { display: none; position: absolute; inset: 0; }
+.hero-art-wrap.hero-art-failed .hero-art-img { display: none; }
+.hero-art-wrap.hero-art-failed .hero-art-fallback { display: block; }
+.hero-art-wrap.mini .hero-art-img { object-position: center 18%; }
+.hero-art-wrap.hc-portrait .hero-art-img { object-position: center 12%; }
+.hero-option .hero-art-wrap .hero-art-fallback .hero-figure-wrap,
+.hero-art-wrap .hero-art-fallback .hero-figure-wrap { position: absolute; inset: 0 8% 2%; }
+.hero-option .hero-art-wrap .hero-art-fallback .hero-aura { left: 8%; right: 8%; bottom: 2%; height: 30%; }

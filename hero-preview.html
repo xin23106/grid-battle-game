@@ -18,7 +18,7 @@
     box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 8px 20px rgba(0,0,0,.35);
   }
   .preview-card .hero-figure-wrap { position: absolute; left: 6%; right: 6%; top: 3%; bottom: 21%; animation-duration: var(--idle-dur); }
-  .preview-card .hero-aura { left: 10%; right: 10%; bottom: 10%; height: 40%; }
+  .preview-card .hero-aura { left: 10%; right: 10%; bottom: 10%; height: 40%; }\n  .preview-card .hero-art-wrap { position: absolute; inset: 3% 5% 20%; }\n  .preview-card .hero-art-img { width: 100%; height: 100%; object-fit: contain; object-position: center bottom; }
   .preview-card .hero-particle-field { inset: 2% 2% 18%; }
   .preview-name { position: absolute; left: 0; right: 0; bottom: 16px; text-align: center; font-size: 12px; font-weight: 800; color: #f8fafc; text-shadow: 0 1px 3px #000; z-index: 5; }
   .preview-tag { position: absolute; left: 0; right: 0; bottom: 4px; text-align: center; font-size: 9px; color: #cbd5e1; z-index: 5; opacity: .8; }
@@ -42,7 +42,7 @@
         const card = document.createElement("div");
         card.className = "preview-card";
         window.HeroVisuals.applyVars(card, h.id);
-        card.innerHTML = window.HeroVisuals.visualHTML(h.id) +
+        card.innerHTML = window.HeroVisuals.portraitHTML(h.id) +
           '<span class="hover-glow"></span>' +
           '<span class="preview-name">' + h.name + '</span>' +
           '<span class="preview-tag">' + h.tag + '</span>';

@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 640" width="480" height="640">
+<defs>
+  <radialGradient id="aura" cx="50%" cy="62%" r="50%">
+    <stop offset="0%" stop-color="#e0f2fe" stop-opacity=".26"/>
+    <stop offset="45%" stop-color="#60a5fa" stop-opacity=".12"/>
+    <stop offset="100%" stop-color="#60a5fa" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="cloak" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#60a5fa"/><stop offset="100%" stop-color="#7c3aed"/>
+  </linearGradient>
+  <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+    <feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+  <filter id="rim" x="-30%" y="-30%" width="160%" height="160%">
+    <feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#e0f2fe" flood-opacity=".8"/>
+  </filter>
+  <style>
+  .hf-cloak{fill:#60a5fa;opacity:.94}
+  .hf-cape,.hf-back-cape{fill:#7c3aed;opacity:.88}
+  .hf-armor{fill:#7c3aed;stroke:#e0f2fe;stroke-width:.9}
+  .hf-shoulder{fill:#7c3aed;stroke:#e0f2fe;stroke-width:.8}
+  .hf-robe{fill:#7c3aed;opacity:.94}
+  .hf-belt{stroke:#e0f2fe;stroke-width:2;fill:none;opacity:.8}
+  .hf-leg{stroke:#7c3aed;stroke-width:3;stroke-linecap:round;fill:none}
+  .hf-neck{fill:#7c3aed}
+  .hf-head{fill:#60a5fa;opacity:.55}
+  .hf-hood{fill:#60a5fa;opacity:.96}
+  .hf-helm{fill:#7c3aed;stroke:#e0f2fe;stroke-width:.9}
+  .hf-visor{fill:#070b16}
+  .hf-plume{fill:#e0f2fe}
+  .hf-mask{fill:#7c3aed;stroke:#e0f2fe;stroke-width:.7}
+  .hf-eye-slit{stroke:#e0f2fe;stroke-width:1.3}
+  .hf-horn{fill:#7c3aed;stroke:#e0f2fe;stroke-width:.6}
+  .hf-hat{fill:#7c3aed;stroke:#e0f2fe;stroke-width:.8}
+  .hf-crown{fill:#e0f2fe}
+  .hf-halo{fill:none;stroke:#e0f2fe;stroke-width:1.4;opacity:.9}
+  .hf-eye{fill:#e0f2fe;filter:drop-shadow(0 0 2px #e0f2fe)}
+  .hf-wing{fill:#7c3aed;stroke:#e0f2fe;stroke-width:.7;opacity:.95}
+  .hf-scarf{fill:#60a5fa;opacity:.9}
+  .hf-float-orb{fill:#e0f2fe;filter:drop-shadow(0 0 5px #e0f2fe)}
+  .hf-tail{fill:#60a5fa;opacity:.8}
+  .hf-sigil{fill:#e0f2fe;opacity:.95}
+  .hf-sigil-dot{fill:#070b16}
+  .hf-sigil-ring{fill:none;stroke:#e0f2fe;stroke-width:1.4}
+  .hf-sigil-line{stroke:#e0f2fe;stroke-width:1.5;fill:none;stroke-linecap:round}
+  .hf-wpn-fill{fill:#e0f2fe;opacity:.96}
+  .hf-wpn-line{stroke:#e0f2fe;stroke-width:2.2;stroke-linecap:round;fill:none}
+  .hf-wpn-line.thin{stroke-width:1;opacity:.75}
+  .hf-wpn-glow{fill:none;stroke:#e0f2fe;stroke-width:1;opacity:.35}
+  .hf-shadow{fill:rgba(0,0,0,.5)}
+</style>
+</defs>
+<ellipse cx="240" cy="612" rx="152" ry="24" fill="url(#aura)"/>
+
+      <g opacity=".8" filter="url(#glow)">
+        <path d="M96 180 L150 235 L118 258 L182 330 L150 334 L205 420" fill="none" stroke="#e0f2fe" stroke-width="4" stroke-linecap="round"/>
+        <path d="M378 170 L330 225 L360 250 L300 322 L342 326 L286 408" fill="none" stroke="#8b5cf6" stroke-width="3" stroke-linecap="round"/>
+        <path d="M120 300 L172 310 L150 336 L210 350" fill="none" stroke="#e0f2fe" stroke-width="2" opacity=".6"/>
+      </g>
+      <g opacity=".55" stroke="#e0f2fe" fill="none">
+        <circle cx="240" cy="330" r="164" stroke-dasharray="7 22" stroke-width="1.4"/>
+        <circle cx="240" cy="330" r="138" stroke-dasharray="3 16" stroke-width="1"/>
+      </g>
+<g transform="translate(22 42) scale(6.8)" filter="url(#rim)">
+  <g opacity=".9"><ellipse class="hf-shadow" cx="32" cy="73" rx="17" ry="4"/><path class="hf-back-cape" d="M17 32 Q4 52 12 70 L22 68 L20 36 Z"/><path class="hf-cloak" d="M12 34 Q4 56 10 73 L54 73 Q60 56 52 34 Z"/><path class="hf-robe" d="M24 36 L40 36 L46 73 L18 73 Z"/><path class="hf-armor" d="M23 30 L32 24 L41 30 L40 48 L32 54 L24 48 Z"/><path class="hf-belt" d="M23 52 L41 52" /><path class="hf-neck" d="M29 28 L35 28 L36 33 L28 33 Z"/><path class="hf-head" d="M24 23 Q24 12 32 12 Q40 12 40 23 Z"/><path class="hf-hood" d="M21 23 Q22 7 32 7 Q42 7 43 23 Q37 16 32 16 Q27 16 21 23 Z"/><circle class="hf-eye" cx="29" cy="23" r="1.25"/><circle class="hf-eye" cx="35" cy="23" r="1.25"/><path class="hf-sigil" d="M34 39 L28 47 L32 47 L29 54 L37 45 L33 45 Z"/><g class="hf-weapon"><path class="hf-wpn-line" d="M48 20 L48 64"/><circle class="hf-wpn-fill" cx="48" cy="15" r="5"/></g></g>
+</g>
+<g opacity=".22" transform="translate(22 42) scale(6.8)"><ellipse class="hf-shadow" cx="32" cy="73" rx="17" ry="4"/><path class="hf-back-cape" d="M17 32 Q4 52 12 70 L22 68 L20 36 Z"/><path class="hf-cloak" d="M12 34 Q4 56 10 73 L54 73 Q60 56 52 34 Z"/><path class="hf-robe" d="M24 36 L40 36 L46 73 L18 73 Z"/><path class="hf-armor" d="M23 30 L32 24 L41 30 L40 48 L32 54 L24 48 Z"/><path class="hf-belt" d="M23 52 L41 52" /><path class="hf-neck" d="M29 28 L35 28 L36 33 L28 33 Z"/><path class="hf-head" d="M24 23 Q24 12 32 12 Q40 12 40 23 Z"/><path class="hf-hood" d="M21 23 Q22 7 32 7 Q42 7 43 23 Q37 16 32 16 Q27 16 21 23 Z"/><circle class="hf-eye" cx="29" cy="23" r="1.25"/><circle class="hf-eye" cx="35" cy="23" r="1.25"/><path class="hf-sigil" d="M34 39 L28 47 L32 47 L29 54 L37 45 L33 45 Z"/><g class="hf-weapon"><path class="hf-wpn-line" d="M48 20 L48 64"/><circle class="hf-wpn-fill" cx="48" cy="15" r="5"/></g></g>
+</svg>
