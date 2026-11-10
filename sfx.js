@@ -608,6 +608,32 @@
         N(L, { at: 0.36, dur: 0.05, bp: 5200, q: 1.8, peak: 0.024, pan: 0.2 });
         break;
 
+      case "susano_dash": // 须佐·雷刀：斜向破空 + 雷切
+        N(L, { at: 0, dur: 0.16, bp: 4200, q: 2.0, sweepTo: 900, peak: 0.10 });
+        M(L, { at: 0.05, base: 2400, dur: 0.16, peak: 0.07, partials: [1, 2.6, 4.4] });
+        N(L, { at: 0.12, dur: 0.09, hp: 1700, peak: 0.17, attack: 0.001 });
+        HP(L, { at: 0.12, dur: 0.28, f0: 130, f1: 42, peak: 0.24 });
+        break;
+      case "susano_pull": // 须佐·雷鸣：雷弧牵引 + 爆裂
+        S(L, { at: 0, f0: 120, f1: 620, dur: 0.24, peak: 0.06, wave: "sawtooth" });
+        N(L, { at: 0.02, dur: 0.30, bp: 3000, q: 1.4, sweepTo: 1600, peak: 0.08 });
+        N(L, { at: 0.20, dur: 0.10, hp: 1500, peak: 0.20, attack: 0.001 });
+        HP(L, { at: 0.20, dur: 0.34, f0: 105, f1: 35, peak: 0.30 });
+        break;
+      case "susano_arrow": // 须佐·须佐箭：巨大蓄力 → 射出 → 九宫格爆炸 → 黑炎
+        T(L, { at: 0, dur: 0.5, wave: "sawtooth", f0: 70, f1: 140, peak: 0.10, attack: 0.05 });
+        N(L, { at: 0.05, dur: 0.45, lp: 900, peak: 0.12, attack: 0.03 });
+        N(L, { at: 0.45, dur: 0.16, bp: 4600, q: 2.0, sweepTo: 900, peak: 0.11 }); // 射出
+        N(L, { at: 0.55, dur: 0.12, hp: 1400, peak: 0.24, attack: 0.001 });      // 爆炸
+        HP(L, { at: 0.55, dur: 0.5, f0: 100, f1: 28, peak: 0.34 });
+        N(L, { at: 0.70, dur: 0.5, lp: 600, peak: 0.12 });
+        break;
+      case "susano_crow": // 须佐·鸦天狗：黑翼展开 + 风压
+        N(L, { at: 0, dur: 0.35, lp: 1200, lpTo: 400, peak: 0.14, attack: 0.04 });
+        M(L, { at: 0.02, base: 1200, dur: 0.30, peak: 0.06, partials: [1, 2.2, 4.6] });
+        HP(L, { at: 0.10, dur: 0.40, f0: 90, f1: 30, peak: 0.28 });
+        N(L, { at: 0.18, dur: 0.4, bp: 2200, q: 1.2, sweepTo: 700, peak: 0.08 });
+        break;
       case "raikiri": // 鹰佐·雷劈：蓄电 → 短雷 → 强雷
         S(L, { at: 0, f0: 90, f1: 880, dur: 0.20, peak: 0.06, wave: "sawtooth" });
         N(L, { at: 0, dur: 0.16, bp: 3800, q: 1.6, peak: 0.05, attack: 0.01 });
@@ -870,6 +896,34 @@
       case "meditateGuard":
         T(L, { at: 0, dur: 0.16, wave: "sine", f0: 880, peak: 0.04 });
         N(L, { at: 0, dur: 0.12, bp: 3200, peak: 0.04 });
+        break;
+      case "crowEnter":
+        N(L, { at: 0, dur: 0.35, lp: 1100, lpTo: 380, peak: 0.14, attack: 0.03 });
+        HP(L, { at: 0.05, dur: 0.38, f0: 95, f1: 32, peak: 0.24 });
+        T(L, { at: 0.08, dur: 0.4, wave: "sine", f0: 180, peak: 0.05 });
+        break;
+      case "crowPulse":
+        N(L, { at: 0, dur: 0.35, bp: 2100, q: 1.2, sweepTo: 700, peak: 0.07 });
+        T(L, { at: 0, dur: 0.3, wave: "sine", f0: 220, f1: 160, peak: 0.04 });
+        break;
+      case "crowEnd":
+        N(L, { at: 0, dur: 0.5, lp: 900, lpTo: 300, peak: 0.10 });
+        T(L, { at: 0, dur: 0.5, wave: "sine", f0: 240, f1: 120, peak: 0.05 });
+        break;
+      case "crowGuard":
+        T(L, { at: 0, dur: 0.18, wave: "sine", f0: 760, peak: 0.04 });
+        N(L, { at: 0, dur: 0.14, bp: 3000, peak: 0.04 });
+        break;
+      case "blackflameRise":
+        N(L, { at: 0, dur: 0.5, lp: 1400, lpTo: 420, peak: 0.12, attack: 0.04 });
+        HP(L, { at: 0.05, dur: 0.4, f0: 80, f1: 28, peak: 0.22 });
+        break;
+      case "blackflameFade":
+        N(L, { at: 0, dur: 0.5, lp: 1000, lpTo: 260, peak: 0.08 });
+        break;
+      case "blackflameTick":
+        N(L, { at: 0, dur: 0.2, lp: 1300, peak: 0.05 });
+        HP(L, { at: 0, dur: 0.2, f0: 70, f1: 30, peak: 0.10 });
         break;
       case "root":
         M(L, { at: 0, base: 700, dur: 0.22, peak: 0.05, partials: [1, 2.2] });

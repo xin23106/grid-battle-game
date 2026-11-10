@@ -75,4 +75,11 @@ module.exports = [
     extraSkills: [
       { name: "雷鸣刀", type: "thunderblade", uses: 1, damage: 2, fire: 1, line: 1 },
     ] },
+  { id: "susanoo", name: "须佐", hp: 5, sfx: "thunder",
+    skill: { name: "雷刀", type: "susano_dash", uses: 1, free: true, damage: 1 },
+    extraSkills: [
+      { name: "雷鸣", type: "susano_pull", uses: 1, damage: 2 },
+      { name: "须佐箭", type: "susano_arrow", uses: 1, damage: 1 },
+      { name: "鸦天狗", type: "susano_crow", uses: 1, damage: 1 },
+    ] },
 ];

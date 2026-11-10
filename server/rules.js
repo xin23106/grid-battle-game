@@ -50,7 +50,7 @@ function isDisabled(u) {
   return isGrabbed(u) || isStunned(u);
 }
 /* 定身：不能移动 / 主动位移，但仍可普通攻击与非位移技能 */
-const SELF_MOVE_SKILLS = ["dash", "blink", "ziwei", "tianwei", "shuidiao", "duanlang", "thunder", "mistdash", "stealth", "thunderblade"];
+const SELF_MOVE_SKILLS = ["dash", "blink", "ziwei", "tianwei", "shuidiao", "duanlang", "thunder", "mistdash", "stealth", "thunderblade", "susano_dash"];
 function isSelfMoveSkillS(u, sk) {
   if (!sk) return false;
   if (SELF_MOVE_SKILLS.indexOf(sk.type) >= 0) return true;
@@ -78,7 +78,7 @@ function canActNow(s, u) {
 }
 /* 花木兰·所向披靡：沿 (dr,dc) 击退最多 2 格；路径上的英雄向侧方推开（服务端权威） */
 function chargeKnockbackS(s, tgt, dr, dc) {
-  if (isMeditatingS(tgt)) return { moved: 0, pushed: [], stun: false };
+  if (isFormImmuneS(tgt)) return { moved: 0, pushed: [], stun: false };
   const pushed = [];
   let moved = 0;
   for (let step = 0; step < 2; step++) {
@@ -92,7 +92,7 @@ function chargeKnockbackS(s, tgt, dr, dc) {
       continue;
     }
     if (cell.sword || cell.pillar) break;
-    if (isMeditatingS(cell)) break;
+    if (isFormImmuneS(cell)) break;
     const perp = [[-dc, dr], [dc, -dr]];
     const opts = [];
     for (const [pr, pc] of perp) {
@@ -112,7 +112,7 @@ function chargeKnockbackS(s, tgt, dr, dc) {
 }
 /* 雷电之主：随机击退到四周一个合法格 */
 function randomKnockback(s, t) {
-  if (isMeditatingS(t)) return null;
+  if (isFormImmuneS(t)) return null;
   const p = findPos(s, t);
   if (!p) return null;
   const opts = [];
@@ -148,8 +148,8 @@ function applyNegativeStatus(s, target, kind, opts) {
   let dmg = 0;
   if (opts.damage) dmg = applyDamage(s, target, opts.damage);
   if (!findPos(s, target)) return { applied: false, immune: false, damage: dmg, dead: true };
-  if (isMeditatingS(target)) {
-    slog(s, "🛡 禅坐：免疫了【" + (opts.label || kind) + "】");
+  if (isFormImmuneS(target)) {
+    slog(s, (isCrowFormS(target) ? "🪶 鸦天狗" : "🛡 禅坐") + "：免疫了【" + (opts.label || kind) + "】");
     return { applied: false, immune: true, damage: dmg };
   }
   if (hasSuperArmor(s, target)) {
@@ -198,7 +198,7 @@ function pushDirInfoS(s, u, r, c, dr, dc, ignoreCell) {
   return null;
 }
 function pushUnitForwardS(s, tgt, dr, dc, steps) {
-  if (isMeditatingS(tgt)) return 0;
+  if (isFormImmuneS(tgt)) return 0;
   let moved = 0;
   for (let i = 0; i < steps; i++) {
     const p = findPos(s, tgt);
@@ -211,7 +211,7 @@ function pushUnitForwardS(s, tgt, dr, dc, steps) {
   return moved;
 }
 function squeezeOutOfCellS(s, unit, cr, cc, nr, nc) {
-  if (isMeditatingS(unit)) return null;
+  if (isFormImmuneS(unit)) return null;
   const p = findPos(s, unit);
   if (!p) return null;
   const ok = (r, c) => inB(r, c) && !s.board[r][c] && !(r === cr && c === cc);
@@ -378,6 +378,123 @@ function tbLineCellsS(a, b) {
   return out;
 }
 
+/* ============================ 须佐：黑炎 / 鸦天狗（服务端） ============================ */
+const BLACK_FLAME_TURNS_S = 3;
+const CROW_FORM_TURNS_S = 3;
+function isCrowFormS(u) { return !!(u && u.crowForm); }
+function isFormImmuneS(u) { return isMeditatingS(u) || isCrowFormS(u); }
+function resetCrowFormS(u) { if (u) u.crowForm = null; }
+function blackFlameKeyS(r, c) { return r + "_" + c; }
+function blackFlameAtS(s, r, c) { return (s.blackFlames && s.blackFlames[blackFlameKeyS(r, c)]) || null; }
+function addBlackFlameAtS(s, r, c, owner) {
+  if (!inB(r, c)) return false;
+  if (!s.blackFlames) s.blackFlames = {};
+  const key = blackFlameKeyS(r, c);
+  if (s.blackFlames[key]) { s.blackFlames[key].turns = BLACK_FLAME_TURNS_S; return false; }
+  s.blackFlames[key] = { turns: BLACK_FLAME_TURNS_S, fresh: true, owner };
+  return true;
+}
+function tickBlackFlamesS(s) {
+  if (!s.blackFlames) return;
+  for (const key of Object.keys(s.blackFlames)) {
+    const f = s.blackFlames[key];
+    if (f.fresh) { f.fresh = false; continue; }
+    f.turns -= 1;
+    if (f.turns <= 0) delete s.blackFlames[key];
+  }
+}
+function applyBlackFlameS(s, player) {
+  for (const u of unitsOf(s, player).slice()) {
+    const p = findPos(s, u);
+    if (!p || !blackFlameAtS(s, p.r, p.c)) continue;
+    const dealt = applyDamage(s, u, 0.5, null);
+    if (dealt > 0) slog(s, "🔥 黑炎：" + uname(s, u) + " 受到 0.5 点伤害（余 " + u.hp + "）");
+  }
+}
+function crowDirOfS(u) {
+  const f = u && u.crowForm;
+  if (f && Array.isArray(f.dir)) return f.dir;
+  return faceDirS(u);
+}
+function crowAreaS(s, u) {
+  const p = findPos(s, u);
+  if (!p) return [];
+  const d = crowDirOfS(u);
+  const cr = p.r + d[0], cc = p.c + d[1];
+  if (!inB(cr, cc)) return [];
+  const out = [];
+  for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+    const rr = cr + dr, c2 = cc + dc;
+    if (inB(rr, c2)) out.push([rr, c2]);
+  }
+  return out;
+}
+function crowPulseS(s, u) {
+  const cells = crowAreaS(s, u);
+  if (!cells.length) return;
+  let hit = 0;
+  for (const [r, c] of cells) {
+    const e = s.board[r][c];
+    if (!isUnit(e) || e === u || e.player === u.player) continue;
+    const dealt = applyDamage(s, e, 0.5, u);
+    if (dealt > 0) hit++;
+  }
+  slog(s, "🪶 鸦天狗·风压：正前方九宫格内 " + hit + " 名敌人各受到 0.5 点伤害");
+}
+function endCrowFormS(s, u) {
+  if (!u || !u.crowForm) return;
+  u.crowForm = null;
+  slog(s, "🪶 " + uname(s, u) + " 的鸦天狗形态结束，解除无敌与行动限制");
+}
+function resolveCrowTurnS(s, player) {
+  for (const u of unitsOf(s, player)) {
+    const f = u.crowForm;
+    if (!f) continue;
+    if ((s.turnSerial || 0) <= (f.castTurn || 0)) continue;
+    crowPulseS(s, u);
+    f.turns -= 1;
+    if (f.turns <= 0) endCrowFormS(s, u);
+  }
+}
+function cellsAround3S(r, c) {
+  const out = [];
+  for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+    const rr = r + dr, cc = c + dc;
+    if (inB(rr, cc)) out.push([rr, cc]);
+  }
+  return out;
+}
+const SUSANO_DIAG_S = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+function susanoDashPlanS(s, u, r, c, dr, dc) {
+  const r1 = r + dr, c1 = c + dc, r2 = r + dr * 2, c2 = c + dc * 2;
+  if (!inB(r1, c1) || !inB(r2, c2)) return null;
+  const first = s.board[r1][c1];
+  if (isPillar(first) || isSword(first)) return null;
+  if (s.board[r2][c2]) return null;
+  const target = isUnit(first) && first.player !== u.player ? first : null;
+  return { first: { r: r1, c: c1 }, second: { r: r2, c: c2 }, target };
+}
+function susanoPullPlanS(s, u, r, c, dr, dc) {
+  const r1 = r + dr, c1 = c + dc, r2 = r + dr * 2, c2 = c + dc * 2;
+  if (!inB(r1, c1) || !inB(r2, c2)) return null;
+  const t = isUnit(s.board[r1][c1]) ? s.board[r1][c1] : null;
+  if (!t || t.player === u.player || hiddenFromS(t, u.player)) return null;
+  if (s.board[r2][c2]) return null;
+  return { target: t, from: { r: r1, c: c1 }, landing: { r: r2, c: c2 } };
+}
+function susanoArrowPlanS(s, u, r, c, dr, dc) {
+  const r1 = r + dr, c1 = c + dc, r2 = r + dr * 2, c2 = c + dc * 2;
+  if (!inB(r1, c1) || !inB(r2, c2)) return null;
+  const first = s.board[r1][c1], second = s.board[r2][c2];
+  if (isPillar(first) || isSword(first)) return null;
+  if (isPillar(second) || isSword(second)) return null;
+  if (isUnit(first)) {
+    if (first.player === u.player) return null;
+    if (second) return null;
+    return { mode: "pull", first: { r: r1, c: c1 }, second: { r: r2, c: c2 }, target: first };
+  }
+  return { mode: "explode", first: { r: r1, c: c1 }, second: { r: r2, c: c2 } };
+}
 
 function isStealthedS(u) {
   return !!(u && u.stealth && (u.stealth.turns || 0) > 0);
@@ -540,7 +657,7 @@ function createState() {
            toPlace: PER_PLAYER, placed: { 1: [], 2: [] }, pools: drawPools(), turnActionUsed: false,
            turnActionsMax: 1, turnActionsLeft: 1, turnActorUid: 0, empowerTurnActive: false,
            talisman: { 1: drawTalismanId(), 2: drawTalismanId() }, talismanUsed: { 1: false, 2: false }, wildcards: { 1: 3, 2: 3 },
-           assaultPlayer: 0, guardPlayer: 0, extraMoves: 0, extraTurnPending: false, graveyard: [], mists: {},
+           assaultPlayer: 0, guardPlayer: 0, extraMoves: 0, extraTurnPending: false, graveyard: [], mists: {}, blackFlames: {},
            stats: { damage: { 1: 0, 2: 0 }, kills: { 1: 0, 2: 0 }, startedAt: 0, endedAt: 0, lastKiller: null },
            log: [], logSeq: 0, _undo: [] };
 }
@@ -740,8 +857,8 @@ function spawnSword(s, r, c) {
 }
 function applyDamage(s, target, amount, source) {
   const pos = findPos(s, target);
-  if (isMeditatingS(target)) {
-    slog(s, "🛡 禅坐·无敌：" + uname(s, target) + " 免疫了本次伤害");
+  if (isFormImmuneS(target)) {
+    slog(s, (isCrowFormS(target) ? "🪶 鸦天狗·无敌：" : "🛡 禅坐·无敌：") + uname(s, target) + " 免疫了本次伤害");
     return 0;
   }
   let dmg = amount;
@@ -786,6 +903,7 @@ function applyDamage(s, target, amount, source) {
 function handleUnitDeathS(s, target, source, pos) {
   if (!target || !pos) return;
   resetThunderbladeS(target); // 鹰佐阵亡：终止连招并移除雷刀
+  resetCrowFormS(target); // 须佐阵亡：清除鸦天狗形态
   target.chaseMark = 0;
   if (target.heroId === "assassin") clearChaseMarks(s, target.uid);
   s.graveyard.push({ player: target.player, heroId: target.heroId, r: pos.r, c: pos.c, usesLeft: target.usesLeft || 0, usesArr: target.usesArr ? target.usesArr.slice() : null, swords: target.swords || 0, lockUsed: !!target.lockUsed, guixiongUsed: !!target.guixiongUsed, snapshot: JSON.parse(JSON.stringify(target)) });
@@ -885,7 +1003,7 @@ function sortUnitsByPosS(s, list) {
 }
 /* 神罗天征：击退出 (boxR,boxC) 九宫格，优先远离 (fromR,fromC) */
 function knockOutBoxAwayS(s, t, boxR, boxC, fromR, fromC) {
-  if (isMeditatingS(t)) return null;
+  if (isFormImmuneS(t)) return null;
   const p = findPos(s, t);
   if (!p) return null;
   const inBox = (r, c) => Math.abs(r - boxR) <= 1 && Math.abs(c - boxC) <= 1;
@@ -911,7 +1029,7 @@ function knockOutBoxAwayS(s, t, boxR, boxC, fromR, fromC) {
 }
 /* 万象天引第三段：沿远离 (fromR,fromC) 的方向击退 1 格 */
 function pushAwayOneS(s, t, fromR, fromC) {
-  if (isMeditatingS(t)) return null;
+  if (isFormImmuneS(t)) return null;
   const p = findPos(s, t);
   if (!p) return null;
   const ok = (r, c) => inB(r, c) && !s.board[r][c] && !(r === fromR && c === fromC);
@@ -968,9 +1086,14 @@ function computeDash(s, u, r, c, dr, dc, maxSteps) {  const steps = maxSteps || 
 }
 function beginTurn(s) {
   s.turnSerial = (s.turnSerial || 0) + 1;
+  const isExtraTurn = !!s.turnIsExtra; // 行军令额外回合：不推进鸦天狗
+  s.turnIsExtra = false;
   s._undo = []; // 新回合：不能悔到上一回合
   // 金蝉·禅坐：自身行动回合开始时结算九宫格（开启当回合不结算）
   resolveMeditateTurnS(s, s.currentPlayer);
+  if (checkVictory(s)) return;
+  // 须佐·鸦天狗：自身行动回合开始时结算前方九宫格 0.5（开启当回合不结算；额外回合不推进）
+  if (!isExtraTurn) resolveCrowTurnS(s, s.currentPlayer);
   if (checkVictory(s)) return;
   for (const u of unitsOf(s, s.currentPlayer)) {
     heroSkills(heroDef(u.heroId)).forEach((sk, i) => {
@@ -1006,6 +1129,7 @@ function hasAnyActionState(s, player) {
     if (u.frozen > 0) continue;
     if (isDisabled(u)) continue; // 抓取 / 眩晕：本回合无法移动/攻击/用技能
     if (isMeditatingS(u)) continue; // 禅坐：本回合无法行动
+    if (isCrowFormS(u)) continue; // 鸦天狗：本回合无法行动
     const pos = findPos(s, u);
     if (!pos) continue;
     const rooted = isRooted(u);
@@ -1072,6 +1196,7 @@ function endTurnOnce(s) {
   const ended = s.currentPlayer;
   // 毒雾：当前玩家位于毒雾格的英雄各受 0.5（回合结束时结算）
   applyMistPoisonS(s, s.currentPlayer);
+  applyBlackFlameS(s, s.currentPlayer);
   if (checkVictory(s)) return;
   // 临时石柱：每完成一个完整回合结束衰减一次（生成当回合不扣）
   tickPillarsS(s);
@@ -1095,8 +1220,10 @@ function endTurnOnce(s) {
   // 金元素·金属狂潮：按自身行动回合计时
   tickMetalTurnS(s, ended);
   if (!samePlayer) tickMistsS(s);
+  if (!samePlayer) tickBlackFlamesS(s);
   if (!samePlayer) s.currentPlayer = s.currentPlayer === 1 ? 2 : 1;
   slog(s, "玩家" + ended + " 结束回合");
+  s.turnIsExtra = samePlayer; // 供 beginTurn 判断额外回合（鸦天狗不提前推进）
   beginTurn(s);
 }
 /* 统一结束回合：结束当前玩家回合并交给对手；
@@ -1119,7 +1246,8 @@ function checkVictory(s) {
     // 对局结束：清理临时石柱 / 毒雾 / 潜行状态
     for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (isPillar(s.board[r][c])) s.board[r][c] = null;
     s.mists = {};
-    for (const u of unitsOf(s, 1).concat(unitsOf(s, 2))) { clearRavenStealthS(u); resetThunderbladeS(u); }
+    s.blackFlames = {};
+    for (const u of unitsOf(s, 1).concat(unitsOf(s, 2))) { clearRavenStealthS(u); resetThunderbladeS(u); resetCrowFormS(u); }
     if (s.stats && !s.stats.endedAt) s.stats.endedAt = Date.now();
     slog(s, "🏆 玩家" + s.winner + " 获胜，对局结束！");
     return true;
@@ -1196,7 +1324,7 @@ function applyAction(state, player, action) {
                       statuses: {}, lockUsed: false, sdStage: 0, dragonMoves: 0, empowerTurns: 0,
                       chaseStage: 0, chaseMark: 0, guixiongUsed: false, wxtStage: 0,
                       stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false, metalBuff: false, metalTide: 0, meditate: null,
-                      facing: player === 1 ? [0, 1] : [0, -1], rbStage: 0, rbBlade: null, rbDir: null,
+                      facing: player === 1 ? [0, 1] : [0, -1], rbStage: 0, rbBlade: null, rbDir: null, crowForm: null,
                       usesArr: heroSkills(def).map((sk) => (sk.uses == null ? 9999 : sk.uses)) };
     s.placed[player].push(heroId);
     if (usedWildcard) slog(s, "🎟 玩家" + player + " 使用选将卡任选了【" + (def.name || heroId) + "】（剩余 " + s.wildcards[player] + " 张）");
@@ -1298,13 +1426,14 @@ function applyAction(state, player, action) {
                       usesArr: rec.usesArr && rec.usesArr.length ? rec.usesArr.slice() : undefined,
                       statuses: {}, lockUsed: !!rec.lockUsed, sdStage: 0, dragonMoves: 0, empowerTurns: 0, chaseStage: 0, chaseMark: 0, guixiongUsed: !!rec.guixiongUsed, wxtStage: 0,
                       stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false, metalBuff: false, metalTide: 0, meditate: null,
-                      facing: player === 1 ? [0, 1] : [0, -1], rbStage: 0, rbBlade: null, rbDir: null };
+                      facing: player === 1 ? [0, 1] : [0, -1], rbStage: 0, rbBlade: null, rbDir: null, crowForm: null };
         }
         if (!revived.statuses) revived.statuses = {};
         // 鹰佐：复活不恢复未完成的雷鸣刀连招
         revived.rbStage = 0;
         revived.rbBlade = null;
         revived.rbDir = null;
+        revived.crowForm = null;
         if (!Array.isArray(revived.facing)) revived.facing = player === 1 ? [0, 1] : [0, -1];
         s.board[to.r][to.c] = revived;
         s.graveyard.splice(idx, 1);
@@ -1325,6 +1454,7 @@ function applyAction(state, player, action) {
   if (u.frozen > 0) return err("该英雄被冰封");
   if (isDisabled(u)) return err("该英雄处于【" + actionBlockReason(u) + "】状态，无法行动");
   if (isMeditatingS(u)) return err("该英雄正在禅坐，无法行动");
+  if (isCrowFormS(u)) return err("该英雄处于鸦天狗形态，无法行动");
   pushUndo();
 
   if (act === "move") {
@@ -1600,7 +1730,7 @@ function applyAction(state, player, action) {
       const et = action.exileTarget && action.exileTarget.r != null ? action.exileTarget : null;
       const target = et && inB(et.r, et.c) ? s.board[et.r][et.c] : null;
       if (!isUnit(target) || target.player === player) return err("放逐目标不合法（需存活敌人）");
-      if (isMeditatingS(target)) return err("该目标处于禅坐，无法放逐");
+      if (isFormImmuneS(target)) return err("该目标处于无敌形态，无法放逐");
       const cn = CORNERS.find((x) => x.corner.r === r && x.corner.c === c);
       if (!cn || !cornerOk(s, cn)) return err("该墙角不可选（其四宫格内已有英雄）");
       const tp = findPos(s, target);
@@ -1649,14 +1779,14 @@ function applyAction(state, player, action) {
           const lr = from.r + dr * 2, lc = from.c + dc * 2; // 正前方两格
           if (!inB(lr, lc) || (s.board[lr][lc] && s.board[lr][lc] !== wt)) return err("万象天引·第一段：正前方两格被占据或越界");
           const tp = findPos(s, wt);
-          if (!isMeditatingS(wt) && (tp.r !== lr || tp.c !== lc)) { s.board[lr][lc] = wt; s.board[tp.r][tp.c] = null; }
+          if (!isFormImmuneS(wt) && (tp.r !== lr || tp.c !== lc)) { s.board[lr][lc] = wt; s.board[tp.r][tp.c] = null; }
           applyDamage(s, wt, sk.damage + av, u);
           u.wxtStage = 1;
         } else {
           const lr = from.r + dr, lc = from.c + dc;        // 正前方一格
           if (!inB(lr, lc) || (s.board[lr][lc] && s.board[lr][lc] !== wt)) return err("万象天引·第二段：正前方格被占据或越界");
           const tp = findPos(s, wt);
-          if (!isMeditatingS(wt) && (tp.r !== lr || tp.c !== lc)) { s.board[lr][lc] = wt; s.board[tp.r][tp.c] = null; }
+          if (!isFormImmuneS(wt) && (tp.r !== lr || tp.c !== lc)) { s.board[lr][lc] = wt; s.board[tp.r][tp.c] = null; }
           applyDamage(s, wt, sk.damage + av, u);
           if (findPos(s, wt)) applyNegativeStatus(s, wt, "grab", { damage: 0, turns: 1, label: "万象天引·抓取" });
           u.wxtStage = 2;
@@ -1782,7 +1912,7 @@ function applyAction(state, player, action) {
         const moved = pushUnitForwardS(s, t, ddr, ddc, sk.push || 3);
         const np = findPos(s, t);
         if (moved > 0 && np) slog(s, "➡ " + uname(s, t) + " 被击退 " + moved + " 格到 (" + (np.r + 1) + "," + (np.c + 1) + ")");
-        else if (isMeditatingS(t)) slog(s, "🛡 " + uname(s, t) + " 处于禅坐，未被击退");
+        else if (isFormImmuneS(t)) slog(s, "🛡 " + uname(s, t) + " 处于无敌形态，未被击退");
         else slog(s, "🖐 " + uname(s, t) + " 前方受阻，未被击退");
       }
     } else if (sk.type === "raikiri") {
@@ -1823,46 +1953,31 @@ function applyAction(state, player, action) {
         applyDamage(s, t, sk.damage + av, u);
         slog(s, "🗡 雷斩：" + uname(s, t) + " 受到 " + (sk.damage + av) + " 点伤害；第二段已就绪（可跨回合）");
       } else if (stage === 1) {
-        // 第二段：向前突进 + 插刀（不占格）+ 雷刀放电 + 吐火 + 反向位移
-        const f = tbForwardInfoS(s, u, from.r, from.c);
-        if (!f) return err("雷鸣刀·第二段：前方无法突进或无法插刀");
-        let fireTarget = null;
-        const skipFire = !isUnit(t) || (t === u);
-        if (!skipFire) {
-          if (t.player === player || hiddenFromS(t, player)) return err("雷鸣刀·第二段：吐火目标必须是敌方英雄");
-          if (Math.abs(r - f.r) + Math.abs(c - f.c) !== 1) return err("雷鸣刀·第二段：吐火目标必须与突进后位置相邻");
-          fireTarget = t;
-        }
-        s.board[f.r][f.c] = u;
-        s.board[from.r][from.c] = null;
-        u.rbBlade = { r: f.br, c: f.bc };
-        setFaceS(u, f.dir[0], f.dir[1]);
-        u.rbDir = [f.dir[0], f.dir[1]];
+        // 第二段：普攻范围相邻一格插刀 → 反方向后撤一格 → 对刀的位置吐火
+        const dr = r - from.r, dc = c - from.c;
+        if (!DIRS.some(([a1, b1]) => a1 === dr && b1 === dc)) return err("雷鸣刀·第二段：请选择上/下/左/右插刀位置");
+        const br = r, bc = c;
+        const bcell = s.board[br][bc];
+        if (!inB(br, bc) || isPillar(bcell) || isSword(bcell)) return err("雷鸣刀·第二段：插刀位置不能是石柱/剑刃/棋盘外");
+        u.rbBlade = { r: br, c: bc };
+        setFaceS(u, dr, dc);
+        u.rbDir = [dr, dc];
         u.rbStage = 2;
-        slog(s, "🔪 " + uname(s, u) + " 向前突进一格，在 (" + (f.br + 1) + "," + (f.bc + 1) + ") 插下【雷刀】（不占格）");
-        const bcell = s.board[f.br][f.bc];
-        if (isUnit(bcell) && bcell.player !== player) {
-          applyDamage(s, bcell, 1 + av, u);
-          slog(s, "⚡ 雷刀放电：" + uname(s, bcell) + " 受到 " + (1 + av) + " 点雷电伤害");
-        } else {
-          slog(s, "⚡ 雷刀放电：插刀格没有敌人，未造成伤害");
+        slog(s, "🔪 " + uname(s, u) + " 在普攻范围内的 (" + (br + 1) + "," + (bc + 1) + ") 插下【雷刀】（不占格）");
+        const sr = from.r - dr, sc = from.c - dc;
+        let backstep = false;
+        if (inB(sr, sc) && !s.board[sr][sc]) {
+          s.board[sr][sc] = u;
+          s.board[from.r][from.c] = null;
+          backstep = true;
         }
-        if (fireTarget) {
-          if (findPos(s, fireTarget)) {
-            applyDamage(s, fireTarget, (sk.fire || 1) + av, u);
-            slog(s, "🔥 " + uname(s, u) + " 吐火：" + uname(s, fireTarget) + " 受到 " + ((sk.fire || 1) + av) + " 点火焰伤害");
-          } else {
-            slog(s, "🔥 吐火目标已被雷刀击倒，跳过吐火");
-          }
+        slog(s, backstep ? "💨 鹰佐向反方向后撤一格到 (" + (sr + 1) + "," + (sc + 1) + ")" : "💨 后撤方向被阻挡，鹰佐留在原地");
+        const ft = s.board[br][bc];
+        if (isUnit(ft) && ft.player !== player) {
+          applyDamage(s, ft, (sk.fire || 1) + av, u);
+          slog(s, "🔥 鹰佐对雷刀所在格吐火：" + uname(s, ft) + " 受到 " + ((sk.fire || 1) + av) + " 点火焰伤害");
         } else {
-          slog(s, "🔥 吐火：突进后相邻没有合法敌方目标，跳过");
-        }
-        if (inB(from.r, from.c) && !s.board[from.r][from.c]) {
-          s.board[from.r][from.c] = u;
-          s.board[f.r][f.c] = null;
-          slog(s, "💨 反方向位移：回到 (" + (from.r + 1) + "," + (from.c + 1) + ")");
-        } else {
-          slog(s, "💨 反方向位移受阻，留在原地");
+          slog(s, "🔥 吐火：雷刀所在格没有敌方英雄，未造成伤害");
         }
         slog(s, "🔪 雷鸣刀·第二段完成，第三段已就绪（可跨回合）");
       } else if (stage === 2) {
@@ -1891,6 +2006,90 @@ function applyAction(state, player, action) {
         resetThunderbladeS(u);
         slog(s, "🔚 雷鸣刀·第三段完成，整套连招结束（雷刀已移除）");
       } else return err("雷鸣刀阶段异常");
+    } else if (sk.type === "susano_dash") {
+      // 须佐·雷刀：斜向两格，第一格敌人受 1（不耗行动）
+      const dr = r - from.r, dc = c - from.c;
+      if (Math.abs(dr) !== 2 || Math.abs(dc) !== 2 || !SUSANO_DIAG_S.some(([a1, b1]) => a1 === Math.sign(dr) && b1 === Math.sign(dc))) return err("雷刀：请选择斜向第二格");
+      const plan = susanoDashPlanS(s, u, from.r, from.c, Math.sign(dr), Math.sign(dc));
+      if (!plan) return err("雷刀：第二格不是合法空格，或路径被阻挡");
+      if (plan.target) {
+        applyDamage(s, plan.target, sk.damage + av, u);
+        slog(s, "⚡ 雷刀路径：" + uname(s, plan.target) + " 受到 " + (sk.damage + av) + " 点雷电伤害");
+      }
+      s.board[plan.second.r][plan.second.c] = u;
+      s.board[from.r][from.c] = null;
+      slog(s, "🌀 " + uname(s, u) + " 使用【雷刀】斜向闪现到 (" + (plan.second.r + 1) + "," + (plan.second.c + 1) + ")");
+    } else if (sk.type === "susano_pull") {
+      // 须佐·雷鸣：相邻敌人 2 伤 + 拉到第二格
+      const dr = r - from.r, dc = c - from.c;
+      if (!isUnit(t) || t.player === player || hiddenFromS(t, player) || Math.abs(dr) + Math.abs(dc) !== 1) return err("雷鸣：请选择相邻的敌方英雄");
+      const plan = susanoPullPlanS(s, u, from.r, from.c, dr, dc);
+      if (!plan) return err("雷鸣：目标身后第二格被占据或越界");
+      slog(s, "⚡ " + uname(s, u) + " 发动【雷鸣】，雷电抓取 " + uname(s, t));
+      applyDamage(s, t, sk.damage + av, u);
+      slog(s, "⚡ 雷鸣：" + uname(s, t) + " 受到 " + (sk.damage + av) + " 点雷电伤害");
+      if (findPos(s, t)) {
+        if (isFormImmuneS(t)) {
+          slog(s, "🛡 " + uname(s, t) + " 处于无敌形态，未被拉动");
+        } else if (hasSuperArmor(s, t)) {
+          slog(s, "🛡 霸体：" + uname(s, t) + " 抵抗了抓取，未被拉动（伤害已结算）");
+        } else {
+          s.board[plan.landing.r][plan.landing.c] = t;
+          s.board[plan.from.r][plan.from.c] = null;
+          slog(s, "➡ " + uname(s, t) + " 被拉到 (" + (plan.landing.r + 1) + "," + (plan.landing.c + 1) + ")");
+        }
+      } else {
+        slog(s, "💥 " + uname(s, t) + " 被雷鸣击倒，不再移动");
+      }
+    } else if (sk.type === "susano_arrow") {
+      // 须佐·须佐箭：第二格九宫格爆炸 + 黑炎
+      const dr = r - from.r, dc = c - from.c;
+      if (!DIRS.some(([a1, b1]) => a1 === dr && b1 === dc)) return err("须佐箭：请选择方向");
+      const plan = susanoArrowPlanS(s, u, from.r, from.c, dr, dc);
+      if (!plan) return err("须佐箭：前方第二格不合法或路径被阻挡");
+      setFaceS(u, dr, dc);
+      slog(s, "🏹 " + uname(s, u) + " 射出【须佐箭】，目标第二格 (" + (plan.second.r + 1) + "," + (plan.second.c + 1) + ")");
+      const center = plan.second;
+      if (plan.mode === "pull" && findPos(s, plan.target)) {
+        if (isFormImmuneS(plan.target)) {
+          slog(s, "🛡 " + uname(s, plan.target) + " 处于无敌形态，未被牵引");
+        } else if (hasSuperArmor(s, plan.target)) {
+          slog(s, "🛡 霸体：" + uname(s, plan.target) + " 抵抗了牵引，停留在第一格");
+        } else {
+          s.board[center.r][center.c] = plan.target;
+          s.board[plan.first.r][plan.first.c] = null;
+          slog(s, "⚡ 须佐箭牵引：" + uname(s, plan.target) + " 被拉到第二格");
+        }
+      }
+      let hit = 0;
+      for (const [rr, cc] of cellsAround3S(center.r, center.c)) {
+        const v = s.board[rr][cc];
+        if (!isUnit(v) || v === u || v.player === player) continue;
+        applyDamage(s, v, sk.damage + av, u);
+        hit++;
+        slog(s, "💥 须佐箭爆炸：" + uname(s, v) + " 受到 " + (sk.damage + av) + " 点伤害");
+      }
+      slog(s, "💥 须佐箭爆炸，命中 " + hit + " 名敌人");
+      const flames = [];
+      for (const [ddr, ddc] of DIRS) {
+        if (addBlackFlameAtS(s, center.r + ddr, center.c + ddc, player)) flames.push([center.r + ddr, center.c + ddc]);
+      }
+      if (flames.length) slog(s, "🔥 黑炎生成 " + flames.length + " 格（持续 3 个完整回合）");
+    } else if (sk.type === "susano_crow") {
+      // 须佐·鸦天狗：前方九宫格 1 伤 + 进入 3 个自身回合的无敌形态
+      const dr = r - from.r, dc = c - from.c;
+      if (!DIRS.some(([a1, b1]) => a1 === dr && b1 === dc) || !inB(r, c)) return err("鸦天狗：请选择方向");
+      setFaceS(u, dr, dc);
+      let hit = 0;
+      for (const [rr, cc] of cellsAround3S(r, c)) {
+        const v = s.board[rr][cc];
+        if (!isUnit(v) || v === u || v.player === player) continue;
+        applyDamage(s, v, sk.damage + av, u);
+        hit++;
+        slog(s, "💥 鸦天狗冲击：" + uname(s, v) + " 受到 " + (sk.damage + av) + " 点伤害");
+      }
+      u.crowForm = { turns: CROW_FORM_TURNS_S, dir: [dr, dc], castTurn: s.turnSerial || 0 };
+      slog(s, "🪶 " + uname(s, u) + " 进入【鸦天狗】形态（无敌、无法行动，持续 3 个自身行动回合；命中 " + hit + " 名敌人）");
     } else if (sk.type === "stealth") {
       // 渡鸦·潜行：位移到雷霆万钧范围的空格（或原地），进入隐身
       const sdr = r - from.r, sdc = c - from.c;
