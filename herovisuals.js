@@ -266,9 +266,9 @@
      只需修改这里的路径，游戏内卡片会自动加载并在失败时回退到矢量棋子。
      --------------------------------------------------------------------- */
   const HERO_ART = {
-    thunder: { portrait: "art/thunder.svg", board: "art/thunder.svg", avatar: "art/thunder.svg", icon: "art/thunder.svg", silhouette: "art/thunder.svg" },
-    eagle: { portrait: "art/eagle.svg", board: "art/eagle.svg", avatar: "art/eagle.svg", icon: "art/eagle.svg", silhouette: "art/eagle.svg" },
-    susanoo: { portrait: "art/susanoo.svg", board: "art/susanoo.svg", avatar: "art/susanoo.svg", icon: "art/susanoo.svg", silhouette: "art/susanoo.svg" },
+    thunder: { portrait: "art/thunder.svg?v=2", board: "art/thunder.svg?v=2", avatar: "art/thunder.svg?v=2", icon: "art/thunder.svg?v=2", silhouette: "art/thunder.svg?v=2" },
+    eagle: { portrait: "art/eagle.svg?v=2", board: "art/eagle.svg?v=2", avatar: "art/eagle.svg?v=2", icon: "art/eagle.svg?v=2", silhouette: "art/eagle.svg?v=2" },
+    susanoo: { portrait: "art/susanoo.svg?v=2", board: "art/susanoo.svg?v=2", avatar: "art/susanoo.svg?v=2", icon: "art/susanoo.svg?v=2", silhouette: "art/susanoo.svg?v=2" },
   };
   function portraitHTML(id, extraClass) {
     const art = HERO_ART[id];

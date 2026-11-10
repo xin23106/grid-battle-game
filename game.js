@@ -5383,7 +5383,10 @@ function startNextMove(uid) {
     anims.splice(2, 0, { offset: 0.55, opacity: 1, transform: "translate3d(" + ((br.left - ar.left) * 0.55) + "px," + ((br.top - ar.top) * 0.55) + "px,0) scale(.9)" });
   }
   if (window.BFX) {
-    try { window.BFX.move({ from: mv.from, to: mv.to, color: style.color, dash: style.dash, blink: path.blink }); } catch (e) { /* 表现层失败不影响逻辑 */ }
+    try {
+      const fn = window.BFX.heroMove || window.BFX.move;
+      fn({ from: mv.from, to: mv.to, color: style.color, dash: style.dash, blink: path.blink, heroId: mv.snap.heroId });
+    } catch (e) { /* 表现层失败不影响逻辑 */ }
   }
   let finished = false;
   const finish = () => {

@@ -31,6 +31,12 @@
     <h1>英雄视觉预览</h1>
     <p>全部英雄的程序化 SVG 角色、体型、头饰、背饰、徽记、武器、光环与环绕粒子。此页只用于预览，不参与游戏逻辑。</p>
   </div>
+  <div class="showcase">
+    <figure><img src="art/thunder.svg?v=2" alt="雷电之主" /><figcaption>雷电之主 · 蓝紫电弧 / 法杖 / 披风</figcaption></figure>
+    <figure><img src="art/eagle.svg?v=2" alt="鹰佐" /><figcaption>鹰佐 · 雷遁残影 / 雷刃 / 围巾</figcaption></figure>
+    <figure><img src="art/susanoo.svg?v=2" alt="须佐" /><figcaption>须佐 · 查克拉 / 重甲 / 弓</figcaption></figure>
+  </div>
+  <div class="preview-sub">全部英雄矢量形象</div>
   <div id="preview-grid" class="preview-grid"></div>
   <script src="heroes.js"></script>
   <script src="herovisuals.js"></script>
@@ -52,3 +58,10 @@
   </script>
 </body>
 </html>
+
+  .showcase { max-width: 1200px; margin: 0 auto 22px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+  .showcase figure { margin: 0; position: relative; height: 300px; border-radius: 16px; overflow: hidden; background: radial-gradient(circle at 50% 35%, #1e1b4b, #050812 72%); border: 1px solid rgba(148,163,184,.22); box-shadow: 0 16px 40px rgba(0,0,0,.45); transition: transform .2s, border-color .2s; }
+  .showcase figure:hover { transform: translateY(-4px); border-color: rgba(196,181,253,.6); }
+  .showcase img { width: 100%; height: 100%; object-fit: contain; object-position: center bottom; filter: drop-shadow(0 10px 18px rgba(0,0,0,.55)); }
+  .showcase figcaption { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 12px; font-size: 12px; color: #e2e8f0; background: linear-gradient(0deg, rgba(2,6,23,.9), transparent); letter-spacing: .5px; }
+  .preview-sub { max-width: 1200px; margin: 0 auto 12px; color: #cbd5e1; font-size: 13px; letter-spacing: 2px; font-weight: 700; }

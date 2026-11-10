@@ -973,6 +973,47 @@
     }
   }
 
+  /* 重点英雄移动专属轨迹：雷电 / 雷遁 / 查克拉 */
+  function heroMove(m) {
+    if (!m || !m.from || !m.to) return;
+    const id = m.heroId || "";
+    if (id !== "thunder" && id !== "eagle" && id !== "susanoo") { move(m); return; }
+    const x0 = px(m.from.c), y0 = py(m.from.r), x1 = px(m.to.c), y1 = py(m.to.r);
+    const col = m.color || heroColor(id);
+    const ang = Math.atan2(y1 - y0, x1 - x0);
+    if (id === "thunder") {
+      push({ kind: "bolt", x: x0, y: y0, x2: x1, y2: y1, color: "#e0f2fe", width: 5, dur: dur(220), seed: Math.random() * 99 });
+      for (let i = 0; i < 3; i++) {
+        const q = (i + 1) / 4;
+        const bx = x0 + (x1 - x0) * q, by = y0 + (y1 - y0) * q;
+        push({ kind: "bolt", x: bx, y: by, x2: bx + Math.cos(ang + (i - 1) * 0.7) * geo.cell * 0.55, y2: by + Math.sin(ang + (i - 1) * 0.7) * geo.cell * 0.55, color: "#a78bfa", width: 2.2, dur: dur(240), delay: dur(20 + i * 30), seed: Math.random() * 99 });
+      }
+      push({ kind: "ring", x: x0, y: y0, r0: geo.cell * 0.2, r1: geo.cell * 0.9, color: "#c084fc", width: 2.4, dur: dur(340) });
+      push({ kind: "ring", x: x1, y: y1, r0: geo.cell * 0.4, r1: geo.cell * 0.12, color: "#e0f2fe", width: 2.2, dur: dur(300), delay: dur(40) });
+      push({ kind: "crack", x: x1, y: y1, r: geo.cell * 0.34, color: "#a78bfa", dur: dur(380), n: 5 });
+      spawn(x1, y1, 16, { color: "#c4b5fd", speed: 2.8, life: 360, size: 1.9 });
+      addMark("thunder", m.to.r, m.to.c, "#a78bfa", 11000);
+    } else if (id === "eagle") {
+      for (let i = 0; i < 3; i++) {
+        const q = (i + 1) / 4;
+        push({ kind: "ghost", x: x0 + (x1 - x0) * q, y: y0 + (y1 - y0) * q, r: geo.cell * 0.24, color: i % 2 ? "#e0f2fe" : "#8b5cf6", dur: dur(280), delay: dur(i * 28) });
+      }
+      push({ kind: "line", x: x0, y: y0, x2: x1, y2: y1, color: "#c4b5fd", width: 4, dur: dur(220) });
+      push({ kind: "bolt", x: x0, y: y0, x2: x1, y2: y1, color: "#8b5cf6", width: 2.4, dur: dur(240), seed: Math.random() * 99 });
+      push({ kind: "slash", x: x1, y: y1, angle: ang + Math.PI / 2, len: geo.cell * 0.9, width: 4, color: "#e0f2fe", curve: 7, dur: dur(260) });
+      push({ kind: "ring", x: x1, y: y1, r0: 4, r1: geo.cell * 0.65, color: "#a78bfa", width: 2.2, dur: dur(340), delay: dur(30) });
+      spawn(x1, y1, 14, { color: "#c4b5fd", speed: 3, life: 320, size: 1.7 });
+      addMark("cut", m.to.r, m.to.c, "#c4b5fd", 10000);
+    } else {
+      push({ kind: "ring", x: x0, y: y0, r0: geo.cell * 0.2, r1: geo.cell * 0.9, color: "#7c3aed", width: 3, dur: dur(380) });
+      push({ kind: "wave", x: x1, y: y1, r1: geo.cell * 1.15, color: "#6d28d9", dur: dur(420), delay: dur(40) });
+      push({ kind: "ring", x: x1, y: y1, r0: geo.cell * 0.35, r1: geo.cell * 0.1, color: "#c4b5fd", width: 2.6, dur: dur(340), delay: dur(60) });
+      push({ kind: "ghost", x: x0, y: y0, r: geo.cell * 0.3, color: "#7c3aed", dur: dur(300) });
+      spawn(x1, y1, 18, { color: "#8b5cf6", speed: 2.2, life: 420, size: 2 });
+      addMark("shock", m.to.r, m.to.c, "#7c3aed", 10000);
+    }
+  }
+
   function knockback(m) {
     if (!m || !m.from || !m.to) return;
     const x0 = px(m.from.c), y0 = py(m.from.r);
@@ -1173,6 +1214,10 @@
           push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.5, r1: geo.cell * 0.16, color: "#facc15", width: 2.2, dur: 380, delay: 50 });
           spawn(tx, ty, 18, { color: "#fde047", speed: 3.2, life: 420, size: 2.2 });
           addMark("thunder", tg.r, tg.c, "#facc15");
+          for (let i = 0; i < 4; i++) {
+            const a = (i / 4) * Math.PI * 2 + Math.random() * 0.5;
+            push({ kind: "bolt", x: tx, y: ty, x2: tx + Math.cos(a) * geo.cell * 0.8, y2: ty + Math.sin(a) * geo.cell * 0.8, color: i % 2 ? "#e0f2fe" : "#a78bfa", width: 2.4, dur: dur(260), delay: dur(40 + i * 30), seed: Math.random() * 99 });
+          }
         }
         // 施法者周围逸散的电弧
         push({ kind: "crack", x, y, r: geo.cell * 0.42, color: "#a78bfa", dur: 420, n: 5 });
@@ -1461,6 +1506,80 @@
         if (tg.r !== undefined) addMark("impact", tg.r, tg.c, "#fbbf24");
         break;
       }
+      case "susanoo_dash": {
+        const to = m.to || {};
+        const from = m.from || {};
+        if (from.r != null && to.r != null) push({ kind: "line", x: px(from.c), y: py(from.r), x2: px(to.c), y2: py(to.r), color: "#8b5cf6", width: 5, dur: dur(320) });
+        if (tx != null) {
+          push({ kind: "slash", x: tx, y: ty, angle: Math.atan2(ty - y, tx - x), len: geo.cell * 1.05, width: 5, color: "#c4b5fd", curve: 8, dur: dur(340), delay: dur(40) });
+          push({ kind: "ring", x: tx, y: ty, r0: 4, r1: geo.cell * 0.7, color: "#a78bfa", width: 2.6, dur: dur(360) });
+          addMark("cut", tg.r, tg.c, "#c4b5fd", 10000);
+        }
+        if (to.r != null) {
+          push({ kind: "bolt", x: px(to.c), y: py(to.r) - geo.cell * 1.5, x2: px(to.c), y2: py(to.r), color: "#a78bfa", width: 5, dur: dur(360), seed: Math.random() * 99 });
+          push({ kind: "ring", x: px(to.c), y: py(to.r), r0: 5, r1: geo.cell * 0.78, color: "#c4b5fd", width: 3, dur: dur(400) });
+          addMark("thunder", to.r, to.c, "#8b5cf6", 10000);
+        }
+        spawn(x, y, 16, { color: "#8b5cf6", speed: 2.8, life: 420, size: 2 });
+        break;
+      }
+      case "susanoo_pull": {
+        const land = m.landing || {};
+        if (tx != null) {
+          push({ kind: "bolt", x, y, x2: tx, y2: ty, color: "#c4b5fd", width: 4, dur: dur(260), seed: Math.random() * 99 });
+          push({ kind: "tendril", x, y, x2: tx, y2: ty, color: "#8b5cf6", width: 3, bend: 14, dur: dur(380) });
+          addMark("thunder", tg.r, tg.c, "#a78bfa", 10000);
+        }
+        if (land.r != null) {
+          push({ kind: "line", x: tx != null ? tx : x, y: ty != null ? ty : y, x2: px(land.c), y2: py(land.r), color: "#8b5cf6", width: 3, dur: dur(300), delay: dur(60) });
+          push({ kind: "ring", x: px(land.c), y: py(land.r), r0: 4, r1: geo.cell * 0.7, color: "#c4b5fd", width: 2.8, dur: dur(400), delay: dur(80) });
+          spawn(px(land.c), py(land.r), 16, { color: "#a78bfa", speed: 2.4, life: 420, size: 2 });
+          addMark("shock", land.r, land.c, "#7c3aed", 9000);
+        }
+        break;
+      }
+      case "susanoo_arrow": {
+        const sec = m.second || {};
+        push({ kind: "rune", x, y, r: geo.cell * 0.62, color: "#7c3aed", sides: 6, dur: dur(620) });
+        push({ kind: "ring", x, y, r0: geo.cell * 0.3, r1: geo.cell * 1.2, color: "#7c3aed", width: 5, dur: dur(600) });
+        spawn(x, y, 24, { color: "#8b5cf6", speed: 2.2, life: 520, size: 2.2, angle: -Math.PI / 2, spread: 1.5, grav: -0.015 });
+        if (sec.r != null) {
+          const sx = px(sec.c), sy = py(sec.r);
+          const dir = m.dir || [0, 1];
+          const ang = Math.atan2(dir[0], dir[1]);
+          push({ kind: "line", x, y, x2: sx, y2: sy, color: "#c4b5fd", width: 6, dur: dur(300), delay: dur(80) });
+          push({ kind: "line", x, y, x2: sx, y2: sy, color: "#f8fafc", width: 2, dur: dur(240), delay: dur(90) });
+          push({ kind: "wave", x: sx, y: sy, r1: geo.cell * 1.6, color: "#7c3aed", dur: dur(540), delay: dur(110) });
+          push({ kind: "ring", x: sx, y: sy, r0: 6, r1: geo.cell * 1.7, color: "#a78bfa", width: 5, dur: dur(560), delay: dur(120) });
+          for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+            const rx = px(sec.c + dc), ry = py(sec.r + dr);
+            push({ kind: "wave", x: rx, y: ry, r1: geo.cell * 0.65, color: "#4c1d95", dur: dur(460), delay: dur(160) });
+            spawn(rx, ry, 12, { color: "#4c1d95", speed: 1.8, life: 620, size: 2.2, angle: -Math.PI / 2, spread: 0.9, grav: -0.02 });
+            addMark("blackflame", sec.r + dr, sec.c + dc, "#7c3aed", 11000);
+          }
+          addMark("blackflame", sec.r, sec.c, "#7c3aed", 11000);
+          spawn(sx, sy, 32, { color: "#c4b5fd", speed: 3.6, life: 540, size: 2.4, angle: ang, spread: 1.4 });
+          addMark("impact", sec.r, sec.c, "#7c3aed", 10000);
+        }
+        break;
+      }
+      case "susanoo_crow": {
+        const cen = m.center || {};
+        push({ kind: "rune", x, y, r: geo.cell * 0.58, color: "#7c3aed", sides: 8, dur: dur(620) });
+        push({ kind: "ring", x, y, r0: geo.cell * 0.22, r1: geo.cell * 1.45, color: "#4c1d95", width: 5, dur: dur(620) });
+        if (cen.r != null) {
+          const cx = px(cen.c), cy = py(cen.r);
+          push({ kind: "wave", x: cx, y: cy, r1: geo.cell * 1.55, color: "#4c1d95", dur: dur(560) });
+          push({ kind: "ring", x: cx, y: cy, r0: geo.cell * 0.35, r1: geo.cell * 1.35, color: "#a78bfa", width: 3.4, dur: dur(520) });
+          for (let i = 0; i < 12; i++) {
+            const a = Math.random() * Math.PI * 2;
+            spawn(cx, cy, 1, { color: i % 2 ? "#4c1d95" : "#8b5cf6", speed: 2.2, life: 680, size: 2.6, angle: a, spread: 0.55, grav: 0.02 });
+          }
+          addMark("shadow", cen.r, cen.c, "#4c1d95", 10000);
+        }
+        spawn(x, y, 20, { color: "#4c1d95", speed: 2.6, life: 560, size: 2.2 });
+        break;
+      }
       case "raikiri": {
         // 鹰佐·雷劈：蓄电 → 第一格短雷 → 第二格强雷
         const hits = m.hits || [];
@@ -1487,7 +1606,9 @@
             push({ kind: "slash", x: tx, y: ty, angle: Math.atan2(ty - y, tx - x), len: geo.cell * 1.05, width: 5, color: "#a78bfa", dur: dur(340), delay: dur(60) });
             push({ kind: "ring", x: tx, y: ty, r0: 4, r1: geo.cell * 0.7, color: "#fde047", width: 3, dur: dur(360), delay: dur(80) });
             addMark("thunder", tg.r, tg.c, "#a78bfa", 10000);
+            addMark("cut", tg.r, tg.c, "#e0f2fe", 9000);
           }
+          push({ kind: "ring", x, y, r0: geo.cell * 0.35, r1: geo.cell * 0.12, color: "#8b5cf6", width: 2.4, dur: dur(360) });
           spawn(x, y, 14, { color: "#8b5cf6", speed: 2.4, life: 380, size: 2 });
           break;
         }
@@ -1499,6 +1620,7 @@
             push({ kind: "bolt", x: px(bl.c), y: py(bl.r) - geo.cell * 1.4, x2: px(bl.c), y2: py(bl.r), color: "#a78bfa", width: 4, dur: dur(340), seed: Math.random() * 99 });
             push({ kind: "ring", x: px(bl.c), y: py(bl.r), r0: geo.cell * 0.5, r1: geo.cell * 0.14, color: "#c4b5fd", width: 2.4, dur: dur(400) });
             addMark("sword", bl.r, bl.c, "#8b5cf6", 10000);
+            addMark("burn", bl.r, bl.c, "#f97316", 11000);
           }
           // 吐火：以鹰佐为中心向外喷射
           const dir = m.dir || [0, 1];
@@ -1508,6 +1630,7 @@
             spawn(x, y, 1, { color: i % 2 ? "#f97316" : "#fde047", speed: 2.2, life: 420, size: 2.4, angle: a, spread: 0.7 });
           }
           push({ kind: "ring", x, y, r0: geo.cell * 0.2, r1: geo.cell * 0.9, color: "#f97316", width: 3, dur: dur(420) });
+          push({ kind: "wave", x, y, r1: geo.cell * 1.25, color: "#f97316", dur: dur(460), delay: dur(80) });
           spawn(x, y, 16, { color: "#fb923c", speed: 1.2, life: 520, size: 2, angle: -Math.PI / 2, spread: 1.2, grav: -0.02 });
           break;
         }
@@ -1519,7 +1642,9 @@
             push({ kind: "bolt", x, y, x2: px(bl.c), y2: py(bl.r), color: "#fde047", width: 8, dur: dur(520), seed: Math.random() * 99 });
             push({ kind: "bolt", x, y, x2: px(bl.c), y2: py(bl.r), color: "#c4b5fd", width: 3, dur: dur(460), seed: Math.random() * 99 });
             push({ kind: "ring", x: px(bl.c), y: py(bl.r), r0: 5, r1: geo.cell * 0.95, color: "#fde047", width: 4, dur: dur(520) });
+            push({ kind: "ring", x, y, r0: geo.cell * 0.3, r1: geo.cell * 1.35, color: "#a78bfa", width: 3, dur: dur(560) });
             addMark("thunder", bl.r, bl.c, "#facc15", 9000);
+            addMark("cut", bl.r, bl.c, "#e0f2fe", 9000);
           }
           push({ kind: "ring", x, y, r0: geo.cell * 0.3, r1: geo.cell * 1.5, color: "#a78bfa", width: 4, dur: dur(560) });
           push({ kind: "wave", x, y, r1: geo.cell * 1.7, color: "#8b5cf6", dur: dur(560) });
@@ -2272,6 +2397,7 @@
   window.BFX = {
     init, sync, setOptions, clear, banner, attack, hit, shieldAbsorb: shieldAbsorb,
     dodge, immune, death, move, knockback, grab, heal, shield: shieldFx, revive,
+    heroMove,
     swordSpawn, cast, drain, mark: addMark, shake, flash, hitstop, heroColor,
     screenFX, weaponTrail,
     turnTransition, talismanCast, talismanEffect, pillars, mist,

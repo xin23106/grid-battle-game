@@ -15,7 +15,7 @@
     <feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#c4b5fd" flood-opacity=".8"/>
   </filter>
   <style>
-  .hf-cloak{fill:#a78bfa;opacity:.94}
+  .hf-cloak{fill:url(#cloak);opacity:.96;stroke:rgba(255,255,255,.18);stroke-width:.45}
   .hf-cape,.hf-back-cape{fill:#4c1d95;opacity:.88}
   .hf-armor{fill:#4c1d95;stroke:#c4b5fd;stroke-width:.9}
   .hf-shoulder{fill:#4c1d95;stroke:#c4b5fd;stroke-width:.8}
@@ -60,8 +60,8 @@
       <g opacity=".65" fill="#c4b5fd">
         <circle cx="130" cy="300" r="2.4"/><circle cx="360" cy="250" r="2"/><circle cx="330" cy="470" r="2.6"/><circle cx="170" cy="480" r="1.6"/>
       </g>
-<g transform="translate(22 42) scale(6.8)" filter="url(#rim)">
-  <g opacity=".9"><ellipse class="hf-shadow" cx="32" cy="73" rx="17" ry="4"/><path class="hf-scarf" d="M22 30 Q32 36 42 30 Q38 40 30 40 Q44 48 54 44 Q44 54 29 44 Q24 38 22 30 Z"/><path class="hf-cloak" d="M14 35 Q8 53 13 71 L51 71 Q56 53 50 35 Z"/><path class="hf-armor" d="M22 32 L32 25 L42 32 L39 56 L32 62 L25 56 Z"/><path class="hf-leg" d="M26 59 L24 72 M38 59 L40 72"/><path class="hf-neck" d="M29 28 L35 28 L36 33 L28 33 Z"/><path class="hf-head" d="M23 23 Q23 12 32 12 Q41 12 41 23 L38 29 Q32 33 26 29 Z"/><path class="hf-mask" d="M24 20 L40 20 L38 28 Q32 31 26 28 Z"/><path class="hf-eye-slit" d="M26 23 L30 23 M34 23 L38 23"/><circle class="hf-eye" cx="29" cy="23" r="1.25"/><circle class="hf-eye" cx="35" cy="23" r="1.25"/><path class="hf-sigil" d="M34 39 L28 47 L32 47 L29 54 L37 45 L33 45 Z"/><g class="hf-weapon"><path class="hf-wpn-fill" d="M48 60 L54 20 L58 14 L58 20 L52 62 Z"/><path class="hf-wpn-line" d="M45 57 L53 57"/></g></g>
+<g transform="translate(22 42) scale(6.8) rotate(2 32 39)" filter="url(#rim)">
+  <g opacity=".9"><ellipse class="hf-shadow" cx="32" cy="73" rx="17" ry="4"/><path class="hf-scarf" d="M22 30 Q32 36 42 30 Q38 40 30 40 Q44 48 54 44 Q44 54 29 44 Q24 38 22 30 Z"/><path class="hf-cloak" d="M14 35 Q8 53 13 71 L51 71 Q56 53 50 35 Z"/><path class="hf-armor" d="M22 32 L32 25 L42 32 L39 56 L32 62 L25 56 Z"/><path class="hf-leg" d="M26 59 L24 72 M38 59 L40 72"/><path class="hf-neck" d="M29 28 L35 28 L36 33 L28 33 Z"/><path class="hf-head" d="M23 23 Q23 12 32 12 Q41 12 41 23 L38 29 Q32 33 26 29 Z"/><path class="hf-mask" d="M24 20 L40 20 L38 28 Q32 31 26 28 Z"/><path class="hf-eye-slit" d="M26 23 L30 23 M34 23 L38 23"/><circle class="hf-eye" cx="29" cy="23" r="1.25"/><circle class="hf-eye" cx="35" cy="23" r="1.25"/><path class="hf-sigil" d="M34 39 L28 47 L32 47 L29 54 L37 45 L33 45 Z"/><g class="hf-weapon" transform="rotate(26 50 55)"><path class="hf-wpn-fill" d="M48 60 L54 20 L58 14 L58 20 L52 62 Z"/><path class="hf-wpn-line" d="M45 57 L53 57"/></g></g>
 </g>
 <g opacity=".22" transform="translate(22 42) scale(6.8)"><ellipse class="hf-shadow" cx="32" cy="73" rx="17" ry="4"/><path class="hf-scarf" d="M22 30 Q32 36 42 30 Q38 40 30 40 Q44 48 54 44 Q44 54 29 44 Q24 38 22 30 Z"/><path class="hf-cloak" d="M14 35 Q8 53 13 71 L51 71 Q56 53 50 35 Z"/><path class="hf-armor" d="M22 32 L32 25 L42 32 L39 56 L32 62 L25 56 Z"/><path class="hf-leg" d="M26 59 L24 72 M38 59 L40 72"/><path class="hf-neck" d="M29 28 L35 28 L36 33 L28 33 Z"/><path class="hf-head" d="M23 23 Q23 12 32 12 Q41 12 41 23 L38 29 Q32 33 26 29 Z"/><path class="hf-mask" d="M24 20 L40 20 L38 28 Q32 31 26 28 Z"/><path class="hf-eye-slit" d="M26 23 L30 23 M34 23 L38 23"/><circle class="hf-eye" cx="29" cy="23" r="1.25"/><circle class="hf-eye" cx="35" cy="23" r="1.25"/><path class="hf-sigil" d="M34 39 L28 47 L32 47 L29 54 L37 45 L33 45 Z"/><g class="hf-weapon"><path class="hf-wpn-fill" d="M48 60 L54 20 L58 14 L58 20 L52 62 Z"/><path class="hf-wpn-line" d="M45 57 L53 57"/></g></g>
 </svg>
