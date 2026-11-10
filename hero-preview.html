@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>英雄视觉预览 · 6×6 战棋</title>
+<link rel="stylesheet" href="style.css" />
+<style>
+  body { background: radial-gradient(circle at 50% 0%, #111a2e, #050812 70%); min-height: 100vh; padding: 28px; }
+  .preview-head { max-width: 1200px; margin: 0 auto 18px; color: #e2e8f0; }
+  .preview-head h1 { font-size: 20px; margin: 0 0 6px; letter-spacing: 1px; }
+  .preview-head p { color: #94a3b8; font-size: 13px; margin: 0; }
+  .preview-grid { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 12px; }
+  .preview-card {
+    position: relative; height: 138px; border-radius: 12px; overflow: hidden;
+    background: radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--c1) 26%, transparent), rgba(2,6,23,.86) 72%);
+    border: 1px solid color-mix(in srgb, var(--c1) 42%, rgba(148,163,184,.2));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 8px 20px rgba(0,0,0,.35);
+  }
+  .preview-card .hero-figure-wrap { position: absolute; left: 6%; right: 6%; top: 3%; bottom: 21%; animation-duration: var(--idle-dur); }
+  .preview-card .hero-aura { left: 10%; right: 10%; bottom: 10%; height: 40%; }
+  .preview-card .hero-particle-field { inset: 2% 2% 18%; }
+  .preview-name { position: absolute; left: 0; right: 0; bottom: 16px; text-align: center; font-size: 12px; font-weight: 800; color: #f8fafc; text-shadow: 0 1px 3px #000; z-index: 5; }
+  .preview-tag { position: absolute; left: 0; right: 0; bottom: 4px; text-align: center; font-size: 9px; color: #cbd5e1; z-index: 5; opacity: .8; }
+  .preview-card .hover-glow { position:absolute; inset:0; opacity:0; transition:opacity .2s; background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--c3) 20%, transparent), transparent 60%); pointer-events:none; }
+  .preview-card:hover .hover-glow { opacity: 1; }
+</style>
+</head>
+<body>
+  <div class="preview-head">
+    <h1>英雄视觉预览</h1>
+    <p>全部英雄的程序化 SVG 角色、体型、头饰、背饰、徽记、武器、光环与环绕粒子。此页只用于预览，不参与游戏逻辑。</p>
+  </div>
+  <div id="preview-grid" class="preview-grid"></div>
+  <script src="heroes.js"></script>
+  <script src="herovisuals.js"></script>
+  <script>
+    (function () {
+      const grid = document.getElementById("preview-grid");
+      if (typeof HEROES === "undefined" || !window.HeroVisuals) return;
+      for (const h of HEROES) {
+        const card = document.createElement("div");
+        card.className = "preview-card";
+        window.HeroVisuals.applyVars(card, h.id);
+        card.innerHTML = window.HeroVisuals.visualHTML(h.id) +
+          '<span class="hover-glow"></span>' +
+          '<span class="preview-name">' + h.name + '</span>' +
+          '<span class="preview-tag">' + h.tag + '</span>';
+        grid.appendChild(card);
+      }
+    })();
+  </script>
+</body>
+</html>

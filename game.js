@@ -2382,7 +2382,7 @@ function normalAttack(attacker, target) {
     return;
   }
   pushHistory();
-  queueUnitFx(attacker.uid, "attack");
+  queueUnitFx(attacker.uid, "attack", 0, window.HeroVisuals ? window.HeroVisuals.attackPose(attacker.heroId) : "slash");
   // 记录攻击前的位置：普通攻击若最终击杀目标，攻击者需占据目标原先所在的格子
   const atkBefore = findPos(attacker);
   const tgtBefore = findPos(target);
@@ -3305,7 +3305,7 @@ function useSkill(tr, tc) {
   }
 
   pushHistory();
-  queueUnitFx(a.uid, "cast");
+  queueUnitFx(a.uid, "cast", 0, window.HeroVisuals ? window.HeroVisuals.poseFor(a.heroId, s, a.rbStage || a.sdStage || a.wxtStage || a.chaseStage || 0) : "channel");
   switch (s.type) {
     case "damage_single": {
       const rd = resolveSkillDamage(a, target, s);
@@ -5056,6 +5056,15 @@ function buildUnit(u) {
     (u.shield ? " · 护盾 " + u.shield : "") +
     (u.frozen ? " · 冰封 " + u.frozen : "");
 
+  // 状态换装层：鸦天狗骨翼 / 禅坐莲花盾 / 潜行 / 金属装甲 / 护盾
+  const overlays = [];
+  if (isCrowForm(u)) overlays.push('<span class="state-layer state-crow"><span class="crow-wing left"></span><span class="crow-wing right"></span><span class="crow-ring"></span></span>');
+  if (isMeditating(u)) overlays.push('<span class="state-layer state-lotus"><span class="lotus-ring"></span><span class="lotus-petal p1"></span><span class="lotus-petal p2"></span><span class="lotus-petal p3"></span><span class="lotus-petal p4"></span><span class="lotus-core"></span></span>');
+  if (isStealthed(u)) { overlays.push('<span class="state-layer state-stealth"></span>'); el.classList.add("state-stealth"); }
+  if (u.metalBuff || u.metalTide > 0) overlays.push('<span class="state-layer state-metal"><span class="metal-plate a"></span><span class="metal-plate b"></span><span class="metal-plate c"></span></span>');
+  if (u.shield > 0) overlays.push('<span class="state-layer state-shield"></span>');
+  if (overlays.length) el.insertAdjacentHTML("afterbegin", overlays.join(""));
+
   // 角色主体 + 专属光环 / 环绕粒子（装饰层不接收点击）
   if (window.HeroVisuals) {
     el.insertAdjacentHTML("afterbegin", window.HeroVisuals.visualHTML(u.heroId));
@@ -5222,9 +5231,9 @@ function applyGhostedState() {
   const ids = new Set([...activeMoveUids, ...moveQueues.keys()]);
   ids.forEach((uid) => hideVisualUnit(uid));
 }
-function queueUnitFx(uid, type, delay) {
+function queueUnitFx(uid, type, delay, pose) {
   if (!uid || visualReduce()) return;
-  unitFxQueue.push({ uid, type, delay: delay || 0 });
+  unitFxQueue.push({ uid, type, delay: delay || 0, pose: pose || "" });
 }
 function flushUnitFxQueue() {
   if (!unitFxQueue.length || visualReduce()) { unitFxQueue = []; return; }
@@ -5234,10 +5243,13 @@ function flushUnitFxQueue() {
       const el = boardEl.querySelector('.unit[data-uid="' + ev.uid + '"]');
       if (!el) return;
       const cls = "unit-anim-" + ev.type;
+      const poseCls = ev.pose ? "unit-pose-" + ev.pose : "";
       el.classList.remove("unit-anim-attack", "unit-anim-cast", "unit-anim-hit", "unit-anim-guard", "unit-anim-heal");
+      if (poseCls) el.classList.remove("unit-pose-slash","unit-pose-thrust","unit-pose-channel","unit-pose-summon","unit-pose-dash","unit-pose-ranged","unit-pose-area","unit-pose-buff","unit-pose-defense","unit-pose-heal","unit-pose-pull","unit-pose-teleport","unit-pose-stealth","unit-pose-lotus","unit-pose-smash");
       void el.offsetWidth;
       el.classList.add(cls);
-      setTimeout(() => el.classList.remove(cls), 460);
+      if (poseCls) el.classList.add(poseCls);
+      setTimeout(() => { el.classList.remove(cls); if (poseCls) el.classList.remove(poseCls); }, 520);
     };
     if (ev.delay) setTimeout(run, ev.delay); else run();
   }
@@ -7622,6 +7634,31 @@ if (document.getElementById("phone-copy")) {
   bind("set-fx-speed", "speed", false);
   // 字体/布局稳定后校正一次画布几何
   setTimeout(() => { if (window.BFX) window.BFX.sync(); }, 80);
+})();
+
+/* ===== 自适应画质：低硬件 / 低帧率自动减少粒子与光环动画 ===== */
+(function initAdaptiveVisualQuality() {
+  const mediaSmall = window.matchMedia && window.matchMedia("(max-width: 760px)").matches;
+  const hardwareLow = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
+    (navigator.deviceMemory && navigator.deviceMemory <= 4) || mediaSmall;
+  if (hardwareLow) document.body.classList.add("low-fx");
+  let frames = 0, last = 0, lowStreak = 0;
+  function loop(t) {
+    if (!document.hidden) {
+      if (!last) last = t;
+      frames++;
+      if (t - last >= 1600) {
+        const fps = frames * 1000 / (t - last);
+        if (fps < 38) lowStreak++; else lowStreak = Math.max(0, lowStreak - 1);
+        if (lowStreak >= 2) document.body.classList.add("low-fx");
+        if (!hardwareLow && fps > 52 && lowStreak === 0) document.body.classList.remove("low-fx");
+        frames = 0;
+        last = t;
+      }
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
 })();
 
 /* 设置：音效开关 / 音量 / 技能音效（自动保存到 localStorage） */

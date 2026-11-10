@@ -1970,3 +1970,109 @@ html, body {
 .unit-death-ghost .badge { opacity: 0; }
 .unit-move-ghost .hero-figure-wrap { bottom: 3%; }
 .unit-death-ghost .hero-figure-wrap { bottom: 3%; }
+
+/* ---- v2 角色细节层 ---- */
+.hf-shoulder { fill: var(--c2, #334155); stroke: var(--c3, #e2e8f0); stroke-width: .9; }
+.hf-robe { fill: var(--c2, #334155); opacity: .92; }
+.hf-belt { stroke: var(--c3, #e2e8f0); stroke-width: 2; fill: none; opacity: .8; }
+.hf-cape, .hf-back-cape { fill: var(--c2, #334155); opacity: .86; }
+.hf-helm { fill: var(--c2, #334155); stroke: var(--c3, #e2e8f0); stroke-width: 1; }
+.hf-visor { fill: #0f172a; }
+.hf-plume { fill: var(--c3, #e2e8f0); opacity: .9; }
+.hf-crown { fill: var(--c3, #e2e8f0); }
+.hf-mask { fill: var(--c2, #334155); stroke: var(--c3, #e2e8f0); stroke-width: .8; }
+.hf-eye-slit { stroke: var(--c3, #e2e8f0); stroke-width: 1.4; stroke-linecap: round; }
+.hf-horn { fill: var(--c2, #334155); stroke: var(--c3, #e2e8f0); stroke-width: .7; }
+.hf-hat { fill: var(--c2, #334155); stroke: var(--c3, #e2e8f0); stroke-width: .8; }
+.hf-halo { fill: none; stroke: var(--c3, #e2e8f0); stroke-width: 1.6; opacity: .85; }
+.hf-neck { fill: var(--c2, #334155); }
+.hf-wing { fill: var(--c2, #1e1b4b); stroke: var(--c3, #c4b5fd); stroke-width: .8; opacity: .9; }
+.hf-scarf { fill: var(--c1, #60a5fa); opacity: .88; }
+.hf-float-orb { fill: var(--c3, #e2e8f0); filter: drop-shadow(0 0 4px var(--c3, #e2e8f0)); }
+.hf-tail { fill: var(--c1, #60a5fa); opacity: .8; }
+.hf-sigil { fill: var(--c3, #e2e8f0); opacity: .92; }
+.hf-sigil-dot { fill: #0f172a; }
+.hf-sigil-ring { fill: none; stroke: var(--c3, #e2e8f0); stroke-width: 1.5; }
+.hf-sigil-line { stroke: var(--c3, #e2e8f0); stroke-width: 1.6; fill: none; stroke-linecap: round; }
+
+/* ---- 状态换装层 ---- */
+.state-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1; overflow: hidden; border-radius: inherit; }
+.unit.state-stealth { opacity: .46; filter: saturate(.55) drop-shadow(0 0 8px rgba(139,92,246,.7)); animation: stealthFade .45s ease-out; }
+.unit.state-stealth .hero-aura, .unit.state-stealth .hero-particle-field { opacity: .12; }
+@keyframes stealthFade { from { opacity: 1; } to { opacity: .46; } }
+.state-crow .crow-wing {
+  position: absolute;
+  top: 24%;
+  width: 58%;
+  height: 48%;
+  background: linear-gradient(180deg, rgba(30,27,75,.95), rgba(76,29,149,.85) 60%, rgba(2,6,23,.9));
+  border: 1px solid rgba(196,181,253,.55);
+  clip-path: polygon(0 18%, 36% 0, 100% 8%, 78% 38%, 96% 58%, 63% 55%, 74% 84%, 38% 66%, 22% 92%, 18% 62%, 0 74%);
+  filter: drop-shadow(0 0 8px rgba(124,58,237,.75));
+  animation: crowFlap 2.2s ease-in-out infinite;
+}
+.state-crow .crow-wing.left { left: -10%; transform-origin: right center; }
+.state-crow .crow-wing.right { right: -10%; transform: scaleX(-1); transform-origin: left center; animation-delay: .15s; }
+@keyframes crowFlap { 0%,100% { transform: translateY(0) rotate(0deg) scaleY(.9); } 50% { transform: translateY(-3px) rotate(-4deg) scaleY(1.04); } }
+.state-crow .crow-ring { position: absolute; left: 16%; right: 16%; bottom: 12%; height: 34%; border: 1px solid rgba(196,181,253,.5); border-radius: 50%; box-shadow: 0 0 14px rgba(124,58,237,.6) inset; animation: auraSpin 7s linear infinite; }
+.state-lotus .lotus-ring { position: absolute; left: 12%; right: 12%; bottom: 10%; height: 40%; border: 2px solid rgba(253,230,138,.75); border-radius: 50%; box-shadow: 0 0 18px rgba(251,191,36,.55) inset, 0 0 12px rgba(253,230,138,.45); animation: auraBreath 2.6s ease-in-out infinite; }
+.state-lotus .lotus-core { position: absolute; left: 36%; right: 36%; bottom: 24%; height: 20%; border-radius: 50%; background: radial-gradient(circle, rgba(254,243,199,.9), rgba(251,191,36,.15) 70%); filter: blur(.5px); }
+.state-lotus .lotus-petal { position: absolute; left: 46%; bottom: 28%; width: 18%; height: 26%; border-radius: 70% 70% 50% 50%; background: linear-gradient(180deg, rgba(254,243,199,.85), rgba(251,191,36,.15)); transform-origin: 50% 100%; opacity: .8; animation: lotusPetal 3s ease-in-out infinite; }
+.state-lotus .lotus-petal.p1 { transform: rotate(-42deg) translateY(-24%); }
+.state-lotus .lotus-petal.p2 { transform: rotate(42deg) translateY(-24%); animation-delay: .2s; }
+.state-lotus .lotus-petal.p3 { transform: rotate(-18deg) translateY(-30%); animation-delay: .4s; }
+.state-lotus .lotus-petal.p4 { transform: rotate(18deg) translateY(-30%); animation-delay: .6s; }
+@keyframes lotusPetal { 0%,100% { opacity: .55; filter: blur(.3px); } 50% { opacity: .95; filter: blur(0); } }
+.state-metal .metal-plate { position: absolute; background: linear-gradient(135deg, rgba(253,230,138,.9), rgba(120,113,108,.85)); border: 1px solid rgba(253,230,138,.7); box-shadow: 0 0 8px rgba(251,191,36,.45); }
+.state-metal .metal-plate.a { left: 18%; top: 34%; width: 26%; height: 24%; clip-path: polygon(0 0,100% 12%,86% 100%,8% 78%); }
+.state-metal .metal-plate.b { right: 18%; top: 34%; width: 26%; height: 24%; clip-path: polygon(0 12%,100% 0,92% 78%,14% 100%); }
+.state-metal .metal-plate.c { left: 34%; top: 46%; width: 32%; height: 18%; clip-path: polygon(8% 0,92% 0,100% 100%,0 100%); }
+.state-metal .metal-plate { animation: metalShimmer 2.4s ease-in-out infinite; }
+@keyframes metalShimmer { 0%,100% { filter: brightness(.95); } 50% { filter: brightness(1.3); } }
+.state-shield { z-index: 5; border-radius: 50%; box-shadow: 0 0 0 1px rgba(56,189,248,.6), 0 0 18px rgba(56,189,248,.35) inset; background: radial-gradient(circle at 50% 45%, transparent 52%, rgba(56,189,248,.12) 70%, transparent 76%); animation: shieldPulse 2.2s ease-in-out infinite; }
+@keyframes shieldPulse { 0%,100% { opacity:.55; } 50% { opacity:.95; } }
+
+/* ---- 技能身体姿态 ---- */
+.unit-pose-slash .hero-figure-wrap { animation: poseSlash .5s cubic-bezier(.2,.8,.3,1); }
+@keyframes poseSlash { 0% { transform: rotate(0) scale(1); } 25% { transform: rotate(-14deg) translateX(-3px) scale(1.06); } 55% { transform: rotate(18deg) translateX(5px) scale(1.02); } 100% { transform: rotate(0) scale(1); } }
+.unit-pose-thrust .hero-figure-wrap { animation: poseThrust .48s cubic-bezier(.2,.85,.3,1); }
+@keyframes poseThrust { 0% { transform: translateX(0) rotate(0); } 35% { transform: translateX(-5px) rotate(-4deg) scale(1.05); } 70% { transform: translateX(7px) rotate(6deg) scale(1.02); } 100% { transform: translateX(0) rotate(0); } }
+.unit-pose-channel .hero-figure-wrap { animation: poseChannel .55s ease-out; }
+@keyframes poseChannel { 0% { transform: scale(1); filter: brightness(1); } 45% { transform: scale(1.07) translateY(-2px); filter: brightness(1.3) drop-shadow(0 0 10px var(--c3)); } 100% { transform: scale(1); filter: brightness(1); } }
+.unit-pose-summon .hero-figure-wrap { animation: poseSummon .6s ease-out; }
+@keyframes poseSummon { 0% { transform: scale(.96) translateY(2px); } 35% { transform: scale(1.1) translateY(-4px); filter: drop-shadow(0 0 12px var(--c3)); } 100% { transform: scale(1) translateY(0); } }
+.unit-pose-dash .hero-figure-wrap { animation: poseDash .42s ease-out; }
+@keyframes poseDash { 0% { transform: translateX(0) skewX(0); } 35% { transform: translateX(-4px) skewX(-6deg); } 65% { transform: translateX(6px) skewX(5deg); } 100% { transform: translateX(0) skewX(0); } }
+.unit-pose-ranged .hero-figure-wrap { animation: poseRanged .5s ease-out; }
+@keyframes poseRanged { 0% { transform: scale(1); } 25% { transform: translateX(3px) rotate(3deg) scale(.98); } 55% { transform: translateX(-4px) rotate(-3deg) scale(1.04); } 100% { transform: scale(1); } }
+.unit-pose-area .hero-figure-wrap { animation: poseArea .55s ease-out; }
+@keyframes poseArea { 0% { transform: translateY(0) scale(1); } 30% { transform: translateY(3px) scale(.94); } 60% { transform: translateY(-4px) scale(1.08); } 100% { transform: translateY(0) scale(1); } }
+.unit-pose-buff .hero-figure-wrap, .unit-pose-defense .hero-figure-wrap { animation: poseBuff .6s ease-out; }
+@keyframes poseBuff { 0% { transform: scale(1); filter: brightness(1); } 40% { transform: scale(1.06); filter: brightness(1.35) drop-shadow(0 0 10px var(--c3)); } 100% { transform: scale(1); filter: brightness(1); } }
+.unit-pose-heal .hero-figure-wrap { animation: poseHeal .6s ease-out; }
+@keyframes poseHeal { 0% { transform: translateY(2px) scale(.98); filter: drop-shadow(0 0 0 #86efac); } 45% { transform: translateY(-3px) scale(1.05); filter: drop-shadow(0 0 12px #86efac) brightness(1.2); } 100% { transform: translateY(0) scale(1); } }
+.unit-pose-pull .hero-figure-wrap { animation: posePull .55s ease-out; }
+@keyframes posePull { 0% { transform: translateX(0); } 35% { transform: translateX(-4px) scale(.97); } 65% { transform: translateX(4px) scale(1.04); } 100% { transform: translateX(0); } }
+.unit-pose-teleport .hero-figure-wrap { animation: poseTeleport .5s ease-out; }
+@keyframes poseTeleport { 0% { opacity: 1; transform: scale(1) rotate(0); } 35% { opacity: .25; transform: scale(.8) rotate(-8deg); } 65% { opacity: .5; transform: scale(1.08) rotate(6deg); } 100% { opacity: 1; transform: scale(1) rotate(0); } }
+.unit-pose-stealth .hero-figure-wrap { animation: poseStealth .55s ease-out; }
+@keyframes poseStealth { 0% { opacity: 1; transform: translateY(0); } 50% { opacity: .35; transform: translateY(3px) scale(.96); } 100% { opacity: .8; transform: translateY(0); } }
+.unit-pose-lotus .hero-figure-wrap { animation: poseLotus .7s ease-out; }
+@keyframes poseLotus { 0% { transform: scale(1) translateY(0); } 45% { transform: scale(1.03) translateY(2px); filter: drop-shadow(0 0 12px #fcd34d); } 100% { transform: scale(1) translateY(0); } }
+.unit-pose-smash .hero-figure-wrap { animation: poseSmash .55s ease-out; }
+@keyframes poseSmash { 0% { transform: translateY(0) rotate(0); } 40% { transform: translateY(-6px) rotate(-8deg) scale(1.08); } 65% { transform: translateY(4px) rotate(5deg) scale(.98); } 100% { transform: translateY(0) rotate(0); } }
+
+/* ---- 低性能 / 小屏自适应 ---- */
+.low-fx .hero-particle-field { display: none; }
+.low-fx .hero-aura { animation: none; opacity: .65; }
+.low-fx .state-lotus .lotus-petal, .low-fx .state-crow .crow-wing, .low-fx .state-metal .metal-plate, .low-fx .state-shield { animation: none; }
+.low-fx .unit-move-ghost { filter: drop-shadow(0 6px 8px rgba(0,0,0,.45)); }
+@media (max-width: 760px) {
+  .unit-name { font-size: 8.5px; bottom: 9px; }
+  .unit-hp { font-size: 9.5px; }
+  .hero-figure-wrap { left: 4%; right: 4%; bottom: 25%; }
+  .hero-particle-field { display: none; }
+  .hc-icon { width: 56px; height: 64px; }
+  .hero-option { min-height: 52px; }
+  .ho-portrait { width: 32px; height: 32px; flex-basis: 32px; }
+}
