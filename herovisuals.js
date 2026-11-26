@@ -310,7 +310,7 @@
     thunder: { portrait: "art/thunder-portrait.webp", board: "art/thunder-board.webp", avatar: "art/thunder-avatar.webp", icon: "art/thunder-icon.webp", silhouette: "art/thunder-silhouette.webp" },
     eagle: { portrait: "art/eagle-portrait.webp", board: "art/eagle-board.webp", avatar: "art/eagle-avatar.webp", icon: "art/eagle-icon.webp", silhouette: "art/eagle-silhouette.webp" },
     susanoo: { portrait: "art/susanoo-portrait.webp", board: "art/susanoo-board.webp", avatar: "art/susanoo-avatar.webp", icon: "art/susanoo-icon.webp", silhouette: "art/susanoo-silhouette.webp" },
-    ranger: { portrait: "art/ranger-portrait.webp", board: "art/ranger-board.webp", avatar: "art/ranger-avatar.webp", icon: "art/ranger-icon.webp", silhouette: "art/ranger-silhouette.webp" },
+    ranger: { portrait: "art/ranger-portrait.webp?v=2", board: "art/ranger-board.webp?v=2", avatar: "art/ranger-avatar.webp?v=2", icon: "art/ranger-icon.webp?v=2", silhouette: "art/ranger-silhouette.webp?v=2" },
   };
   function portraitHTML(id, extraClass) {
     const art = HERO_ART[id];
