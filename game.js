@@ -87,6 +87,8 @@ const detailCloseEl = document.getElementById("detail-close");
 let board = [];                    // board[r][c] = 单位对象 或 null
 let mists = {};                    // "r_c" -> { turns, fresh, owner } 毒雾地形（不阻挡移动）
 let blackFlames = {};              // "r_c" -> { turns, fresh, owner } 须佐·黑炎地形（不阻挡移动）
+let meteors = [];                  // 天穹射手·天罚：尚未落下的陨星 [{id,r,c,owner,turns,damage,radius,...}]
+let meteorSeq = 0;                 // 本地陨星事件序号
 /* ---- 纯表现层：逻辑坐标与视觉坐标分离 ---- */
 let visualPositions = new Map();   // uid -> { pos:{r,c}, snap:单位快照 }
 let moveQueues = new Map();        // uid -> 排队中的移动 [{from,to,snap,heroId,player}]
@@ -1036,7 +1038,7 @@ function pushHistory() {
       board, phase, currentPlayer, winner, unitSeq, toPlace, placedIds,
       talisman, talismanUsed, talismanBuff, extraMoves, graveyard, reviveOptions,
       logs, turnActionUsed, turnActionsLeft, turnActionsMax, turnActorUid,
-      empowerTurnActive, mists, pendingHero, wildcards, localPools,
+      empowerTurnActive, mists, blackFlames, meteors, meteorSeq, pendingHero, wildcards, localPools,
       wildcardMode, pendingWildcard, onlineWildcards, turnSerial, matchStats,
     }));
     if (history.length > 40) history.shift();
@@ -1064,6 +1066,8 @@ function applyHistorySnapshot(s) {
   empowerTurnActive = !!s.empowerTurnActive;
   mists = s.mists || {};
   blackFlames = s.blackFlames || {};
+  meteors = Array.isArray(s.meteors) ? JSON.parse(JSON.stringify(s.meteors)) : [];
+  meteorSeq = s.meteorSeq || meteors.reduce((mx, m) => Math.max(mx, m.id || 0), 0);
   pendingHero = s.pendingHero || null;
   wildcards = s.wildcards || { 1: 0, 2: 0 };
   localPools = s.localPools || { 1: [], 2: [] };
@@ -1151,6 +1155,8 @@ function init() {
   reviveOptions = [];
   mists = {};
   blackFlames = {};
+  meteors = [];
+  meteorSeq = 0;
   // 对局统计 & 结算演出：重置
   matchStats = { damage: { 1: 0, 2: 0 }, kills: { 1: 0, 2: 0 }, startedAt: Date.now(), endedAt: 0, lastKiller: null };
   clearVictoryTimers();
@@ -1387,10 +1393,14 @@ function endTurnOnce() {
   tickRavenTurn(currentPlayer, !samePlayer);
   // 金元素·金属狂潮：按自己的行动回合计时（本回合使用后跨 3 个自身回合）
   tickMetalTurn(currentPlayer);
-  // 毒雾：只在真实回合交接时衰减（额外回合不缩短），生成当回合不扣
-  if (!samePlayer) tickMists();
-  if (!samePlayer) tickBlackFlames();
-  if (!samePlayer) currentPlayer = currentPlayer === 1 ? 2 : 1;
+  // 毒雾 / 黑炎 / 天罚：只在真实回合交接时推进（额外回合不缩短）
+  if (!samePlayer) {
+    tickMists();
+    tickBlackFlames();
+    tickMeteors(currentPlayer, true);
+    if (checkVictory()) { render(); return; }
+    currentPlayer = currentPlayer === 1 ? 2 : 1;
+  }
   turnFxExtra = samePlayer;
   // 阶段 A：当前回合收束（短促低频；与技能音效分离）
   if (!turnFxSuppress && window.SFX) window.SFX.play("turnEnd", {});
@@ -1447,6 +1457,7 @@ function checkVictory() {
     // 对局结束：清理临时地形与潜行相关状态
     mists = {};
     blackFlames = {};
+    meteors = [];
     for (const u of unitsOf(1).concat(unitsOf(2))) { clearRavenStealth(u); resetThunderblade(u); resetCrowForm(u); }
     // 对局结束：清理临时石柱及其计时状态
     for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (isPillar(board[r][c])) board[r][c] = null;
@@ -1595,6 +1606,100 @@ function rangerSkillRangeOk(dr, dc, range) {
   return (dr === 0 || dc === 0) && Math.abs(dr) + Math.abs(dc) <= (range || 4);
 }
 
+/* 天穹射手·穿云箭：沿一个直线方向飞行，返回路径、第一个命中的敌人和阻挡信息。
+ * 石柱 / 边界阻挡；其他英雄（友军或敌军）也会让箭矢停止，但只有敌人受伤。 */
+function skyarrowPlan(u, r, c, dr, dc) {
+  if (!u || (!dr && !dc) || (dr !== 0 && dc !== 0)) return null;
+  const path = [];
+  for (let k = 1; k < SIZE; k++) {
+    const rr = r + dr * k, cc = c + dc * k;
+    if (!inBounds(rr, cc)) return { path, hit: null, blocked: "edge", target: null, dir: [dr, dc] };
+    const cell = board[rr][cc];
+    path.push([rr, cc]);
+    if (isPillar(cell)) return { path, hit: null, blocked: "pillar", target: null, dir: [dr, dc] };
+    if (isUnit(cell)) {
+      return { path, hit: cell.player !== u.player ? cell : null, blocked: cell.player === u.player ? "ally" : "enemy", target: { r: rr, c: cc }, dir: [dr, dc] };
+    }
+  }
+  return { path, hit: null, blocked: "edge", target: null, dir: [dr, dc] };
+}
+
+/* 天罚：以落点为中心的 3×3 九宫格 */
+function meteorCells(r, c, radius) {
+  const out = [];
+  const rad = radius == null ? 1 : radius;
+  for (let dr = -rad; dr <= rad; dr++) for (let dc = -rad; dc <= rad; dc++) {
+    const rr = r + dr, cc = c + dc;
+    if (inBounds(rr, cc)) out.push([rr, cc]);
+  }
+  return out;
+}
+function addMeteor(a, r, c, s) {
+  if (!a || !inBounds(r, c)) return null;
+  const m = {
+    id: ++meteorSeq,
+    r, c,
+    owner: a.player,
+    casterUid: a.uid,
+    casterHeroId: a.heroId,
+    turns: s.delayTurns == null ? 2 : s.delayTurns,
+    damage: s.damage == null ? 2 : s.damage,
+    radius: s.radius == null ? 1 : s.radius,
+  };
+  meteors.push(m);
+  return m;
+}
+function removeMeteor(id) {
+  meteors = meteors.filter((m) => m.id !== id);
+}
+function meteorCaster(m) {
+  for (const u of unitsOf(m.owner)) if (u.uid === m.casterUid) return u;
+  return { uid: -1, heroId: m.casterHeroId || "ranger", player: m.owner };
+}
+/* 对方真实回合结束时推进陨星；达到 0 后立即落地结算（权威层也可以是服务端，客户端只镜像） */
+function tickMeteors(endedPlayer, realTurn) {
+  if (!realTurn || !meteors.length) return;
+  const due = [];
+  for (const m of meteors) {
+    if (m.owner === endedPlayer) continue;
+    m.turns -= 1;
+    const casterName = "玩家" + m.owner + "·天穹射手";
+    if (m.turns > 0) {
+      addLog("☄ 天罚倒计时：" + casterName + " 的陨星还有 " + m.turns + " 个完整对手回合坠落（落点 (" +
+        (m.r + 1) + "," + (m.c + 1) + ")）。");
+    } else {
+      addLog("☄ 天罚倒计时结束：" + casterName + " 的陨星锁定落点 (" + (m.r + 1) + "," + (m.c + 1) + ")，即将坠落。");
+      due.push(m);
+    }
+  }
+  for (const m of due) {
+    resolveMeteor(m);
+    removeMeteor(m.id);
+  }
+}
+function resolveMeteor(m) {
+  if (!m) return;
+  const cells = meteorCells(m.r, m.c, m.radius);
+  addLog("☄ 天罚降临！陨星坠落在 (" + (m.r + 1) + "," + (m.c + 1) + ")，3×3 范围内的敌方英雄受到 " + m.damage + " 点伤害。");
+  if (window.BFX && window.BFX.meteorImpact) {
+    try { window.BFX.meteorImpact({ r: m.r, c: m.c, cells, owner: m.owner }); } catch (e) { /* 表现层失败不影响结算 */ }
+  }
+  if (window.SFX) window.SFX.play("meteorFall", { hero: "ranger" });
+  const src = meteorCaster(m);
+  let hit = 0;
+  for (const [rr, cc] of cells) {
+    const v = unitAt(rr, cc);
+    if (!v || v.sword || isPillar(v) || v.player === m.owner) continue;
+    const dealt = applyDamage(v, m.damage, "skill", src);
+    hit++;
+    addLog("☄ 天罚命中：" + label(v) + " 受到 " + m.damage + " 点伤害" +
+      (dealt > 0 ? "（实际扣血 " + dealt + "）" : "（护盾 / 闪避 / 减伤后未造成生命伤害）") + "。");
+    fx.push({ r: rr, c: cc, text: "-" + m.damage, kind: "skill" });
+  }
+  if (!hit) addLog("☄ 天罚落点范围内没有敌方英雄，未造成伤害。");
+  checkVictory();
+}
+
 /* 曼哈顿距离内的所有格子（includeSelf 决定是否含自身格） */
 function cellsWithin(r, c, range, includeSelf) {
   const res = [];
@@ -1652,7 +1757,7 @@ function computeSkillTargets() {
       break;
 
     case "damage_line":
-      // 游侠：前后左右 4 格 + 以自身为中心的九宫格内指定敌人；无视中间阻挡
+      // 旧游侠兼容分支（当前英雄已重做，保留通用处理以防旧存档）
       for (let rr = 0; rr < SIZE; rr++) {
         for (let cc = 0; cc < SIZE; cc++) {
           if (!rangerSkillRangeOk(rr - r, cc - c, s.range)) continue;
@@ -1660,6 +1765,24 @@ function computeSkillTargets() {
           if (t && t.player !== u.player) skillTargets.push([rr, cc]);
         }
       }
+      break;
+
+    case "skyarrow": {
+      // 天穹射手：每个直线方向只显示第一个可命中的敌人
+      for (const [dr, dc] of DIRS) {
+        const plan = skyarrowPlan(u, r, c, dr, dc);
+        if (!plan || !plan.hit) continue;
+        const p = findPos(plan.hit);
+        if (!p) continue;
+        skillTargets.push([p.r, p.c]);
+        dashOptions.push({ kind: "skyarrow-dir", dir: [dr, dc], path: plan.path, target: p });
+      }
+      break;
+    }
+
+    case "meteor":
+      // 天罚：全棋盘任意合法落点（含石柱 / 地形所在格；爆炸按九宫格结算）
+      for (let rr = 0; rr < SIZE; rr++) for (let cc = 0; cc < SIZE; cc++) skillTargets.push([rr, cc]);
       break;
 
     case "shield_self":
@@ -2561,6 +2684,8 @@ function skillStageLabel(a, s) {
   if (s.type === "chase") return (a.chaseStage || 0) === 1 ? "第二段·闪身" : "第一段 → 第二段";
   if (s.type === "thunderblade") return ["第一段·雷斩", "第二段·火遁反斩", "第三段·雷遁终结"][a.rbStage || 0] || "";
   if (s.type === "raikiri") return "选择朝向";
+  if (s.type === "skyarrow") return "选择直线方向";
+  if (s.type === "meteor") return "选择陨星落点";
   return "";
 }
 /* 全屏演出的强度分级：普通技能 2，终结/大范围 3，位移/治疗/防御 1 */
@@ -2568,6 +2693,7 @@ function screenTierFor(a, s) {
   if (!s) return 1;
   if (s.type === "thunderblade") return (a.rbStage || 0) >= 2 ? 3 : 2;
   if (s.type === "susano_arrow" || s.type === "susano_crow" || s.type === "meditate" || s.type === "qiankun") return 3;
+  if (s.type === "meteor") return 1; // 预警阶段不闪光；真正坠落时由 BFX.meteorImpact 播放 3 级
   if (s.type === "wxt") return (a.wxtStage || 0) >= 2 ? 3 : 2;
   if (/^(thunder|shenluo|bloodburst|charge|tianwei|raikiri|dragonbreath|metaltide)$/.test(s.type)) return 3;
   if (/^(heal|shield_self|shield_ally|metalarmor|stealth|blink|ziwei|duanlang|exile)$/.test(s.type)) return 1;
@@ -3516,6 +3642,64 @@ function useSkill(tr, tc) {
       addLog(label(a) + " 释放【" + s.name + "】，射击 " + label(target) + "，造成 " + rd.damage + " 点伤害" + (rd.assault ? "（猛攻令 +1）" : "") + "。");
       if (window.BFX) window.BFX.cast({ type: "damage_line", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc } });
       applyDamage(target, rd.damage, "skill", a);
+      break;
+    }
+
+    case "skyarrow": {
+      const dr = Math.sign(tr - r), dc = Math.sign(tc - c);
+      if ((!dr && !dc) || (dr !== 0 && dc !== 0)) {
+        addLog("穿云箭：请选择一个上/下/左/右的直线方向。");
+        render();
+        return;
+      }
+      const plan = skyarrowPlan(a, r, c, dr, dc);
+      if (!plan) {
+        addLog("穿云箭：该方向无法射击。");
+        render();
+        return;
+      }
+      const nominal = s.damage + attackerBonus(a);
+      if (window.BFX) {
+        try { window.BFX.cast({ type: "skyarrow", heroId: a.heroId, caster: { r, c }, target: plan.target || { r: tr, c: tc }, path: plan.path, dir: [dr, dc] }); } catch (e) { /* 表现层失败不影响规则 */ }
+      }
+      addLog("🏹 " + label(a) + " 向【" + FACE_NAME[[dr, dc].join(",")] + "】射出穿云箭，沿直线飞行。");
+      if (plan.hit && findPos(plan.hit)) {
+        const dealt = applyDamage(plan.hit, nominal, "skill", a);
+        const hp = findPos(plan.hit);
+        addLog("☄ 穿云箭命中 " + label(plan.hit) + "，造成 " + nominal + " 点伤害" +
+          (dealt > 0 ? "（实际扣血 " + dealt + "）" : "（护盾 / 闪避 / 减伤后未造成生命伤害）") + "。");
+        if (hp) fx.push({ r: hp.r, c: hp.c, text: "-" + nominal, kind: "skill" });
+      } else if (plan.blocked === "enemy") {
+        addLog("穿云箭：目标已不在路径上，箭矢未造成伤害。");
+      } else if (plan.blocked === "ally") {
+        addLog("🛡 穿云箭被友军挡住，友军不会受伤，后方敌人也不会被命中。");
+      } else if (plan.blocked === "pillar") {
+        addLog("🧱 穿云箭命中石柱后停止，未造成伤害。");
+      } else {
+        addLog("穿云箭飞出棋盘边界，未命中敌人。");
+      }
+      break;
+    }
+
+    case "meteor": {
+      if (!inBounds(tr, tc)) {
+        addLog("天罚：请选择棋盘内的合法落点。");
+        render();
+        return;
+      }
+      const m = addMeteor(a, tr, tc, s);
+      if (!m) {
+        addLog("天罚：落点不合法。");
+        render();
+        return;
+      }
+      const cells = meteorCells(tr, tc, m.radius);
+      addLog("☄ " + label(a) + " 发动【天罚】，在 (" + (tr + 1) + "," + (tc + 1) + ") 标记 3×3 陨星区域；" +
+        m.turns + " 个完整对手回合后坠落。");
+      if (window.BFX) {
+        try { window.BFX.cast({ type: "meteor", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc }, cells }); } catch (e) { /* 表现层失败不影响规则 */ }
+      }
+      fx.push({ r: tr, c: tc, text: "天罚", kind: "skill" });
       break;
     }
 
@@ -5733,6 +5917,24 @@ function render() {
         cell.classList.add("blackflame-cell");
         cell.appendChild(buildBlackFlameObj(bf));
       }
+      // 天罚：双方可见的金色 3×3 预警法阵与倒计时
+      const meteorZones = meteors.filter((m) => Math.abs(r - m.r) <= (m.radius == null ? 1 : m.radius) && Math.abs(c - m.c) <= (m.radius == null ? 1 : m.radius));
+      if (meteorZones.length) {
+        cell.classList.add("meteor-zone");
+        const mz = document.createElement("span");
+        mz.className = "meteor-zone-mark";
+        mz.setAttribute("aria-hidden", "true");
+        cell.appendChild(mz);
+      }
+      const centerMeteor = meteors.find((m) => m.r === r && m.c === c);
+      if (centerMeteor) {
+        cell.classList.add("meteor-center");
+        const mw = document.createElement("span");
+        mw.className = "meteor-warn";
+        mw.title = "天罚预警：陨星将在 " + centerMeteor.turns + " 个完整对手回合后坠落，3×3 范围内敌人受到 " + centerMeteor.damage + " 点伤害";
+        mw.innerHTML = '<i class="meteor-star">☄</i><b class="meteor-count">' + centerMeteor.turns + "</b>";
+        cell.appendChild(mw);
+      }
       if (isSword(u)) {
         cell.classList.add("sword-cell");
         cell.appendChild(buildSwordObj());
@@ -5977,6 +6179,13 @@ function updateHeroCard() {
     }
   }
   if (u.heroId === "asura") chips.push('<span class="chip blade">🗡 携带剑 ' + (u.swords || 0) + " 把</span>");
+  if (u.heroId === "ranger") {
+    const mine = meteors.filter((m) => m.owner === u.player);
+    if (mine.length) {
+      chips.push('<span class="chip guixiong">☄ 天罚预警 ' + mine.length + " 处：" +
+        mine.map((m) => "(" + (m.r + 1) + "," + (m.c + 1) + ") " + m.turns + " 回合").join("；") + "</span>");
+    }
+  }
   if (u.shield > 0) chips.push('<span class="chip shield">🛡 护盾 ' + u.shield + "</span>");
   if (u.frozen > 0) chips.push('<span class="chip frozen">❄ 冰封 ' + u.frozen + "</span>");
   const passiveHtml = heroPassives(def).map((p) =>
@@ -6580,13 +6789,30 @@ function dangerAt(r, c, u) {
 }
 function aiSkillScore(u, s, pos, rr, cc, w) {
   const t = unitAt(rr, cc);
-  if (t && hiddenFrom(t, u.player) && (s.type === "damage_single" || s.type === "freeze" || s.type === "damage_line")) return null;
+  if (t && hiddenFrom(t, u.player) && (s.type === "damage_single" || s.type === "freeze" || s.type === "damage_line" || s.type === "skyarrow")) return null;
   switch (s.type) {
     case "damage_single":
     case "damage_line": {
       if (!t || t.sword) return null;
       const kill = t.hp <= s.damage;
       return w.dmgW * s.damage + (kill ? w.killW : 0);
+    }
+    case "skyarrow": {
+      if (!t || t.sword || t.player === u.player) return null;
+      const kill = t.hp <= s.damage;
+      return w.dmgW * s.damage + (kill ? w.killW : 0) + 5;
+    }
+    case "meteor": {
+      // 延迟范围伤害：按当前可见敌人估算 3×3 收益，略微折价（目标可移动躲避）
+      let sc = 0, hits = 0;
+      for (const [ar, ac] of meteorCells(rr, cc, s.radius)) {
+        const e = unitAt(ar, ac);
+        if (!e || e.sword || e.player === u.player || hiddenFrom(e, u.player)) continue;
+        hits++;
+        sc += w.dmgW * s.damage + (e.hp <= s.damage ? w.killW : 0);
+      }
+      if (!hits) return null;
+      return sc * 0.7 + hits * 4;
     }
     case "freeze": {
       if (!t || t.sword) return null;
@@ -7618,9 +7844,12 @@ function applyRemoteState(state) {
   const prevTurn = currentPlayer;
   const prevPending = extraTurnPending;
   const prevPhase = phase;
+  const prevMeteors = meteors.slice();
   board = state.board.map((row) => row.map((cell) => (cell ? Object.assign({}, cell) : null)));
   mists = state.mists ? JSON.parse(JSON.stringify(state.mists)) : {};
   blackFlames = state.blackFlames ? JSON.parse(JSON.stringify(state.blackFlames)) : {};
+  meteors = Array.isArray(state.meteors) ? JSON.parse(JSON.stringify(state.meteors)) : [];
+  meteorSeq = state.meteorSeq || meteors.reduce((mx, m) => Math.max(mx, m.id || 0), 0);
   phase = state.phase;
   currentPlayer = state.currentPlayer;
   winner = state.winner || 0;
@@ -7667,6 +7896,20 @@ function applyRemoteState(state) {
   if (prevSnap) {
     try { bfxOnlineDerive(prevSnap, bfxPrevSnap, state, { prevTurn, prevPending, prevPhase }); }
     catch (e) { /* 表现层失败不影响权威状态渲染 */ }
+    // 天罚：预警新增 / 陨星落地（仅由服务端状态差异驱动表现）
+    const prevIds = new Set(prevMeteors.map((m) => m.id));
+    const nextIds = new Set(meteors.map((m) => m.id));
+    for (const m of meteors) {
+      if (prevIds.has(m.id)) continue;
+      if (window.BFX) window.BFX.cast({ type: "meteor", heroId: "ranger", caster: { r: m.r, c: m.c }, target: { r: m.r, c: m.c }, cells: meteorCells(m.r, m.c, m.radius) });
+    }
+    if (state.phase === "battle") {
+      for (const m of prevMeteors) {
+        if (nextIds.has(m.id)) continue;
+        if (window.BFX && window.BFX.meteorImpact) window.BFX.meteorImpact({ r: m.r, c: m.c, cells: meteorCells(m.r, m.c, m.radius), owner: m.owner });
+        if (window.SFX) window.SFX.play("meteorFall", { hero: "ranger" });
+      }
+    }
   }
   render();
   // 石柱变化（联机表现）：新增 → 升起；消失 → 碎裂
@@ -8175,6 +8418,7 @@ window.GameAPI = {
   get turnActionsLeft() { return turnActionsLeft; },
   get turnActionsMax() { return turnActionsMax; },
   get empowerTurnActive() { return empowerTurnActive; },
+  get meteors() { return JSON.parse(JSON.stringify(meteors)); },
   canActNow,
   randomKnockback,
   endTurn,
@@ -8183,7 +8427,7 @@ window.GameAPI = {
   render,
   flush: render,
   /* 用紧凑规格快速摆盘：units = [{r,c,player,heroId,hp?,shield?,frozen?,cd?}] */
-  setup(units, activePlayer) {
+  setup(units, activePlayer, setupMeteors) {
     board = [];
     clearVisualFx();
     for (let r = 0; r < SIZE; r++) {
@@ -8212,6 +8456,8 @@ window.GameAPI = {
     reviveOptions = [];
     mists = {};
     blackFlames = {};
+    meteors = Array.isArray(setupMeteors) ? JSON.parse(JSON.stringify(setupMeteors)) : [];
+    meteorSeq = meteors.reduce((mx, m) => Math.max(mx, m.id || 0), 0);
     history = [];
     historyBase = 0;
     // 对局统计 & 结算演出：重置（测试/新局共用）

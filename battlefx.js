@@ -41,7 +41,7 @@
 
   /* ---------------- 英雄 / 技能配色 ---------------- */
   const HERO_COLOR = {
-    berserker: "#f97316", mage: "#fb7185", knight: "#fde68a", ranger: "#34d399",
+    berserker: "#f97316", mage: "#fb7185", knight: "#fde68a", ranger: "#fbbf24",
     assassin: "#22d3ee", warlock: "#a5f3fc", cleric: "#86efac", guardian: "#93c5fd",
     asura: "#e2e8f0", lone: "#facc15", cang: "#38bdf8", longren: "#fbbf24",
     thunder: "#c084fc", vampire: "#e11d48", jade: "#a78bfa", xiangyu: "#f87171",
@@ -1143,6 +1143,45 @@
           addMark("impact", tg.r, tg.c, col, 9000);
         }
         break;
+      case "skyarrow": {
+        // 天穹射手·穿云箭：蓝金弓弦蓄力 + 高速星辰拖尾 + 命中穿透冲击
+        const path = Array.isArray(m.path) ? m.path : [];
+        const last = path.length ? path[path.length - 1] : null;
+        const ex = last ? px(last[1]) : (tx == null ? x : tx);
+        const ey = last ? py(last[0]) : (ty == null ? y : ty);
+        push({ kind: "ring", x, y, r0: geo.cell * 0.15, r1: geo.cell * 0.65, color: "#93c5fd", width: 2.5, dur: dur(360) });
+        push({ kind: "beam", x, y, x2: ex, y2: ey, color: "#fde68a", width: 5, dur: dur(320) });
+        push({ kind: "beam", x, y, x2: ex, y2: ey, color: "#bfdbfe", width: 1.5, dur: dur(280), delay: dur(30) });
+        for (let i = 0; i < 26; i++) {
+          const t = i / 25;
+          spawn(x + (ex - x) * t, y + (ey - y) * t, 1, { color: i % 3 ? "#bfdbfe" : "#fde68a", speed: 0.35, life: 360 + i * 8, size: 1.4 + (i % 2) * 0.6 });
+        }
+        if (tx != null) {
+          const ang = Math.atan2(ty - y, tx - x);
+          push({ kind: "line", x: x - Math.cos(ang) * geo.cell * 0.3, y: y - Math.sin(ang) * geo.cell * 0.3, x2: tx + Math.cos(ang) * geo.cell * 0.7, y2: ty + Math.sin(ang) * geo.cell * 0.7, color: "#fde68a", width: 3, dur: dur(280) });
+          push({ kind: "slash", x: tx, y: ty, angle: ang, len: geo.cell * 1.05, width: 4, color: "#bfdbfe", dur: dur(320), delay: dur(50) });
+          push({ kind: "ring", x: tx, y: ty, r0: 3, r1: geo.cell * 0.8, color: "#fbbf24", width: 3, dur: dur(380), delay: dur(50) });
+          push({ kind: "wave", x: tx, y: ty, r1: geo.cell * 0.85, color: "#fde68a", dur: dur(360), delay: dur(60) });
+          spawn(tx, ty, 12, { color: "#fde68a", speed: 2.8, life: 520, size: 2.2 });
+          spawn(tx, ty, 12, { color: "#93c5fd", speed: 2.2, life: 480, size: 1.8 });
+          addMark("impact", tg.r, tg.c, "#fbbf24", 10000);
+          addMark("cut", tg.r, tg.c, "#bfdbfe", 9000);
+        }
+        break;
+      }
+      case "meteor": {
+        // 天罚预警：金色星辰法阵在落点持续标记（倒计时由棋盘 DOM 绘制）
+        if (tx != null) {
+          push({ kind: "rune", x: tx, y: ty, r: geo.cell * 1.4, color: "#fbbf24", sides: 8, dur: dur(760) });
+          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 1.3, r1: geo.cell * 0.2, color: "#fde68a", width: 3, dur: dur(680) });
+          for (const cell of (m.cells || [])) {
+            push({ kind: "cellbox", x: px(cell[1]), y: py(cell[0]), color: "#fbbf24", dur: dur(520), alpha: 0.18 });
+          }
+          spawn(tx, ty - geo.cell * 1.2, 22, { color: "#fde68a", speed: 0.8, life: 780, size: 1.8, angle: Math.PI / 2, spread: 0.8 });
+          push({ kind: "text", x: tx, y: ty - geo.cell * 0.55, text: "天罚", color: "#fde68a", size: 14, dur: dur(700), rise: 14 });
+        }
+        break;
+      }
       case "shield_self":
         shieldFx({ r: c.r, c: c.c, amount: m.amount });
         break;
@@ -1845,6 +1884,43 @@
     }
   }
 
+  /* 天穹射手·天罚：陨星从天而降 → 3×3 大冲击 → 星辰灼痕 */
+  function meteorImpact(o) {
+    o = o || {};
+    if (!opts.enabled || o.r == null || o.c == null) return;
+    const x = px(o.c), y = py(o.r);
+    const col = "#fbbf24";
+    const cells = Array.isArray(o.cells) && o.cells.length ? o.cells : meteorCellsFallback(o.r, o.c);
+    // 天空陨星轨迹
+    push({ kind: "beam", x: x + geo.cell * 1.6, y: -geo.cell * 3, x2: x, y2: y, color: "#fef3c7", width: 14, dur: dur(360) });
+    push({ kind: "beam", x: x + geo.cell * 1.6, y: -geo.cell * 3, x2: x, y2: y, color: "#fbbf24", width: 7, dur: dur(420), delay: dur(20) });
+    push({ kind: "bolt", x: x + geo.cell * 1.6, y: -geo.cell * 3, x2: x, y2: y, color: "#fde68a", width: 5, dur: dur(360), seed: 9 });
+    push({ kind: "ring", x, y, r0: geo.cell * 0.2, r1: geo.cell * 2.8, color: "#fbbf24", width: 7, dur: dur(680) });
+    push({ kind: "ring", x, y, r0: geo.cell * 2.4, r1: geo.cell * 0.35, color: "#fde68a", width: 4, dur: dur(620), delay: dur(70) });
+    push({ kind: "wave", x, y, r1: geo.cell * 3.1, color: "#fbbf24", dur: dur(720), delay: dur(80) });
+    for (const cell of cells) {
+      const rr = cell[0], cc = cell[1];
+      push({ kind: "cellbox", x: px(cc), y: py(rr), color: "#fbbf24", dur: dur(560), alpha: 0.3 });
+      addMark("impact", rr, cc, "#fbbf24", 9000);
+      addMark("burn", rr, cc, "#f59e0b", 10000);
+      spawn(px(cc), py(rr), 7, { color: "#fde68a", speed: 2.2, life: 620, size: 2, grav: 0.04 });
+    }
+    spawn(x, y, 44, { color: "#fde68a", speed: 4.2, life: 820, size: 2.6 });
+    spawn(x, y, 24, { color: "#93c5fd", speed: 3.1, life: 760, size: 2.1 });
+    push({ kind: "text", x, y: y - geo.cell * 0.8, text: "天罚降临", color: "#fef3c7", size: 18, dur: dur(1100), rise: 26 });
+    screenFX({ tier: 3, color: col, r: o.r, c: o.c });
+    shake(9);
+    hitstop(120);
+  }
+  function meteorCellsFallback(r, c) {
+    const out = [];
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      const rr = r + dr, cc = c + dc;
+      if (rr >= 0 && rr < 6 && cc >= 0 && cc < 6) out.push([rr, cc]);
+    }
+    return out;
+  }
+
   /* ---------------- 镜头 / 提示 ---------------- */  function shake(mag) {
     if (!opts.enabled || !opts.shake || opts.reduce) return;
     const amp = Math.min(9, mag || 3);
@@ -2432,7 +2508,7 @@
     init, sync, setOptions, clear, banner, attack, hit, shieldAbsorb: shieldAbsorb,
     dodge, immune, death, move, knockback, grab, heal, shield: shieldFx, revive,
     heroMove,
-    swordSpawn, cast, drain, mark: addMark, shake, flash, hitstop, heroColor,
+    swordSpawn, cast, drain, mark: addMark, shake, flash, hitstop, heroColor, meteorImpact,
     screenFX, weaponTrail,
     turnTransition, talismanCast, talismanEffect, pillars, mist,
     victoryBurst, victoryTitle, victoryHeroPose, victoryHide,

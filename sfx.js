@@ -548,10 +548,22 @@
         for (let i = 0; i < 3; i++) N(L, { at: 0.05 + i * 0.05, dur: 0.08, bp: h.air * (1.1 + i * 0.25), q: 1.4, peak: 0.06 });
         break;
 
-      case "damage_line": // 游侠穿透
+      case "damage_line": // 旧游侠穿透（兼容）
         T(L, { at: 0, dur: 0.10, wave: "triangle", f0: 900, f1: 1600, peak: 0.10 });
         N(L, { at: 0.02, dur: 0.4, bp: 4000, q: 2.0, sweepTo: 1200, peak: 0.10 });
         HP(L, { at: 0.30, dur: 0.16, f0: 200, f1: 70, peak: 0.12 });
+        break;
+      case "skyarrow": // 天穹射手·穿云箭：弓弦蓄力 → 高频破空 → 星辰命中
+        S(L, { at: 0, f0: 520, f1: 1400, dur: 0.28, peak: 0.05, wave: "sine" });
+        T(L, { at: 0.04, dur: 0.16, wave: "triangle", f0: 1600, f1: 3200, peak: 0.09 });
+        N(L, { at: 0.10, dur: 0.34, bp: 5200, q: 2.4, sweepTo: 800, peak: 0.13 });
+        HP(L, { at: 0.28, dur: 0.18, f0: 240, f1: 65, peak: 0.16 });
+        [0, 4, 9].forEach((q, i) => T(L, { at: 0.30 + i * 0.045, dur: 0.26, wave: "sine", f0: 1046 * Math.pow(2, q / 12), peak: 0.045 }));
+        break;
+      case "meteor": // 天穹射手·天罚：预警钟鸣 + 低频蓄势
+        T(L, { at: 0, dur: 0.5, wave: "sine", f0: 523, f1: 523, peak: 0.06 });
+        T(L, { at: 0.01, dur: 0.5, wave: "sine", f0: 784, peak: 0.035 });
+        N(L, { at: 0.08, dur: 0.55, lp: 900, lpTo: 260, peak: 0.08 });
         break;
 
       case "shield_self":
@@ -852,6 +864,12 @@
       case "buffUp": recipeBuffUp(h, o, L); break;
       case "buffDown": recipeBuffDown(h, o, L); break;
       case "grab": recipeGrab(h, o, L); break;
+      case "meteorFall": // 天罚落地：高频坠落 → 低频爆轰 → 星火余响
+        N(L, { at: 0, dur: 0.45, bp: 4000, sweepTo: 700, q: 1.2, peak: 0.20 });
+        HP(L, { at: 0.18, dur: 0.75, f0: 120, f1: 28, peak: 0.45 });
+        N(L, { at: 0.20, dur: 0.70, lp: 700, lpTo: 120, peak: 0.22 });
+        [0, 7, 12, 19].forEach((q, i) => T(L, { at: 0.24 + i * 0.06, dur: 0.5, wave: "sine", f0: 262 * Math.pow(2, q / 12), peak: 0.05 }));
+        break;
       case "knockback": recipeKnockback(h, o, L); break;
       case "mark": recipeMark(h, o, L); break;
       case "stun":

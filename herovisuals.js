@@ -8,7 +8,7 @@
     berserker: { c1:"#ef4444", c2:"#7f1d1d", c3:"#fca5a5", weapon:"axe", aura:"fire", build:"heavy", head:"horns", acc:"none", sigil:"diamond", dur:340, tilt:7 },
     mage:      { c1:"#8b5cf6", c2:"#4c1d95", c3:"#ddd6fe", weapon:"orb", aura:"arcane", build:"robed", head:"hat", acc:"orb", sigil:"star", dur:340, tilt:3 },
     knight:    { c1:"#60a5fa", c2:"#1e3a8a", c3:"#dbeafe", weapon:"sword", aura:"blade", build:"armored", head:"helm", acc:"cape", sigil:"shield", dur:340, tilt:5 },
-    ranger:    { c1:"#22c55e", c2:"#14532d", c3:"#bbf7d0", weapon:"bow", aura:"wind", build:"lean", head:"hood", acc:"scarf", sigil:"arrow", dur:300, tilt:4 },
+    ranger:    { c1:"#fbbf24", c2:"#1e3a8a", c3:"#dbeafe", weapon:"bow", aura:"star", build:"armored", head:"circlet", acc:"cape", sigil:"star", starBow:true, dur:290, tilt:3 },
     assassin:  { c1:"#64748b", c2:"#0f172a", c3:"#cbd5e1", weapon:"daggers", aura:"dark", build:"lean", head:"mask", acc:"none", sigil:"diamond", dur:240, tilt:8 },
     warlock:   { c1:"#38bdf8", c2:"#0c4a6e", c3:"#e0f2fe", weapon:"staff", aura:"ice", build:"robed", head:"hood", acc:"orb", sigil:"star", dur:340, tilt:3 },
     cleric:    { c1:"#fbbf24", c2:"#92400e", c3:"#fef3c7", weapon:"staff", aura:"holy", build:"robed", head:"halo", acc:"halo", sigil:"cross", dur:350, tilt:2 },
@@ -115,6 +115,11 @@
       return '<path class="hf-head" d="M24 23 Q24 13 32 13 Q40 13 40 23 Z"/>' +
         '<ellipse class="hf-halo" cx="32" cy="8" rx="11" ry="3"/>';
     }
+    if (h === "circlet") {
+      return '<path class="hf-head" d="M24 23 Q24 12 32 12 Q40 12 40 23 Z"/>' +
+        '<path class="hf-circlet" d="M22 15 Q26 10 32 12 Q38 10 42 15 L39 18 Q35 14 32 16 Q29 14 25 18 Z"/>' +
+        '<path class="hf-circlet-gem" d="M32 5 L34 10 L39 11 L35 14 L36 19 L32 16 L28 19 L29 14 L25 11 L30 10 Z"/>';
+    }
     return '<path class="hf-head" d="M24 23 Q24 12 32 12 Q40 12 40 23 Z"/>' +
       '<path class="hf-hood" d="M21 23 Q22 7 32 7 Q42 7 43 23 Q37 16 32 16 Q27 16 21 23 Z"/>';
   }
@@ -173,6 +178,7 @@
       '<circle class="hf-eye" cx="29" cy="23" r="1.25"/><circle class="hf-eye" cx="35" cy="23" r="1.25"/>' +
       (L.thirdEye ? '<path class="hf-third-eye-line" d="M25 14 Q32 8 39 14 Q32 20 25 14 Z"/><ellipse class="hf-third-eye" cx="32" cy="14" rx="2.2" ry="1.5"/>' : '') +
       sigilSVG(L) +
+      (L.starBow ? '<g class="hf-starbow"><circle class="hf-star-glow" cx="51" cy="18" r="4"/><path class="hf-star-line" d="M51 10 L53 15 L58 16 L54 20 L55 26 L51 22 L47 26 L48 20 L44 16 L49 15 Z"/><circle class="hf-star-dot" cx="24" cy="41" r="1.2"/><circle class="hf-star-dot" cx="42" cy="33" r="1"/><circle class="hf-star-dot" cx="20" cy="29" r=".9"/></g>' : '') +
       '<g class="hf-weapon">' + wpn + '</g>' +
       '</svg>';
   }
@@ -201,7 +207,7 @@
 
   /* 技能身体姿态分类：同一技能类型在不同英雄身上仍有专属配色/武器 */
   const POSE_BY_TYPE = {
-    damage_single:"channel", freeze:"channel", damage_line:"ranged", damage_adjacent_all:"area",
+    damage_single:"channel", freeze:"channel", damage_line:"ranged", skyarrow:"ranged", meteor:"channel", damage_adjacent_all:"area",
     heal:"heal", shield_self:"defense", shield_ally:"defense", blink:"teleport", dash:"dash",
     duanlang:"dash", shuidiao:"dash", dragonbreath:"area", thunder:"area", chase:"dash",
     bloodburst:"area", ziwei:"teleport", exile:"channel", tianwei:"area", shenluo:"area",
@@ -235,6 +241,8 @@
       "hillking:push": "hillking-push",
       "huamulan:charge": "huamulan-charge",
       "ranger:damage_line": "ranger-shot",
+      "ranger:skyarrow": "ranger-skyarrow",
+      "ranger:meteor": "ranger-meteor",
       "knight:damage_adjacent_all": "knight-sweep",
       "cleric:heal": "cleric-pray",
       "warlock:freeze": "warlock-frost",
@@ -268,7 +276,11 @@
   function skillIcon(type) {
     const t = type || "";
     let inner = "";
-    if (/thunder|raikiri|bolt|discharge|susano_arrow|damage_line|ranged/.test(t)) {
+    if (/skyarrow/.test(t)) {
+      inner = '<path d="M4 20 L18 6 M13 5 L19 5 L19 11 M7 21 L3 21 L3 17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 17 L18 14 L20 17 L23 18 L20 19 L18 22 L16 19 L13 18 Z" fill="currentColor"/>';
+    } else if (/meteor/.test(t)) {
+      inner = '<path d="M15 2 Q9 7 9 14 Q9 19 13 21 Q11 16 14 12 Q16 17 20 18 Q21 11 15 2 Z"/><path d="M3 6 L7 10 M2 13 L5 15 M4 20 L7 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>';
+    } else if (/thunder|raikiri|bolt|discharge|susano_arrow|damage_line|ranged/.test(t)) {
       inner = '<path d="M13 2 L6 13 H11 L9 22 L19 10 H14 Z"/>';
     } else if (/thunderblade|slash|charge|dash|duanlang|shuidiao|metalpierce|shadowfang|divinepalm|push/.test(t)) {
       inner = '<path d="M4 20 L18 6 L21 3 L20 7 L7 21 Z"/><path d="M4 20 L9 15"/>';
@@ -298,6 +310,7 @@
     thunder: { portrait: "art/thunder-portrait.webp", board: "art/thunder-board.webp", avatar: "art/thunder-avatar.webp", icon: "art/thunder-icon.webp", silhouette: "art/thunder-silhouette.webp" },
     eagle: { portrait: "art/eagle-portrait.webp", board: "art/eagle-board.webp", avatar: "art/eagle-avatar.webp", icon: "art/eagle-icon.webp", silhouette: "art/eagle-silhouette.webp" },
     susanoo: { portrait: "art/susanoo-portrait.webp", board: "art/susanoo-board.webp", avatar: "art/susanoo-avatar.webp", icon: "art/susanoo-icon.webp", silhouette: "art/susanoo-silhouette.webp" },
+    ranger: { portrait: "art/ranger-portrait.webp", board: "art/ranger-board.webp", avatar: "art/ranger-avatar.webp", icon: "art/ranger-icon.webp", silhouette: "art/ranger-silhouette.webp" },
   };
   function portraitHTML(id, extraClass) {
     const art = HERO_ART[id];

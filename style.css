@@ -1556,6 +1556,76 @@ html, body {
 }
 
 /* =======================================================================
+   天穹射手：天罚 3×3 预警法阵
+   ======================================================================= */
+.cell.meteor-zone {
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, .55), inset 0 0 18px rgba(30, 58, 138, .35);
+  overflow: visible;
+}
+.meteor-zone-mark {
+  position: absolute;
+  inset: 2px;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: 5px;
+  border: 1px solid rgba(253, 230, 138, .75);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(30, 58, 138, .12), transparent 68%),
+    repeating-linear-gradient(45deg, rgba(251, 191, 36, .08) 0 4px, transparent 4px 10px);
+  box-shadow: 0 0 10px rgba(251, 191, 36, .35);
+  animation: meteorZonePulse 1.9s ease-in-out infinite;
+}
+.cell.meteor-center .meteor-zone-mark {
+  border-width: 2px;
+  border-color: rgba(253, 230, 138, .95);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(251, 191, 36, .26), transparent 64%),
+    conic-gradient(from 0deg, rgba(251, 191, 36, .22) 0 12deg, transparent 13deg 45deg, rgba(147, 197, 253, .16) 46deg 58deg, transparent 59deg 90deg);
+}
+.meteor-warn {
+  position: absolute;
+  left: 50%;
+  top: 3px;
+  transform: translateX(-50%);
+  z-index: 7;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px 1px 3px;
+  border-radius: 8px;
+  border: 1px solid rgba(253, 230, 138, .9);
+  background: rgba(15, 23, 42, .78);
+  box-shadow: 0 0 10px rgba(251, 191, 36, .65);
+  font-size: 11px;
+  line-height: 1.2;
+  color: #fef3c7;
+}
+.meteor-star {
+  font-style: normal;
+  font-size: 12px;
+  filter: drop-shadow(0 0 5px #fbbf24);
+  animation: meteorStarSpin 3.2s linear infinite;
+}
+.meteor-count {
+  font-size: 10px;
+  font-weight: 900;
+  color: #fde68a;
+}
+@keyframes meteorZonePulse {
+  0%, 100% { opacity: .62; }
+  50% { opacity: 1; }
+}
+@keyframes meteorStarSpin {
+  0% { transform: rotate(0) scale(1); }
+  50% { transform: rotate(180deg) scale(1.18); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .meteor-zone-mark, .meteor-star { animation: none; }
+}
+
+/* =======================================================================
    视觉升级：动态英雄棋子 / 专属装饰 / 连续移动 / 棋盘质感
    ======================================================================= */
 
@@ -1761,6 +1831,31 @@ html, body {
 .aura-royal .hero-aura { background: conic-gradient(from 0deg at 50% 60%, rgba(251,191,36,.4) 0 14deg, transparent 15deg 45deg, rgba(251,191,36,.26) 46deg 60deg, transparent 61deg 90deg); }
 .aura-fire .hero-particle-field i, .aura-dragon .hero-particle-field i { background: #fde68a; box-shadow: 0 0 8px #f97316; animation: goldRise 3.6s ease-in-out infinite; }
 .aura-wind .hero-aura { background: radial-gradient(ellipse, rgba(34, 197, 94, .28), transparent 66%); }
+.aura-star .hero-aura {
+  background:
+    radial-gradient(ellipse at 50% 68%, rgba(251, 191, 36, .42), transparent 60%),
+    radial-gradient(ellipse at 50% 48%, rgba(147, 197, 253, .28), transparent 72%);
+}
+.aura-star::after {
+  content: "";
+  position: absolute;
+  inset: -10%;
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, transparent 0 28deg, rgba(253, 230, 138, .5) 29deg 31deg, transparent 32deg 68deg);
+  opacity: .32;
+  animation: auraSpin 9s linear infinite;
+}
+.aura-star .hero-particle-field i {
+  background: #fde68a;
+  box-shadow: 0 0 8px #fbbf24, 0 0 14px rgba(147, 197, 253, .55);
+  animation: starMote 3.2s ease-in-out infinite;
+}
+@keyframes starMote {
+  0% { opacity: 0; transform: translateY(6px) scale(.5) rotate(0); }
+  25% { opacity: .95; }
+  65% { opacity: .65; }
+  100% { opacity: 0; transform: translateY(-18px) scale(1.25) rotate(160deg); }
+}
 .aura-blade .hero-aura { background: radial-gradient(ellipse, rgba(226, 232, 240, .26), transparent 66%); }
 .aura-shield .hero-aura { background: radial-gradient(ellipse, rgba(148, 163, 184, .33), transparent 66%); }
 .aura-arcane .hero-aura { background: radial-gradient(ellipse, rgba(139, 92, 246, .38), transparent 66%); }
@@ -1982,6 +2077,12 @@ html, body {
 .hf-crown { fill: var(--c3, #e2e8f0); }
 .hf-mask { fill: var(--c2, #334155); stroke: var(--c3, #e2e8f0); stroke-width: .8; }
 .hf-eye-slit { stroke: var(--c3, #e2e8f0); stroke-width: 1.4; stroke-linecap: round; }
+.hf-circlet { fill: var(--c1, #fbbf24); stroke: var(--c3, #e2e8f0); stroke-width: .7; filter: drop-shadow(0 0 3px var(--c1, #fbbf24)); }
+.hf-circlet-gem { fill: var(--c3, #dbeafe); stroke: var(--c1, #fbbf24); stroke-width: .7; filter: drop-shadow(0 0 4px var(--c3, #dbeafe)); }
+.hf-star-glow { fill: var(--c3, #dbeafe); opacity: .22; filter: blur(2px); }
+.hf-star-line { fill: var(--c1, #fbbf24); opacity: .9; filter: drop-shadow(0 0 3px var(--c1, #fbbf24)); animation: starBowTwinkle 2.6s ease-in-out infinite; }
+.hf-star-dot { fill: var(--c3, #dbeafe); filter: drop-shadow(0 0 3px var(--c3, #dbeafe)); animation: starBowTwinkle 2.2s ease-in-out infinite; }
+@keyframes starBowTwinkle { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
 .hf-horn { fill: var(--c2, #334155); stroke: var(--c3, #e2e8f0); stroke-width: .7; }
 .hf-hat { fill: var(--c2, #334155); stroke: var(--c3, #e2e8f0); stroke-width: .8; }
 .hf-halo { fill: none; stroke: var(--c3, #e2e8f0); stroke-width: 1.6; opacity: .85; }
@@ -2306,6 +2407,32 @@ html, body {
 .unit-pose-ranger-shot .hero-figure-wrap { animation: rangerBody .5s ease-out; }
 @keyframes rangerDraw { 0% { transform: rotate(0); } 35% { transform: rotate(-5deg) translateX(-3px); } 60% { transform: rotate(12deg) translateX(2px); } 100% { transform: rotate(0); } }
 @keyframes rangerBody { 0%,100% { transform: translateX(0); } 35% { transform: translateX(-2px); } 60% { transform: translateX(3px); } }
+.unit-pose-ranger-skyarrow .hero-figure-wrap { animation: skyArrowBody .62s cubic-bezier(.2,.8,.3,1); }
+.unit-pose-ranger-skyarrow .hf-weapon { animation: skyArrowBow .62s cubic-bezier(.2,.85,.3,1); }
+.unit-pose-ranger-skyarrow .hf-starbow { animation: skyArrowStar .62s ease-out; }
+.unit-pose-ranger-meteor .hero-figure-wrap { animation: skyMeteorBody .8s ease-in-out; }
+.unit-pose-ranger-meteor .hf-weapon { animation: skyMeteorBow .8s ease-in-out; }
+.unit-pose-ranger-meteor .hero-aura { animation: thunderAura .8s ease-out; }
+@keyframes skyArrowBody {
+  0% { transform: translateX(0) rotate(0); }
+  28% { transform: translateX(-3px) rotate(-2deg); }
+  46% { transform: translateX(-1px) rotate(0); }
+  70% { transform: translateX(4px) rotate(2deg); }
+  100% { transform: translateX(0) rotate(0); }
+}
+@keyframes skyArrowBow {
+  0% { transform: rotate(0) scale(1); }
+  32% { transform: rotate(-9deg) scale(1.06); }
+  58% { transform: rotate(10deg) scale(1.12); }
+  100% { transform: rotate(0) scale(1); }
+}
+@keyframes skyArrowStar { 0% { opacity: .35; transform: scale(.8); } 40% { opacity: 1; transform: scale(1.25); } 100% { opacity: .55; transform: scale(1); } }
+@keyframes skyMeteorBody {
+  0%, 100% { transform: translateY(0) scale(1); }
+  35% { transform: translateY(-2px) scale(1.02); }
+  62% { transform: translateY(1px) scale(.99); }
+}
+@keyframes skyMeteorBow { 0%,100% { transform: rotate(0); } 40% { transform: rotate(-6deg) translateY(-2px); } 70% { transform: rotate(4deg); } }
 .unit-pose-knight-sweep .hf-weapon { animation: knightSweepWpn .52s ease-out; }
 .unit-pose-knight-sweep .hero-figure-wrap { animation: knightSweepBody .52s ease-out; }
 @keyframes knightSweepWpn { 0% { transform: rotate(0); } 25% { transform: rotate(-70deg); } 65% { transform: rotate(58deg); } 100% { transform: rotate(0); } }
