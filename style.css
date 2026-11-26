@@ -2336,3 +2336,19 @@ html, body {
 .skill-glyph { width: 14px; height: 14px; vertical-align: -2px; margin-right: 4px; color: var(--c3, #cbd5e1); filter: drop-shadow(0 0 4px currentColor); }
 .skill-btn { display: inline-flex; align-items: center; gap: 2px; }
 .hc-skill-name .skill-glyph { width: 13px; height: 13px; margin-right: 5px; color: var(--c3, #fbbf24); filter: drop-shadow(0 0 4px currentColor); }
+/* 杨戬：第三只天眼 / 天眼普攻 / 逆转乾坤 */
+.hf-third-eye { fill: var(--c3, #fef3c7); stroke: var(--c1, #fbbf24); stroke-width: .7; filter: drop-shadow(0 0 4px var(--c3, #fef3c7)); animation: thirdEyePulse 2.8s ease-in-out infinite; }
+.hf-third-eye-line { fill: none; stroke: var(--c3, #fef3c7); stroke-width: .9; opacity: .8; }
+@keyframes thirdEyePulse { 0%,100% { opacity: .7; } 50% { opacity: 1; filter: drop-shadow(0 0 7px #fde68a); } }
+.unit-pose-yangjian-eye .hero-figure-wrap { animation: yjEyeBody .5s ease-out; }
+.unit-pose-yangjian-eye .hf-third-eye { animation: thirdEyeOpen .5s ease-out; }
+.unit-pose-yangjian-eye .hf-weapon { animation: yjEyeWeapon .5s ease-out; }
+@keyframes yjEyeBody { 0% { transform: translateX(0) rotate(0); } 28% { transform: translateX(-3px) rotate(-3deg); } 62% { transform: translateX(5px) rotate(3deg) scale(1.03); } 100% { transform: translateX(0); } }
+@keyframes thirdEyeOpen { 0% { opacity: .4; transform: scale(.5); } 35% { opacity: 1; transform: scale(1.8); } 100% { opacity: .9; transform: scale(1); } }
+@keyframes yjEyeWeapon { 0% { transform: rotate(0); } 30% { transform: rotate(-16deg); } 62% { transform: rotate(14deg) translateX(4px); } 100% { transform: rotate(0); } }
+.unit-pose-yangjian-qiankun .hero-figure-wrap { animation: yjQiankunBody .8s cubic-bezier(.2,.8,.3,1); }
+.unit-pose-yangjian-qiankun .hf-weapon { animation: yjQiankunWeapon .8s ease-out; }
+.unit-pose-yangjian-qiankun .hero-aura { animation: yjQiankunAura .8s ease-out; }
+@keyframes yjQiankunBody { 0% { transform: translateY(0) scale(1); } 28% { transform: translateY(4px) scaleY(.95); } 58% { transform: translateY(-7px) scale(1.07); } 100% { transform: translateY(0) scale(1); } }
+@keyframes yjQiankunWeapon { 0% { transform: rotate(0); } 30% { transform: rotate(16deg) translateY(2px); } 62% { transform: rotate(-24deg) translateY(-5px); } 100% { transform: rotate(0); } }
+@keyframes yjQiankunAura { 0% { opacity: .45; transform: scale(.85); } 45% { opacity: 1; transform: scale(1.35); } 100% { opacity: .75; transform: scale(1); } }

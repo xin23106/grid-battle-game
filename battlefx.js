@@ -45,7 +45,7 @@
     assassin: "#22d3ee", warlock: "#a5f3fc", cleric: "#86efac", guardian: "#93c5fd",
     asura: "#e2e8f0", lone: "#facc15", cang: "#38bdf8", longren: "#fbbf24",
     thunder: "#c084fc", vampire: "#e11d48", jade: "#a78bfa", xiangyu: "#f87171",
-    tiandao: "#c084fc", huamulan: "#f43f5e", hillking: "#a8a29e", raven: "#8b5cf6", metal: "#fbbf24", cicada: "#fcd34d", eagle: "#a78bfa", susanoo: "#7c3aed",
+    tiandao: "#c084fc", huamulan: "#f43f5e", hillking: "#a8a29e", raven: "#8b5cf6", metal: "#fbbf24", cicada: "#fcd34d", eagle: "#a78bfa", susanoo: "#7c3aed", yangjian: "#fbbf24",
   };
   function heroColor(id) { return HERO_COLOR[id] || "#93c5fd"; }
 
@@ -1504,6 +1504,40 @@
         }
         spawn(tx2, ty2, 16, { color: "#fde68a", speed: 2.6, life: 480, size: 2.2, angle: ang, spread: 1.2 });
         if (tg.r !== undefined) addMark("impact", tg.r, tg.c, "#fbbf24");
+        break;
+      }
+      case "tianyan": {
+        // 杨戬·天眼：第三眼金色光束 + 九宫格金色波纹
+        if (tx != null) {
+          push({ kind: "beam", x, y: y - geo.cell * 0.5, x2: tx, y2: ty, color: "#fde68a", width: 6, dur: dur(360) });
+          push({ kind: "beam", x, y: y - geo.cell * 0.5, x2: tx, y2: ty, color: "#fbbf24", width: 2, dur: dur(300), delay: dur(30) });
+          push({ kind: "ring", x: tx, y: ty, r0: 4, r1: geo.cell * 0.9, color: "#fbbf24", width: 3, dur: dur(420), delay: dur(60) });
+          push({ kind: "text", x: tx, y: ty - geo.cell * 0.45, text: "天眼", color: "#fde68a", size: 13, dur: dur(620), rise: 18 });
+          addMark("impact", tg.r, tg.c, "#fbbf24", 10000);
+          addMark("shock", tg.r, tg.c, "#fde68a", 9000);
+        }
+        for (const cell of (m.cells || [])) {
+          const rr = cell[0], cc = cell[1];
+          push({ kind: "wave", x: px(cc), y: py(rr), r1: geo.cell * 0.4, color: "#fbbf24", dur: dur(380), delay: dur(80) });
+          spawn(px(cc), py(rr), 4, { color: "#fde68a", speed: 1.4, life: 380, size: 1.6, delay: dur(80) });
+        }
+        break;
+      }
+      case "qiankun": {
+        // 杨戬·逆转乾坤：金色法阵 + 引力线 + 大范围冲击
+        push({ kind: "rune", x, y, r: geo.cell * 1.45, color: "#fbbf24", sides: 8, dur: dur(760) });
+        push({ kind: "ring", x, y, r0: geo.cell * 0.3, r1: geo.cell * 2.4, color: "#fde68a", width: 5, dur: dur(780) });
+        push({ kind: "ring", x, y, r0: geo.cell * 2.2, r1: geo.cell * 0.35, color: "#fbbf24", width: 3, dur: dur(720), delay: dur(80) });
+        for (const cell of (m.cells || [])) {
+          const rr = cell[0], cc = cell[1];
+          push({ kind: "cellbox", x: px(cc), y: py(rr), color: "#fbbf24", dur: dur(520), alpha: 0.22 });
+        }
+        for (const tgt of (m.targets || [])) {
+          push({ kind: "tendril", x, y, x2: px(tgt.c), y2: py(tgt.r), color: "#fde68a", width: 2.4, bend: 16, dur: dur(520) });
+          push({ kind: "ring", x: px(tgt.c), y: py(tgt.r), r0: geo.cell * 0.5, r1: geo.cell * 0.15, color: "#fbbf24", width: 2, dur: dur(420), delay: dur(80) });
+        }
+        push({ kind: "wave", x, y, r1: geo.cell * 2.6, color: "#fbbf24", dur: dur(700), delay: dur(120) });
+        spawn(x, y, 28, { color: "#fde68a", speed: 2.6, life: 680, size: 2.4 });
         break;
       }
       case "susanoo_dash": {

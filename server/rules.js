@@ -498,6 +498,39 @@ function susanoArrowPlanS(s, u, r, c, dr, dc) {
   }
   return { mode: "explode", first: { r: r1, c: c1 }, second: { r: r2, c: c2 } };
 }
+function qiankunTargetsS(s, u) {
+  const p = findPos(s, u);
+  if (!p) return [];
+  const out = [];
+  for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) {
+    if (dr === 0 && dc === 0) continue;
+    const rr = p.r + dr, cc = p.c + dc;
+    if (!inB(rr, cc)) continue;
+    const v = s.board[rr][cc];
+    if (isUnit(v) && v.player !== u.player) out.push(v);
+  }
+  return out;
+}
+function qiankunPullDestS(s, u, from, occupied, reserved) {
+  const p = findPos(s, u);
+  if (!p) return null;
+  const dist = Math.abs(from.r - p.r) + Math.abs(from.c - p.c);
+  if (dist <= 1) return null;
+  const cand = [];
+  for (const [dr, dc] of DIRS) {
+    const nr = from.r + dr, nc = from.c + dc;
+    if (!inB(nr, nc)) continue;
+    if (nr === p.r && nc === p.c) continue;
+    const key = nr + "_" + nc;
+    if (occupied.has(key) || reserved.has(key)) continue;
+    const nd = Math.abs(nr - p.r) + Math.abs(nc - p.c);
+    if (nd >= dist) continue;
+    cand.push({ r: nr, c: nc, d: nd, axis: Math.abs(from.r - p.r) >= Math.abs(from.c - p.c) ? 0 : 1 });
+  }
+  if (!cand.length) return null;
+  cand.sort((a, b) => a.d - b.d || a.axis - b.axis || a.r - b.r || a.c - b.c);
+  return { r: cand[0].r, c: cand[0].c };
+}
 
 function isStealthedS(u) {
   return !!(u && u.stealth && (u.stealth.turns || 0) > 0);
@@ -860,6 +893,47 @@ function spawnSword(s, r, c) {
   s.board[r][c] = { sword: true, uid: s.unitSeq++ };
   return true;
 }
+/* ============================ 限时护盾层（杨戬） ============================ */
+function addTimedShieldS(s, u, amount, turns, label) {
+  if (!u || amount <= 0) return 0;
+  u.shieldLayers = u.shieldLayers || [];
+  u.shieldLayers.push({ amount, turns: turns == null ? 2 : turns, label: label || "临时护盾" });
+  u.shield = (u.shield || 0) + amount;
+  slog(s, "🛡 " + uname(s, u) + " 获得 " + amount + " 点临时护盾（持续 " + (turns == null ? 2 : turns) + " 个自身行动回合）");
+  return amount;
+}
+function consumeShieldLayersS(target, absorbed) {
+  if (!target || absorbed <= 0) return;
+  const layers = target.shieldLayers || [];
+  let left = absorbed;
+  for (const layer of layers) {
+    if (left <= 0) break;
+    const take = Math.min(layer.amount, left);
+    layer.amount -= take;
+    left -= take;
+  }
+  target.shieldLayers = layers.filter((l) => l.amount > 0.0001);
+}
+function tickShieldLayersS(s, player) {
+  for (const u of unitsOf(s, player)) {
+    const layers = u.shieldLayers || [];
+    if (!layers.length) continue;
+    const expired = [];
+    for (const layer of layers) {
+      if (layer.turns == null) continue;
+      layer.turns -= 1;
+      if (layer.turns <= 0) expired.push(layer);
+    }
+    for (const layer of expired) {
+      const idx = layers.indexOf(layer);
+      if (idx >= 0) layers.splice(idx, 1);
+      u.shield = Math.max(0, (u.shield || 0) - layer.amount);
+      slog(s, "🛡 " + uname(s, u) + " 的 " + layer.label + " 到期，剩余 " + layer.amount + " 点护盾消失");
+    }
+    u.shieldLayers = layers;
+  }
+}
+
 function applyDamage(s, target, amount, source) {
   const pos = findPos(s, target);
   if (isFormImmuneS(target)) {
@@ -874,7 +948,7 @@ function applyDamage(s, target, amount, source) {
     dmg = dmg * 0.5;
     slog(s, "🛡 金属狂潮：" + uname(s, target) + " 受到的伤害减半（" + beforeHalf + " → " + dmg + "）");
   }
-  if (target.shield > 0) { const a = Math.min(target.shield, dmg); target.shield -= a; dmg -= a; if (a > 0) slog(s, uname(s, target) + " 的护盾抵挡了 " + a + " 点伤害"); }
+  if (target.shield > 0) { const a = Math.min(target.shield, dmg); target.shield -= a; dmg -= a; consumeShieldLayersS(target, a); if (a > 0) slog(s, uname(s, target) + " 的护盾抵挡了 " + a + " 点伤害"); }
   // 龙魂：龙人 1/2 概率闪避（护盾等前置处理之后、完全抵消则不触发）
   if (dmg > 0 && target.heroId === "longren" && Math.random() < 1 / 2) {
     dmg = 0;
@@ -1100,6 +1174,8 @@ function beginTurn(s) {
   // 须佐·鸦天狗：自身行动回合开始时结算前方九宫格 0.5（开启当回合不结算；额外回合不推进）
   if (!isExtraTurn) resolveCrowTurnS(s, s.currentPlayer);
   if (checkVictory(s)) return;
+  // 限时护盾按自身真实行动回合倒计时，额外回合不推进
+  if (!isExtraTurn) tickShieldLayersS(s, s.currentPlayer);
   for (const u of unitsOf(s, s.currentPlayer)) {
     heroSkills(heroDef(u.heroId)).forEach((sk, i) => {
       if (sk && sk.perTurn) setSkillUses(s, u, i, sk.perTurn);
@@ -1325,7 +1401,7 @@ function applyAction(state, player, action) {
     const def = heroDef(heroId);
     if (!def) return err("未知英雄");
     s.board[r][c] = { uid: s.unitSeq++, heroId, player, hp: def.hp, maxHp: def.hp,
-                      shield: 0, frozen: 0, swords: def.blades || 0,
+                      shield: 0, shieldLayers: [], frozen: 0, swords: def.blades || 0,
                       usesLeft: def.skill.uses == null ? 9999 : def.skill.uses,
                       statuses: {}, lockUsed: false, sdStage: 0, dragonMoves: 0, empowerTurns: 0,
                       chaseStage: 0, chaseMark: 0, guixiongUsed: false, wxtStage: 0,
@@ -1428,7 +1504,7 @@ function applyAction(state, player, action) {
           revived = Object.assign({}, JSON.parse(JSON.stringify(rec.snapshot)), { uid: s.unitSeq++, heroId: def.id, player, hp: Math.min(3, def.hp), maxHp: def.hp });
         } else {
           revived = { uid: s.unitSeq++, heroId: def.id, player, hp: Math.min(3, def.hp), maxHp: def.hp,
-                      shield: 0, frozen: 0, swords: rec.swords || 0, usesLeft: rec.usesLeft || 0,
+                      shield: 0, shieldLayers: [], frozen: 0, swords: rec.swords || 0, usesLeft: rec.usesLeft || 0,
                       usesArr: rec.usesArr && rec.usesArr.length ? rec.usesArr.slice() : undefined,
                       statuses: {}, lockUsed: !!rec.lockUsed, sdStage: 0, dragonMoves: 0, empowerTurns: 0, chaseStage: 0, chaseMark: 0, guixiongUsed: !!rec.guixiongUsed, wxtStage: 0,
                       stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false, metalBuff: false, metalTide: 0, meditate: null,
@@ -1514,6 +1590,24 @@ function applyAction(state, player, action) {
     const metalB = u.metalBuff ? 1 : 0;
     slog(s, uname(s, u) + " 攻击 " + uname(s, t) + (fi && fi.flanked ? "（触发夹击×" + fi.count + "）" : "") + (ravenB ? "（影袭 +1）" : "") + (metalB ? "（金属强化 +1）" : ""));
     applyDamage(s, t, normalDamage(s, u, t) + ravenB + metalB, u);
+    // 杨戬·天眼：仅普通攻击触发，按原始目标位置 3×3 溅射 0.5
+    if (u.heroId === "yangjian") {
+      const victims = [];
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        const rr = r + dr, cc = c + dc;
+        if (!inB(rr, cc)) continue;
+        const v = s.board[rr][cc];
+        if (!isUnit(v) || v === t || v.player === player) continue;
+        victims.push(v);
+      }
+      slog(s, "👁 杨戬发动【天眼】：以 (" + (r + 1) + "," + (c + 1) + ") 为中心产生金色溅射");
+      for (const v of victims) {
+        if (!findPos(s, v)) continue;
+        const dealt = applyDamage(s, v, 0.5, u);
+        slog(s, "✨ 天眼溅射：" + uname(s, v) + " 受到 0.5 点伤害" + (dealt > 0 ? "（实际扣血 " + dealt + "）" : "（未造成生命伤害）"));
+      }
+      if (!victims.length) slog(s, "✨ 天眼溅射范围内没有其他敌方英雄");
+    }
     if (u.ravenBuff || isStealthedS(u)) consumeRavenAttackStateS(s, u);
     if (metalB) {
       u.metalBuff = false;
@@ -2097,6 +2191,50 @@ function applyAction(state, player, action) {
       }
       u.crowForm = { turns: CROW_FORM_TURNS_S, dir: [dr, dc], castTurn: s.turnSerial || 0 };
       slog(s, "🪶 " + uname(s, u) + " 进入【鸦天狗】形态（无敌、无法行动，持续 3 个自身行动回合；命中 " + hit + " 名敌人）");
+    } else if (sk.type === "qiankun") {
+      // 杨戬·逆转乾坤：5×5 锁定 → 群体拉近 → 1 伤 → 等额限时护盾 → 外圈眩晕
+      const targets = qiankunTargetsS(s, u);
+      if (!targets.length) return err("逆转乾坤：5×5 范围内没有敌方英雄");
+      const yp = findPos(s, u);
+      if (!yp) return err("杨戬位置异常");
+      const occupied = new Set();
+      for (let rr = 0; rr < SIZE; rr++) for (let cc = 0; cc < SIZE; cc++) if (s.board[rr][cc]) occupied.add(rr + "_" + cc);
+      const list = [];
+      for (const v of targets) {
+        const from = findPos(s, v);
+        if (!from) continue;
+        list.push({ v, from, outer: Math.max(Math.abs(from.r - yp.r), Math.abs(from.c - yp.c)) === 2 });
+      }
+      list.sort((A, B) => (Math.abs(A.from.r - yp.r) + Math.abs(A.from.c - yp.c)) - (Math.abs(B.from.r - yp.r) + Math.abs(B.from.c - yp.c)) || A.from.r - B.from.r || A.from.c - B.from.c);
+      const reserved = new Set();
+      const plans = [];
+      for (const it of list) {
+        const to = qiankunPullDestS(s, u, it.from, occupied, reserved);
+        if (to) reserved.add(to.r + "_" + to.c);
+        plans.push(Object.assign({}, it, { to }));
+      }
+      slog(s, "👁 " + uname(s, u) + " 发动【逆转乾坤】，锁定 5×5 范围内 " + plans.length + " 名敌人");
+      for (const p of plans) {
+        if (!p.to || !findPos(s, p.v)) continue;
+        s.board[p.to.r][p.to.c] = p.v;
+        s.board[p.from.r][p.from.c] = null;
+        slog(s, "🌀 逆转乾坤·牵引：" + uname(s, p.v) + " 被拉近到 (" + (p.to.r + 1) + "," + (p.to.c + 1) + ")");
+      }
+      let totalDealt = 0;
+      for (const p of plans) {
+        if (!findPos(s, p.v)) continue;
+        const dealt = applyDamage(s, p.v, sk.damage, u);
+        totalDealt += dealt;
+        slog(s, "💥 逆转乾坤：" + uname(s, p.v) + " 受到 " + sk.damage + " 点伤害" + (dealt > 0 ? "（实际扣血 " + dealt + "）" : "（未造成生命伤害）"));
+      }
+      if (totalDealt > 0) addTimedShieldS(s, u, totalDealt, sk.shieldTurns || 2, "逆转乾坤护盾");
+      else slog(s, "🛡 逆转乾坤未造成实际生命伤害，未获得护盾");
+      for (const p of plans) {
+        if (!p.outer || !findPos(s, p.v)) continue;
+        const res = applyNegativeStatus(s, p.v, "stun", { damage: 0, turns: sk.stun || 1, label: "逆转乾坤·眩晕" });
+        if (res.applied) slog(s, "💫 逆转乾坤·外围眩晕：" + uname(s, p.v) + " 被眩晕 " + (sk.stun || 1) + " 回合");
+        else slog(s, "🛡 " + uname(s, p.v) + " 抵抗了眩晕");
+      }
     } else if (sk.type === "stealth") {
       // 渡鸦·潜行：位移到雷霆万钧范围的空格（或原地），进入隐身
       const sdr = r - from.r, sdc = c - from.c;

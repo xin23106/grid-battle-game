@@ -29,6 +29,7 @@
     cicada:    { c1:"#fcd34d", c2:"#b45309", c3:"#fef3c7", weapon:"staff", aura:"gold", build:"robed", head:"halo", acc:"halo", sigil:"lotus", dur:360, tilt:2 },
     eagle:     { c1:"#a78bfa", c2:"#4c1d95", c3:"#c4b5fd", weapon:"blade", aura:"storm", build:"lean", head:"mask", acc:"scarf", sigil:"bolt", dur:220, tilt:7 },
     susanoo:   { c1:"#7c3aed", c2:"#312e81", c3:"#c4b5fd", weapon:"bow", aura:"chakra", build:"armored", head:"helm", acc:"cape", sigil:"eye", dur:380, tilt:3 },
+    yangjian:  { c1:"#fbbf24", c2:"#92400e", c3:"#fef3c7", weapon:"trident", aura:"royal", build:"armored", head:"halo", acc:"cape", sigil:"eye", thirdEye:true, dur:360, tilt:4 },
   };
   const DEFAULT = { c1:"#93c5fd", c2:"#334155", c3:"#e2e8f0", weapon:"sword", aura:"default", build:"lean", head:"hood", acc:"none", sigil:"diamond", dur:340, tilt:4 };
 
@@ -47,6 +48,7 @@
     spear:'<path class="hf-wpn-line" d="M47 64 L53 14"/><path class="hf-wpn-fill" d="M53 14 L58 4 L50 10 Z"/>',
     fan:'<path class="hf-wpn-fill" d="M48 58 Q66 40 58 18 Q46 28 42 48 Z"/><path class="hf-wpn-line thin" d="M48 58 L57 20"/>',
     scepter:'<path class="hf-wpn-line" d="M48 22 L48 64"/><path class="hf-wpn-fill" d="M48 8 L55 17 L48 26 L41 17 Z"/>',
+    trident:'<path class="hf-wpn-line" d="M48 64 L48 18"/><path class="hf-wpn-line" d="M42 8 L42 22 M48 4 L48 22 M54 8 L54 22"/><path class="hf-wpn-line" d="M41 22 Q48 28 55 22"/>',
   };
 
   function look(id) { return LOOKS[id] || DEFAULT; }
@@ -169,6 +171,7 @@
       '<path class="hf-neck" d="M29 28 L35 28 L36 33 L28 33 Z"/>' +
       headSVG(L) +
       '<circle class="hf-eye" cx="29" cy="23" r="1.25"/><circle class="hf-eye" cx="35" cy="23" r="1.25"/>' +
+      (L.thirdEye ? '<path class="hf-third-eye-line" d="M25 14 Q32 8 39 14 Q32 20 25 14 Z"/><ellipse class="hf-third-eye" cx="32" cy="14" rx="2.2" ry="1.5"/>' : '') +
       sigilSVG(L) +
       '<g class="hf-weapon">' + wpn + '</g>' +
       '</svg>';
@@ -240,6 +243,7 @@
       "cang:shuidiao": "cang-dance",
       "longren:dragonbreath": "longren-breath",
       "vampire:bloodburst": "vampire-burst",
+      "yangjian:qiankun": "yangjian-qiankun",
     };
     const key = heroId + ":" + type + (type === "thunderblade" ? ":" + (stage || 0) : "");
     if (special[key]) return special[key];
@@ -256,6 +260,7 @@
     claw: "slash", fan: "channel", shield: "defense", scepter: "channel",
   };
   function attackPose(heroId) {
+    if (heroId === "yangjian") return "yangjian-eye";
     return ATTACK_POSE_BY_WEAPON[look(heroId).weapon] || "slash";
   }
 
@@ -267,7 +272,7 @@
       inner = '<path d="M13 2 L6 13 H11 L9 22 L19 10 H14 Z"/>';
     } else if (/thunderblade|slash|charge|dash|duanlang|shuidiao|metalpierce|shadowfang|divinepalm|push/.test(t)) {
       inner = '<path d="M4 20 L18 6 L21 3 L20 7 L7 21 Z"/><path d="M4 20 L9 15"/>';
-    } else if (/pull|wxt|grab|exile|tianwei/.test(t)) {
+    } else if (/pull|wxt|grab|exile|tianwei|qiankun/.test(t)) {
       inner = '<path d="M4 12 Q8 4 12 12 Q16 20 20 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>';
     } else if (/stealth|raven|mist/.test(t)) {
       inner = '<path d="M17 3 Q8 5 6 12 Q5 19 14 21 Q8 16 10 10 Q12 6 17 3 Z"/>';

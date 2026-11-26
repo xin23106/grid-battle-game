@@ -82,4 +82,9 @@ module.exports = [
       { name: "须佐箭", type: "susano_arrow", uses: 1, damage: 1 },
       { name: "鸦天狗", type: "susano_crow", uses: 1, damage: 1 },
     ] },
+  { id: "yangjian", name: "杨戬", hp: 6, sfx: "holy",
+    skill: { name: "天眼", type: "passive" },
+    extraSkills: [
+      { name: "逆转乾坤", type: "qiankun", uses: 1, free: true, damage: 1, shieldTurns: 2, stun: 1 },
+    ] },
 ];

@@ -1212,6 +1212,7 @@ function handlePlacement(r, c) {
     hp: def.hp,
     maxHp: def.hp,
     shield: 0,
+    shieldLayers: [],           // 限时护盾层：{ amount, turns, label }
     frozen: 0,
     swords: def.blades || 0,    // 阿修罗：携带剑数
     statuses: {},               // 负面状态（抓取等）
@@ -1295,6 +1296,8 @@ function beginTurn() {
   // 须佐·鸦天狗：自身行动回合开始时对前方九宫格结算 0.5（开启当回合不结算；额外回合不推进）
   if (!isExtraTurn) resolveCrowTurn(currentPlayer);
   if (checkVictory()) return;
+  // 杨戬等临时护盾：按自身真实行动回合倒计时，额外回合不推进
+  if (!isExtraTurn) tickShieldLayers(currentPlayer);
   for (const u of unitsOf(currentPlayer)) {
     const skills = heroSkills(heroDef(u.heroId));
     skills.forEach((s, i) => {
@@ -1964,6 +1967,11 @@ function computeSkillTargets() {
       break;
     }
 
+    case "qiankun": {
+      if (qiankunTargets(u).length) skillTargets.push([r, c]);
+      break;
+    }
+
     case "susano_dash": {
       for (const [dr, dc] of SUSANO_DIAG) {
         const plan = susanoDashPlan(u, r, c, dr, dc);
@@ -2231,6 +2239,52 @@ function payHpCost(u, amount, reason) {
 }
 
 /* 伤害应用：先扣护盾，再扣生命；生命归零立即从棋盘移除 */
+/* ============================ 临时护盾层（杨戬·逆转乾坤） ============================ */
+function addTimedShield(u, amount, turns, labelText) {
+  if (!u || amount <= 0) return 0;
+  u.shieldLayers = u.shieldLayers || [];
+  u.shieldLayers.push({ amount, turns: turns == null ? 2 : turns, label: labelText || "临时护盾" });
+  u.shield = (u.shield || 0) + amount;
+  addLog("🛡 " + label(u) + " 获得 " + amount + " 点临时护盾（持续 " + (turns == null ? 2 : turns) + " 个自身行动回合）。");
+  const p = findPos(u);
+  if (p && window.BFX) window.BFX.shield({ r: p.r, c: p.c, amount });
+  if (window.SFX) window.SFX.play("shield", { hero: u.heroId });
+  return amount;
+}
+/* 伤害先消耗护盾总值；这里同步扣减各层，保证之后到期只移除剩余部分 */
+function consumeShieldLayers(target, absorbed) {
+  if (!target || absorbed <= 0) return;
+  const layers = target.shieldLayers || [];
+  let left = absorbed;
+  for (const layer of layers) {
+    if (left <= 0) break;
+    const take = Math.min(layer.amount, left);
+    layer.amount -= take;
+    left -= take;
+  }
+  target.shieldLayers = layers.filter((l) => l.amount > 0.0001);
+}
+/* 每名英雄自己的行动回合开始：临时护盾倒计时；额外回合不推进 */
+function tickShieldLayers(player) {
+  for (const u of unitsOf(player)) {
+    const layers = u.shieldLayers || [];
+    if (!layers.length) continue;
+    const expired = [];
+    for (const layer of layers) {
+      if (layer.turns == null) continue;
+      layer.turns -= 1;
+      if (layer.turns <= 0) expired.push(layer);
+    }
+    for (const layer of expired) {
+      const idx = layers.indexOf(layer);
+      if (idx >= 0) layers.splice(idx, 1);
+      u.shield = Math.max(0, (u.shield || 0) - layer.amount);
+      addLog("🛡 " + label(u) + " 的 " + layer.label + " 到期，剩余 " + layer.amount + " 点护盾消失。");
+    }
+    u.shieldLayers = layers;
+  }
+}
+
 function applyDamage(target, amount, kind, source) {
   const pos = findPos(target);
   // 禅坐 / 鸦天狗：完全免疫伤害（含黑炎、毒雾等持续伤害）
@@ -2265,6 +2319,7 @@ function applyDamage(target, amount, kind, source) {
     target.shield -= absorbed;
     dmg -= absorbed;
     absorbedTotal += absorbed;
+    consumeShieldLayers(target, absorbed);
     if (absorbed > 0) addLog(label(target) + " 的护盾抵挡了 " + absorbed + " 点伤害。");
   }
   // 孤胆侠·霸体：首次致命伤害 → 锁血到 1（每局一次，规则层判定，非致命伤害不消耗）
@@ -2421,6 +2476,32 @@ function normalAttack(attacker, target) {
     }
   }
   applyDamage(target, total, res.flank ? "flank" : "normal", attacker);
+  // 杨戬·天眼（被动）：仅普通攻击触发，按原始目标位置 3×3 金色溅射
+  if (attacker.heroId === "yangjian" && tgtBefore) {
+    const splashCells = [];
+    const splashTargets = [];
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      const rr = tgtBefore.r + dr, cc = tgtBefore.c + dc;
+      if (!inBounds(rr, cc)) continue;
+      splashCells.push([rr, cc]);
+      const v = unitAt(rr, cc);
+      if (!v || v === target || v.player === attacker.player) continue;
+      splashTargets.push(v);
+    }
+    addLog("👁 杨戬发动【天眼】：" + label(target) + " 为中心，金光向周围扩散。");
+    for (const v of splashTargets) {
+      if (!findPos(v)) continue;
+      const dealt = applyDamage(v, 0.5, "skill", attacker);
+      addLog("✨ 天眼溅射：" + label(v) + " 受到 0.5 点伤害" +
+        (dealt > 0 ? "（实际扣血 " + dealt + "）" : "（护盾 / 闪避 / 减伤后未造成生命伤害）") + "。");
+    }
+    if (!splashTargets.length) addLog("✨ 天眼溅射范围内没有其他敌方英雄。");
+    if (window.BFX) {
+      try {
+        window.BFX.cast({ type: "tianyan", heroId: "yangjian", caster: atkBefore, target: tgtBefore, cells: splashCells });
+      } catch (e) { /* 表现层失败不影响结算 */ }
+    }
+  }
   // 渡鸦：主动攻击成功执行 → 立刻破隐并消耗影袭强化
   if (attacker.heroId === "raven" || attacker.ravenBuff || attacker.stealth) consumeRavenAttackState(attacker);
   // 金元素·金属强化：伤害 +1 已计入；成功执行后消耗，目标存活则定身 1 回合
@@ -2477,7 +2558,7 @@ function skillStageLabel(a, s) {
 function screenTierFor(a, s) {
   if (!s) return 1;
   if (s.type === "thunderblade") return (a.rbStage || 0) >= 2 ? 3 : 2;
-  if (s.type === "susano_arrow" || s.type === "susano_crow" || s.type === "meditate") return 3;
+  if (s.type === "susano_arrow" || s.type === "susano_crow" || s.type === "meditate" || s.type === "qiankun") return 3;
   if (s.type === "wxt") return (a.wxtStage || 0) >= 2 ? 3 : 2;
   if (/^(thunder|shenluo|bloodburst|charge|tianwei|raikiri|dragonbreath|metaltide)$/.test(s.type)) return 3;
   if (/^(heal|shield_self|shield_ally|metalarmor|stealth|blink|ziwei|duanlang|exile)$/.test(s.type)) return 1;
@@ -3079,6 +3160,42 @@ function susanoArrowPlan(u, r, c, dr, dc) {
   }
   // 第一格为空：第二格为空或英雄都可在第二格爆炸
   return { mode: "explode", first: { r: r1, c: c1 }, second: { r: r2, c: c2 } };
+}
+
+/* ============================ 杨戬：逆转乾坤 ============================ */
+function qiankunTargets(u) {
+  const p = findPos(u);
+  if (!p) return [];
+  const out = [];
+  for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) {
+    if (dr === 0 && dc === 0) continue;
+    const rr = p.r + dr, cc = p.c + dc;
+    if (!inBounds(rr, cc)) continue;
+    const v = unitAt(rr, cc);
+    if (v && v !== u && v.player !== u.player) out.push(v);
+  }
+  return out;
+}
+/* 基于释放时棋盘的占位集合，计算拉近一格；落点被占/越界/被其他牵引预留则不动 */
+function qiankunPullDest(u, from, occupied, reserved) {
+  const p = findPos(u);
+  if (!p) return null;
+  const dist = Math.abs(from.r - p.r) + Math.abs(from.c - p.c);
+  if (dist <= 1) return null;
+  const cand = [];
+  for (const [dr, dc] of DIRS) {
+    const nr = from.r + dr, nc = from.c + dc;
+    if (!inBounds(nr, nc)) continue;
+    if (nr === p.r && nc === p.c) continue;
+    const key = nr + "_" + nc;
+    if (occupied.has(key) || reserved.has(key)) continue;
+    const nd = Math.abs(nr - p.r) + Math.abs(nc - p.c);
+    if (nd >= dist) continue;
+    cand.push({ r: nr, c: nc, d: nd, axis: Math.abs(from.r - p.r) >= Math.abs(from.c - p.c) ? 0 : 1 });
+  }
+  if (!cand.length) return null;
+  cand.sort((a, b) => a.d - b.d || a.axis - b.axis || a.r - b.r || a.c - b.c);
+  return { r: cand[0].r, c: cand[0].c };
 }
 
 function useSkill(tr, tc) {
@@ -3728,6 +3845,84 @@ function useSkill(tr, tc) {
         resetThunderblade(a);
         addLog("🔚 雷鸣刀·第三段完成，整套连招结束（雷刀已移除）。");
         break; // 尾部不重复扣次数
+      }
+      break;
+    }
+
+    case "qiankun": {
+      const targets = qiankunTargets(a);
+      if (!targets.length) {
+        addLog("逆转乾坤：5×5 范围内没有敌方英雄。");
+        clearSelection();
+        render();
+        return;
+      }
+      const yp = findPos(a);
+      if (!yp) { clearSelection(); render(); return; }
+      // 释放瞬间的占位快照：所有牵引落点都按此快照判断，后移动不会改变后续合法性
+      const occupied = new Set();
+      for (let rr = 0; rr < SIZE; rr++) for (let cc = 0; cc < SIZE; cc++) if (board[rr][cc]) occupied.add(rr + "_" + cc);
+      const list = [];
+      for (const v of targets) {
+        const from = findPos(v);
+        if (!from) continue;
+        list.push({ v, from, outer: Math.max(Math.abs(from.r - yp.r), Math.abs(from.c - yp.c)) === 2 });
+      }
+      list.sort((A, B) => (Math.abs(A.from.r - yp.r) + Math.abs(A.from.c - yp.c)) - (Math.abs(B.from.r - yp.r) + Math.abs(B.from.c - yp.c)) || A.from.r - B.from.r || A.from.c - B.from.c);
+      const reserved = new Set();
+      const plans = [];
+      for (const it of list) {
+        const to = qiankunPullDest(a, it.from, occupied, reserved);
+        if (to) reserved.add(to.r + "_" + to.c);
+        plans.push(Object.assign({}, it, { to }));
+      }
+      const cells5 = [];
+      for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) {
+        if (dr === 0 && dc === 0) continue;
+        const rr = yp.r + dr, cc = yp.c + dc;
+        if (inBounds(rr, cc)) cells5.push([rr, cc]);
+      }
+      addLog("👁 杨戬发动【逆转乾坤】：5×5 范围内锁定 " + plans.length + " 名敌人。");
+      if (window.BFX) {
+        try {
+          window.BFX.cast({ type: "qiankun", heroId: "yangjian", caster: yp, targets: plans.map((p) => p.from), cells: cells5 });
+        } catch (e) { /* 表现层失败不影响结算 */ }
+      }
+      // 先执行所有牵引（基于释放时快照）
+      for (const p of plans) {
+        if (!p.to) continue;
+        if (!findPos(p.v)) continue;
+        board[p.to.r][p.to.c] = p.v;
+        board[p.from.r][p.from.c] = null;
+        addLog("🌀 逆转乾坤·牵引：" + label(p.v) + " 被拉近到 (" + (p.to.r + 1) + "," + (p.to.c + 1) + ")。");
+        if (window.BFX) {
+          try { window.BFX.grab({ from: p.from, to: p.to, color: "#fbbf24" }); } catch (e) { /* ignore */ }
+        }
+      }
+      // 再结算伤害，并累加实际造成的生命伤害
+      let totalDealt = 0;
+      for (const p of plans) {
+        if (!findPos(p.v)) continue;
+        const dealt = applyDamage(p.v, s.damage, "skill", a);
+        totalDealt += dealt;
+        addLog("💥 逆转乾坤：" + label(p.v) + " 受到 " + s.damage + " 点伤害" +
+          (dealt > 0 ? "（实际扣血 " + dealt + "）" : "（护盾 / 闪避 / 减伤后未造成生命伤害）") + "。");
+      }
+      if (totalDealt > 0) addTimedShield(a, totalDealt, s.shieldTurns || 2, "逆转乾坤护盾");
+      else addLog("🛡 逆转乾坤未造成实际生命伤害，未获得护盾。");
+      // 最后施加外围眩晕（按释放时是否处于最外圈判断）
+      for (const p of plans) {
+        if (!p.outer || !findPos(p.v)) continue;
+        const res = applyNegativeStatus(p.v, "stun", { damage: 0, turns: s.stun || 1, label: "逆转乾坤·眩晕" });
+        if (res.applied) {
+          addLog("💫 逆转乾坤·外围眩晕：" + label(p.v) + " 被眩晕 " + (s.stun || 1) + " 回合。");
+          const vp = findPos(p.v);
+          if (vp && window.BFX) {
+            try { window.BFX.mark("shock", vp.r, vp.c, "#fbbf24", 9000); window.BFX.cast({ type: "stun", heroId: p.v.heroId, caster: vp }); } catch (e) { /* ignore */ }
+          }
+        } else {
+          addLog("🛡 " + label(p.v) + " 抵抗了逆转乾坤的眩晕。");
+        }
       }
       break;
     }
@@ -4539,7 +4734,7 @@ function useSkill(tr, tc) {
   // 全屏电影反馈：等技能真实结算完成后再播放（不修改伤害/位置）
   if (window.BFX && window.BFX.screenFX) {
     try {
-      const _fxColor = /^(thunder|eagle|susanoo|tiandao)$/.test(a.heroId) ? "#dbeafe" : window.BFX.heroColor(a.heroId);
+      const _fxColor = a.heroId === "yangjian" ? "#fbbf24" : /^(thunder|eagle|susanoo|tiandao)$/.test(a.heroId) ? "#dbeafe" : window.BFX.heroColor(a.heroId);
       window.BFX.screenFX({ tier: screenTierFor(a, s), color: _fxColor, r: tr, c: tc });
     } catch (e) { /* 表现层失败不影响规则 */ }
   }
@@ -4810,6 +5005,7 @@ function useTalismanEffect(id, tr, tc) {
         hp: Math.min(3, def.hp),
         maxHp: def.hp,
         shield: 0,
+        shieldLayers: [],
         frozen: 0,
         swords: rec.swords || 0,
         usesLeft: rec.usesLeft || 0,
@@ -5122,6 +5318,7 @@ function buildUnit(u) {
     const b = document.createElement("span");
     b.className = "badge shield";
     b.textContent = "🛡" + u.shield;
+    if (u.shieldLayers && u.shieldLayers.length) b.title = "临时护盾：" + u.shieldLayers.map((l) => l.amount + "（剩 " + l.turns + " 回合）").join("、");
     el.appendChild(b);
   }
   if (u.frozen > 0) {
@@ -5955,6 +6152,12 @@ function renderDetailCard() {
     if (isCrowForm(u)) st.push("鸦天狗：无敌 · 剩余 " + (u.crowForm.turns || 0) + " 个自身回合（无法移动 / 普攻 / 使用技能）");
     if (Object.keys(blackFlames).length) st.push("黑炎地形：" + Object.keys(blackFlames).length + " 格");
   }
+  if (u.heroId === "yangjian") {
+    st.push("天眼：普通攻击附带以目标为中心的 3×3 金色溅射（其他敌人各 0.5）");
+    if (u.shieldLayers && u.shieldLayers.length) {
+      st.push("临时护盾：" + (u.shield || 0) + "（" + u.shieldLayers.map((l) => l.amount + " × 剩 " + l.turns + " 回合").join("、") + "）");
+    }
+  }
   if (flankImmune(u)) st.push("免疫夹击加成");
   if (u.frozen > 0) st.push("冰封：跳过 " + u.frozen + " 个回合");
   if (u.statuses) for (const k of Object.keys(u.statuses)) st.push((u.statuses[k].label || k) + "（剩 " + (u.statuses[k].turns != null ? u.statuses[k].turns : 1) + "）");
@@ -6601,9 +6804,20 @@ function aiEnumerate() {
           const res = resolveNormalAttack(u, t);
           const dmg = res.damage + (u.ravenBuff ? 1 : 0);
           const kill = t.hp <= dmg;
+          let splashScore = 0;
+          if (u.heroId === "yangjian") {
+            const tr0 = pos.r + dr, tc0 = pos.c + dc;
+            for (let sr = -1; sr <= 1; sr++) for (let sc2 = -1; sc2 <= 1; sc2++) {
+              if (!sr && !sc2) continue;
+              const e2 = unitAt(tr0 + sr, tc0 + sc2);
+              if (e2 && e2 !== t && e2.player !== u.player && !hiddenFrom(e2, u.player)) {
+                splashScore += 0.5 * w.dmgW + (e2.hp <= 0.5 ? w.killW : 0);
+              }
+            }
+          }
           acts.push({
             type: "attack", u, pos, target: { r: pos.r + dr, c: pos.c + dc },
-            score: w.dmgW * dmg + (kill ? w.killW : 0) + (res.flank ? w.flankW : 0) + 6,
+            score: w.dmgW * dmg + (kill ? w.killW : 0) + (res.flank ? w.flankW : 0) + 6 + splashScore,
           });
         }
       }
@@ -6993,6 +7207,22 @@ function aiEnumerate() {
           sc += hits * 4; // 后续 3 个自身回合的持续风压
           acts.push({ type: "skill", u, pos, target: { r: cr, c: cc }, skillIdx: si, score: sc * w.skillW });
         }
+        return;
+      }
+
+      // 杨戬·逆转乾坤：5×5 敌人数量 / 外圈眩晕 / 护盾收益
+      if (s.type === "qiankun") {
+        const targets = qiankunTargets(u);
+        if (!targets.length) return;
+        let sc = 10;
+        for (const v of targets) {
+          const p = findPos(v);
+          if (!p) continue;
+          const outer = Math.max(Math.abs(p.r - pos.r), Math.abs(p.c - pos.c)) === 2;
+          sc += w.dmgW * s.damage + (v.hp <= s.damage ? w.killW : 0) + (outer ? 12 : 0);
+        }
+        sc += Math.min(4, targets.length) * 4; // 等额护盾
+        acts.push({ type: "skill", u, pos, target: { r: pos.r, c: pos.c }, skillIdx: si, score: sc * w.skillW });
         return;
       }
 
@@ -7975,6 +8205,7 @@ window.GameAPI = {
         hp: spec.hp != null ? spec.hp : def.hp,
         maxHp: def.hp,
         shield: spec.shield || 0,
+        shieldLayers: spec.shieldLayers ? JSON.parse(JSON.stringify(spec.shieldLayers)) : [],
         frozen: spec.frozen || 0,
         swords: spec.swords != null ? spec.swords : (def.blades || 0),
         statuses: spec.statuses || {},

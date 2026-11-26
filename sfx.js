@@ -634,6 +634,18 @@
         HP(L, { at: 0.10, dur: 0.40, f0: 90, f1: 30, peak: 0.28 });
         N(L, { at: 0.18, dur: 0.4, bp: 2200, q: 1.2, sweepTo: 700, peak: 0.08 });
         break;
+      case "tianyan": // 杨戬·天眼：金色光束 + 九宫格波纹
+        T(L, { at: 0, dur: 0.22, wave: "sine", f0: 880, f1: 1320, peak: 0.06 });
+        M(L, { at: 0.02, base: 1800, dur: 0.20, peak: 0.05, partials: [1, 2.5, 4] });
+        N(L, { at: 0.11, dur: 0.24, bp: 2600, q: 1.2, peak: 0.05 });
+        break;
+      case "qiankun": // 杨戬·逆转乾坤：低频引力 + 金色爆发
+        T(L, { at: 0, dur: 0.55, wave: "sawtooth", f0: 70, f1: 55, peak: 0.10, attack: 0.05 });
+        N(L, { at: 0.05, dur: 0.5, lp: 700, lpTo: 280, peak: 0.14, attack: 0.03 });
+        [0, 7, 12].forEach((q, i) => T(L, { at: 0.12 + i * 0.07, dur: 0.35, wave: "sine", f0: 523 * Math.pow(2, q / 12), peak: 0.05 }));
+        HP(L, { at: 0.32, dur: 0.45, f0: 110, f1: 35, peak: 0.30 });
+        N(L, { at: 0.35, dur: 0.5, lp: 500, peak: 0.12 });
+        break;
       case "raikiri": // 鹰佐·雷劈：蓄电 → 短雷 → 强雷
         S(L, { at: 0, f0: 90, f1: 880, dur: 0.20, peak: 0.06, wave: "sawtooth" });
         N(L, { at: 0, dur: 0.16, bp: 3800, q: 1.6, peak: 0.05, attack: 0.01 });
