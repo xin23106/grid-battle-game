@@ -1933,7 +1933,16 @@ function computeSkillTargets() {
     case "thunderblade": {
       const stage = u.rbStage || 0;
       if (stage === 0) {
-        // 第一段：十字位移 1 格；只展示「位移后能攻击到敌人」的落点
+        // 第一段：可原地释放，或十字位移 1 格；只展示「释放后能攻击到敌人」的落点
+        const stayHasTarget = DIRS.some(([er, ec]) => {
+          const t = unitAt(r + er, c + ec);
+          return t && t.player !== u.player && !hiddenFrom(t, u.player);
+        });
+        if (stayHasTarget) {
+          skillTargets.push([r, c]);
+          const fd = faceDir(u);
+          dashOptions.push({ kind: "rb-move", dir: [fd[0], fd[1]], dest: { r, c }, path: [[r, c]], stay: true });
+        }
         for (const [dr, dc] of DIRS) {
           const mr = r + dr, mc = c + dc;
           if (!inBounds(mr, mc) || board[mr][mc]) continue;
@@ -3341,37 +3350,41 @@ function useSkill(tr, tc) {
     return;
   }
 
-  // 鹰佐·雷鸣刀 第一段：第 1 步先选十字位移落点（本地选择，不消耗行动/次数）
+  // 鹰佐·雷鸣刀 第一段：第 1 步先选原地释放或十字位移落点（本地选择，不消耗行动/次数）
   if (s.type === "thunderblade" && (a.rbStage || 0) === 0 && !(skillSub && skillSub.kind === "rb-step1")) {
     const mdr = tr - r, mdc = tc - c;
-    if ((mdr !== 0 && mdc !== 0) || Math.abs(mdr) + Math.abs(mdc) !== 1) {
-      addLog("雷鸣刀·第一段：位移只能选择上/下/左/右 1 格。");
+    const stay = tr === r && tc === c;
+    if (!stay && ((mdr !== 0 && mdc !== 0) || Math.abs(mdr) + Math.abs(mdc) !== 1)) {
+      addLog("雷鸣刀·第一段：可以选择原地释放，或向上/下/左/右移动 1 格。");
       render();
       return;
     }
-    if (!inBounds(tr, tc) || board[tr][tc]) {
+    if (!stay && (!inBounds(tr, tc) || board[tr][tc])) {
       addLog("雷鸣刀·第一段：位移落点必须是空格。");
       render();
       return;
     }
+    const mr = stay ? r : tr, mc = stay ? c : tc;
     const hasTarget = DIRS.some(([er, ec]) => {
-      const t = unitAt(tr + er, tc + ec);
+      const t = unitAt(mr + er, mc + ec);
       return t && t.player !== a.player && !hiddenFrom(t, a.player);
     });
     if (!hasTarget) {
-      addLog("雷鸣刀·第一段：该落点周围没有可攻击的敌人，请换一个方向（不消耗行动）。");
+      addLog(stay ? "雷鸣刀·第一段：原地周围没有可攻击的敌人（不消耗行动）。" : "雷鸣刀·第一段：该落点周围没有可攻击的敌人，请换一个方向或原地释放（不消耗行动）。");
       render();
       return;
     }
-    skillSub = { kind: "rb-step1", r: tr, c: tc, dir: [mdr, mdc] };
+    const fd = faceDir(a);
+    const dir = stay ? [fd[0], fd[1]] : [mdr, mdc];
+    skillSub = { kind: "rb-step1", r: mr, c: mc, dir, stay };
     skillTargets = [];
     dashOptions = [];
     for (const [er, ec] of DIRS) {
-      const t = unitAt(tr + er, tc + ec);
-      if (t && t.player !== a.player && !hiddenFrom(t, a.player)) skillTargets.push([tr + er, tc + ec]);
+      const t = unitAt(mr + er, mc + ec);
+      if (t && t.player !== a.player && !hiddenFrom(t, a.player)) skillTargets.push([mr + er, mc + ec]);
     }
     render();
-    addLog("⚡ 已选择十字位移到 (" + (tr + 1) + "," + (tc + 1) + ")，请选择普通攻击范围内的敌人发动雷斩。");
+    addLog(stay ? "⚡ 已选择原地释放雷鸣刀·第一段，请选择相邻敌人发动雷斩。" : "⚡ 已选择十字位移到 (" + (mr + 1) + "," + (mc + 1) + ")，请选择普通攻击范围内的敌人发动雷斩。");
     return; // 尚未结算，等待攻击目标
   }
 
@@ -3732,6 +3745,7 @@ function useSkill(tr, tc) {
           return;
         }
         const mr = skillSub.r, mc = skillSub.c;
+        const stay = !!skillSub.stay || (mr === r && mc === c);
         const [ddr, ddc] = skillSub.dir;
         const t = unitAt(tr, tc);
         if (!t || t.player === a.player || hiddenFrom(t, a.player) || Math.abs(tr - mr) + Math.abs(tc - mc) !== 1) {
@@ -3739,20 +3753,24 @@ function useSkill(tr, tc) {
           render();
           return; // 保留位移选择，可改选其它相邻敌人
         }
-        if (!inBounds(mr, mc) || board[mr][mc]) {
+        if (!stay && (!inBounds(mr, mc) || board[mr][mc])) {
           addLog("雷鸣刀·第一段：位移落点已不可用（不消耗行动）。");
           skillSub = null;
           computeSkillTargets();
           render();
           return;
         }
-        if (window.BFX) window.BFX.move({ from: { r, c }, to: { r: mr, c: mc }, color: window.BFX.heroColor(a.heroId), dash: true });
-        board[mr][mc] = a;
-        board[r][c] = null;
-        setFace(a, ddr, ddc);
-        a.rbDir = [ddr, ddc];
-        addLog("⚡ " + label(a) + " 发动【雷鸣刀·第一段·十字突进·雷斩】，十字位移到 (" + (mr + 1) + "," + (mc + 1) + ")，朝向【" + faceName(a) + "】。");
-        if (window.BFX) window.BFX.cast({ type: "thunderblade", heroId: a.heroId, stage: 1, caster: { r: mr, c: mc }, from: { r, c }, target: { r: tr, c: tc }, dir: [ddr, ddc] });
+        if (!stay) {
+          if (window.BFX) window.BFX.move({ from: { r, c }, to: { r: mr, c: mc }, color: window.BFX.heroColor(a.heroId), dash: true });
+          board[mr][mc] = a;
+          board[r][c] = null;
+          setFace(a, ddr, ddc);
+        }
+        a.rbDir = stay ? faceDir(a).slice() : [ddr, ddc];
+        addLog(stay
+          ? "⚡ " + label(a) + " 发动【雷鸣刀·第一段·原地雷斩】，留在 (" + (mr + 1) + "," + (mc + 1) + ")，朝向【" + faceName(a) + "】。"
+          : "⚡ " + label(a) + " 发动【雷鸣刀·第一段·十字突进·雷斩】，十字位移到 (" + (mr + 1) + "," + (mc + 1) + ")，朝向【" + faceName(a) + "】。");
+        if (window.BFX) window.BFX.cast({ type: "thunderblade", heroId: a.heroId, stage: 1, caster: { r: mr, c: mc }, from: { r, c }, target: { r: tr, c: tc }, dir: a.rbDir, stay });
         const nominal = s.damage + attackerBonus(a);
         const dealt = applyDamage(t, nominal, "skill", a);
         addLog("🗡 雷斩：" + label(t) + " 受到 " + nominal + " 点伤害" +
@@ -7070,6 +7088,14 @@ function aiEnumerate() {
       if (s.type === "thunderblade") {
         const tst = u.rbStage || 0;
         if (tst === 0) {
+          // 原地释放：不移动，直接雷斩相邻敌人（更安全，避免踩进危险格）
+          for (const [er, ec] of DIRS) {
+            const e = unitAt(pos.r + er, pos.c + ec);
+            if (!e || e.player === u.player || hiddenFrom(e, u.player)) continue;
+            let sc = w.dmgW * (s.damage || 2) + (e.hp <= (s.damage || 2) ? w.killW : 0) + 7;
+            sc -= dangerAt(pos.r, pos.c, u) * (w.riskW / 30);
+            acts.push({ type: "skill", u, pos, moveTo: { r: pos.r, c: pos.c }, target: { r: pos.r + er, c: pos.c + ec }, skillIdx: si, score: sc * w.skillW });
+          }
           for (const [dr, dc] of DIRS) {
             const mr = pos.r + dr, mc = pos.c + dc;
             if (!inBounds(mr, mc) || board[mr][mc]) continue;
@@ -7323,8 +7349,10 @@ function aiApplyAction(act) {
     skillSub = act.wxtDir ? { kind: "wxt-dir-set", dir: [act.wxtDir.dr, act.wxtDir.dc] } : null;
     computeSkillTargets();
     if (mover && mover.heroId === "eagle" && (act.skillIdx || 0) === 1 && (mover.rbStage || 0) === 0 && act.moveTo) {
-      // 鹰佐·雷鸣刀第一段：先本地选位移落点，再对目标发动雷斩
-      skillSub = { kind: "rb-step1", r: act.moveTo.r, c: act.moveTo.c, dir: [act.moveTo.r - pos.r, act.moveTo.c - pos.c] };
+      // 鹰佐·雷鸣刀第一段：先本地选原位/位移落点，再对目标发动雷斩
+      const stay = act.moveTo.r === pos.r && act.moveTo.c === pos.c;
+      const fd = faceDir(mover);
+      skillSub = { kind: "rb-step1", r: act.moveTo.r, c: act.moveTo.c, dir: stay ? [fd[0], fd[1]] : [act.moveTo.r - pos.r, act.moveTo.c - pos.c], stay };
       useSkill(act.target.r, act.target.c);
     } else if (mover && mover.heroId === "hillking" && (act.skillIdx || 0) === 0) {
       // 山丘之王·推山：第一步十字位移（无 moveTo 则原地），第二步推击

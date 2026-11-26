@@ -2036,20 +2036,32 @@ function applyAction(state, player, action) {
       if (action.rbStage == null) return err("雷鸣刀：缺少阶段确认");
       if ((action.rbStage | 0) !== stage) return err("雷鸣刀阶段已变化，请以最新状态为准");
       if (stage === 0) {
-        // 第一段：十字位移 1 格 + 对相邻敌人 2 点雷斩
+        // 第一段：原地释放，或十字位移 1 格 + 对相邻敌人 2 点雷斩
         const mv = action.moveTo || {};
-        const mdr = (mv.r != null ? mv.r : from.r) - from.r;
-        const mdc = (mv.c != null ? mv.c : from.c) - from.c;
-        if ((mdr !== 0 && mdc !== 0) || Math.abs(mdr) + Math.abs(mdc) !== 1) return err("雷鸣刀·第一段：位移必须选择十字方向 1 格");
-        if (!inB(mv.r, mv.c) || s.board[mv.r][mv.c]) return err("雷鸣刀·第一段：位移落点必须是空格");
-        if (!isUnit(t) || t.player === player || hiddenFromS(t, player)) return err("雷鸣刀·第一段：请选择位移后相邻的敌方英雄");
-        if (Math.abs(r - mv.r) + Math.abs(c - mv.c) !== 1) return err("雷鸣刀·第一段：攻击目标必须与位移后位置相邻");
-        s.board[mv.r][mv.c] = u;
-        s.board[from.r][from.c] = null;
-        setFaceS(u, mdr, mdc);
-        u.rbDir = [mdr, mdc];
+        const mr = mv.r != null ? mv.r : from.r;
+        const mc = mv.c != null ? mv.c : from.c;
+        const stay = mr === from.r && mc === from.c;
+        const mdr = mr - from.r;
+        const mdc = mc - from.c;
+        if (!stay) {
+          if ((mdr !== 0 && mdc !== 0) || Math.abs(mdr) + Math.abs(mdc) !== 1) return err("雷鸣刀·第一段：可以选择原地释放，或向十字方向移动 1 格");
+          if (!inB(mr, mc) || s.board[mr][mc]) return err("雷鸣刀·第一段：位移落点必须是空格");
+        }
+        if (!isUnit(t) || t.player === player || hiddenFromS(t, player)) return err("雷鸣刀·第一段：请选择释放后相邻的敌方英雄");
+        if (Math.abs(r - mr) + Math.abs(c - mc) !== 1) return err("雷鸣刀·第一段：攻击目标必须与释放后位置相邻");
+        if (!stay) {
+          s.board[mr][mc] = u;
+          s.board[from.r][from.c] = null;
+          setFaceS(u, mdr, mdc);
+          u.rbDir = [mdr, mdc];
+        } else {
+          const fd = faceDirS(u);
+          u.rbDir = [fd[0], fd[1]];
+        }
         u.rbStage = 1;
-        slog(s, "⚡ " + uname(s, u) + " 发动【雷鸣刀·第一段·十字突进·雷斩】，位移到 (" + (mv.r + 1) + "," + (mv.c + 1) + ")");
+        slog(s, stay
+          ? "⚡ " + uname(s, u) + " 发动【雷鸣刀·第一段·原地雷斩】，留在 (" + (mr + 1) + "," + (mc + 1) + ")，朝向【" + faceNameS(u) + "】"
+          : "⚡ " + uname(s, u) + " 发动【雷鸣刀·第一段·十字突进·雷斩】，位移到 (" + (mr + 1) + "," + (mc + 1) + ")");
         applyDamage(s, t, sk.damage + av, u);
         slog(s, "🗡 雷斩：" + uname(s, t) + " 受到 " + (sk.damage + av) + " 点伤害；第二段已就绪（可跨回合）");
       } else if (stage === 1) {
