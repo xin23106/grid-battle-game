@@ -218,7 +218,7 @@
     bloodburst:"area", ziwei:"teleport", exile:"channel", tianwei:"area", shenluo:"area",
     wxt:"pull", metalpierce:"ranged", metalarmor:"defense", metaltide:"buff", meditate:"lotus",
     divinepalm:"thrust", stealth:"stealth", mistdash:"dash", shadowfang:"slash",
-    push:"thrust", charge:"dash", raikiri:"ranged", thunderblade:"dash", crosstep:"dash", riftslash:"dash", voidstep:"teleport", holyguard:"defense", warhammer:"thrust", titan:"defense", guardianmark:"defense", destinybond:"channel", fiveelements:"channel",
+    push:"thrust", charge:"dash", raikiri:"ranged", thunderblade:"dash", crosstep:"dash", riftslash:"dash", voidstep:"teleport", holyguard:"defense", warhammer:"thrust", titan:"defense", guardianmark:"defense", destinybond:"channel", fiveelements:"channel", soulbrand:"channel", soulclear:"ranged",
     susano_dash:"dash", susano_pull:"pull", susano_arrow:"ranged", susano_crow:"summon",
   };
   function poseFor(heroId, skill, stage) {
@@ -329,6 +329,10 @@
       else inner = '<path d="M12 2 Q18 7 18 13 Q18 20 12 22 Q6 20 6 13 Q6 7 12 2 Z" fill="none" stroke="currentColor" stroke-width="2"/>';
     } else if (/fiveelements|mage/.test(t)) {
       inner = '<path d="M12 2 L15 9 L22 12 L15 15 L12 22 L9 15 L2 12 L9 9 Z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" fill="currentColor"/>';
+    } else if (/soulbrand/.test(t)) {
+      inner = '<path d="M7 4 Q3 12 7 20 M17 4 Q21 12 17 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M8 8 H16 M8 16 H16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/>';
+    } else if (/soulclear/.test(t)) {
+      inner = '<path d="M12 2 L15 9 L22 12 L15 15 L12 22 L9 15 L2 12 L9 9 Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5 5 L19 19 M19 5 L5 19" stroke="currentColor" stroke-width="1.5" opacity=".75"/>';
     } else if (/guardianmark/.test(t)) {
       inner = '<path d="M12 2 L20 6 V13 Q20 19 12 22 Q4 19 4 13 V6 Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 12 L11 15 L16 9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>';
     } else if (/destinybond/.test(t)) {

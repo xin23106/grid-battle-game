@@ -20,8 +20,11 @@ module.exports = [
   { id: "assassin", name: "刺客", hp: 6, sfx: "fast",
     passive: { name: "暗杀" },
     skill: { name: "追猎", type: "chase", damage: 1, uses: 1, refreshOnKill: true } },
-  { id: "warlock", name: "术士", hp: 7, sfx: "ice",
-    skill: { name: "冰封", type: "freeze", range: 3, damage: 1, freeze: 1, uses: 2 } },
+  { id: "warlock", name: "术士", hp: 5, sfx: "magic",
+    skill: { name: "灵魂烙印", type: "soulbrand", range: "thunder", uses: 2, free: true, oncePerTurn: true },
+    extraSkills: [
+      { name: "灵魂清算", type: "soulclear", uses: 1, free: false },
+    ] },
   { id: "cleric", name: "牧师", hp: 5, sfx: "holy",
     skill: { name: "圣光", type: "heal", range: "thunder", heal: 2, uses: 2, free: true, oncePerTurn: true },
     extraSkills: [

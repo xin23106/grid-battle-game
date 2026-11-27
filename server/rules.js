@@ -536,7 +536,8 @@ function berserkerBlock(u) {
   return berserkerStage(u) >= 3;
 }
 const hasSuperArmor = (s, u) => isLoneActive(s, u) || berserkerStage(u) >= 2;
-const attackerBonus = (s, u) => (s.assaultPlayer === u.player ? 1 : 0) + (isLoneActive(s, u) ? 1 : 0);
+const attackerBonus = (s, u) => (s.assaultPlayer === u.player ? 1 : 0) + (isLoneActive(s, u) ? 1 : 0) -
+  (u.statuses && u.statuses.soulMark && u.statuses.soulMark.turns > 0 ? 0.5 : 0);
 /* 负面状态：伤害先结算，负面效果受霸体免疫 */
 function applyNegativeStatus(s, target, kind, opts) {
   opts = opts || {};
@@ -1839,7 +1840,17 @@ function applyDamage(s, target, amount, source, opts) {
     dmg = Math.max(0, target.hp - 1);
     slog(s, "👹 鬼雄：" + uname(s, target) + " 生命锁定为 1，并对九宫格内敌人反击 2 点");
   }
+  const hpBeforeSoul = target.hp;
   if (dmg > 0) { target.hp -= dmg; slog(s, uname(s, target) + " 受到 " + dmg + " 点伤害（余 " + target.hp + "）"); }
+  // 灵魂烙印：记录实际损失生命为灵魂债务（最多 3 点）。
+  if (dmg > 0 && target.statuses && target.statuses.soulMark && target.statuses.soulMark.turns > 0) {
+    const actualLoss = Math.max(0, Math.min(dmg, hpBeforeSoul));
+    if (actualLoss > 0) {
+      const beforeDebt = target.soulDebt || 0;
+      target.soulDebt = Math.min(3, beforeDebt + actualLoss);
+      slog(s, "🔗 灵魂烙印记录 " + uname(s, target) + " 的实际伤害 " + actualLoss + "，灵魂债务 " + target.soulDebt + "/3");
+    }
+  }
   if (guixiongTriggered && findPos(s, target)) {
     if (isTimeStopped(target)) {
       const victims = guixiongVictimsS(s, target);
@@ -1877,11 +1888,13 @@ function handleUnitDeathS(s, target, source, pos) {
   titanSnapshot.size = 1;
   titanSnapshot.titanTurns = 0;
   titanSnapshot.guardMark = null;
+  titanSnapshot.soulDebt = 0;
   titanSnapshot.bondTargetUid = null;
   titanSnapshot.bondGuardianUid = null;
   if (isTitanS(target)) clearTitanFootprintS(s, target);
   if (target.heroId === "hillking") removeHammerS(s, target.uid);
   triggerElementLegacyS(s, target, pos);
+  target.soulDebt = 0;
   clearGuardianEffectsForDeathS(s, target);
   target.chaseMark = 0;
   if (target.heroId === "assassin") clearChaseMarks(s, target.uid);
@@ -2507,7 +2520,7 @@ function applyAction(state, player, action) {
                       timeStop: null, timeStopPending: [], skillTurnUsed: {},
                       size: 1, titanTurns: 0, hammerBuff: false,
                       guardMark: null, bondTargetUid: null, bondGuardianUid: null,
-                      elementsUsed: [], inheritedElement: null, inheritedElementUsed: false, elementLegacyUsed: false, waterGuard: null,
+                      elementsUsed: [], soulDebt: 0, inheritedElement: null, inheritedElementUsed: false, elementLegacyUsed: false, waterGuard: null,
                       facing: player === 1 ? [0, 1] : [0, -1], rbStage: 0, rbBlade: null, rbDir: null, crowForm: null,
                       copiedSkill: null, copiedUses: 0, copiedFrom: null,
                       usesArr: heroSkills(def).map((sk) => (sk.uses == null ? 9999 : sk.uses)) };
@@ -2914,6 +2927,28 @@ function applyAction(state, player, action) {
       t.bondGuardianUid = u.uid;
       t.shield = (t.shield || 0) + (sk.shield || 2);
       slog(s, "💫 " + uname(s, u) + " 与 " + uname(s, t) + " 建立【命运羁绊】，目标获得 2 点护盾");
+    } else if (sk.type === "soulbrand") {
+      if (!inThunderRangeS(r, c, from.r, from.c)) return err("灵魂烙印：目标不在范围内");
+      if (!isUnit(t) || t.player === player || isMirrorS(t) || hiddenFromS(t, player)) return err("灵魂烙印：请选择可见的敌方英雄");
+      if (isWaterGuardedS(t)) return err("水之庇护：目标免疫灵魂烙印");
+      t.statuses = t.statuses || {};
+      t.statuses.soulMark = { kind: "soulMark", label: "灵魂烙印", turns: 2, ownerUid: u.uid, ownerPlayer: player };
+      slog(s, "🔗 " + uname(s, u) + " 对 " + uname(s, t) + " 施加【灵魂烙印】（2 回合，攻击 -0.5）");
+    } else if (sk.type === "soulclear") {
+      if (!isUnit(t) || t.player === player || isMirrorS(t) || !(t.soulDebt > 0)) return err("灵魂清算：目标没有灵魂债务");
+      if (isWaterGuardedS(t)) return err("水之庇护：目标处于无敌状态，无法清算");
+      const debt = Math.min(3, t.soulDebt || 0);
+      const actual = Math.min(debt, Math.max(0, t.hp));
+      t.soulDebt = 0;
+      t.hp = Math.max(0, t.hp - debt);
+      slog(s, "⛓ 灵魂清算：" + uname(s, u) + " 对 " + uname(s, t) + " 造成 " + actual + " 点真实伤害，灵魂债务归零");
+      if (actual > 0) {
+        const beforeHeal = u.hp;
+        u.hp = Math.min(u.maxHp, u.hp + actual * 0.5);
+        slog(s, "💜 灵魂清算回复：" + uname(s, u) + " 恢复 " + (u.hp - beforeHeal) + " 点生命");
+        if (s.stats) s.stats.damage[player] = (s.stats.damage[player] || 0) + actual;
+      }
+      if (t.hp <= 0) handleUnitDeathS(s, t, u, { r, c });
     } else if (sk.type === "damage_adjacent_all") {
       let any = false;
       for (const [dr, dc] of DIRS) {

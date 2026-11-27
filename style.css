@@ -3094,3 +3094,14 @@ html, body {
 @keyframes fieldFire { 0%,100% { transform: scale(.94); opacity: .72; } 50% { transform: scale(1.06); opacity: 1; } }
 @keyframes fieldWind { from { transform: rotate(0); } to { transform: rotate(360deg); } }
 @keyframes waterFloat { 0%,100% { transform: translateY(0) scale(.9); opacity: .7; } 50% { transform: translateY(-3px) scale(1.1); opacity: 1; } }
+
+/* ============================ 术士 · 灵魂烙印 / 灵魂清算 ============================ */
+.soul-mark-glyph, .soul-debt-glyph {
+  position: absolute; z-index: 10; pointer-events: none; font-style: normal; font-size: 14px;
+  filter: drop-shadow(0 0 6px rgba(168,85,247,.8));
+}
+.soul-mark-glyph { right: 4px; top: 4px; animation: soulMarkPulse 2s ease-in-out infinite; }
+.soul-debt-glyph { left: 4px; bottom: 4px; font-size: 11px; color: #e9d5ff; }
+.cell.soul-marked .unit { box-shadow: 0 0 0 1px rgba(168,85,247,.7), 0 0 18px rgba(126,34,206,.36); }
+.cell.soul-debt .unit { filter: drop-shadow(0 0 5px rgba(168,85,247,.42)); }
+@keyframes soulMarkPulse { 0%,100% { opacity: .55; transform: scale(.9) rotate(-5deg); } 50% { opacity: 1; transform: scale(1.1) rotate(5deg); } }

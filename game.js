@@ -1272,7 +1272,8 @@ function flankImmune(u) {
 /* 攻击方伤害加成：猛攻令 +1 / 孤胆（无友军）+1；狂化只加普通攻击，故不放在这里。 */
 function attackerBonus(u) {
   if (!u || u.sword) return 0;
-  return assaultBonus(u.player) + (isLoneActive(u) ? 1 : 0);
+  return assaultBonus(u.player) + (isLoneActive(u) ? 1 : 0) -
+    (u.statuses && u.statuses.soulMark && u.statuses.soulMark.turns > 0 ? 0.5 : 0);
 }
 /* 技能是否被负面状态禁止（抓取 / 眩晕；定身只禁止位移类技能） */
 function isWaterGuarded(u) {
@@ -2974,6 +2975,23 @@ function computeSkillTargets() {
       break;
     }
 
+    case "soulbrand": {
+      for (const [rr, cc] of thunderRangeCells(r, c, true)) {
+        const t = unitAt(rr, cc);
+        if (t && t.player !== u.player && !hiddenFrom(t, u.player)) skillTargets.push([rr, cc]);
+      }
+      break;
+    }
+
+    case "soulclear": {
+      for (const v of unitsOf(u.player === 1 ? 2 : 1)) {
+        if (!(v.soulDebt > 0) || hiddenFrom(v, u.player)) continue;
+        const p = findPos(v);
+        if (p) skillTargets.push([p.r, p.c]);
+      }
+      break;
+    }
+
     case "destinybond": {
       if (u.bondTargetUid != null) break;
       for (const v of unitsOf(u.player)) {
@@ -3689,11 +3707,13 @@ function handleUnitDeath(target, source, pos) {
   titanSnapshot.size = 1;
   titanSnapshot.titanTurns = 0;
   titanSnapshot.guardMark = null;
+  titanSnapshot.soulDebt = 0;
   titanSnapshot.bondTargetUid = null;
   titanSnapshot.bondGuardianUid = null;
   if (isTitan(target)) clearTitanFootprint(target);
   if (target.heroId === "hillking") removeHammer(target.player);
   if (target.heroId === "mage") triggerElementLegacy(target, pos);
+  target.soulDebt = 0;
   clearGuardianEffectsForDeath(target);
   // 须佐：阵亡立即清除鸦天狗形态
   resetCrowForm(target);
@@ -3970,7 +3990,20 @@ function applyDamage(target, amount, kind, source, opts) {
     if (window.SFX) window.SFX.play("buffUp", { hero: "xiangyu" });
     if (pos) fx.push({ r: pos.r, c: pos.c, text: "鬼雄!", kind: "skill" });
   }
+  const hpBeforeSoul = target.hp;
   if (dmg > 0) target.hp -= dmg;
+  // 灵魂烙印：把本次实际损失的生命记录为灵魂债务（最多 3 点）。
+  if (dmg > 0 && target.statuses && target.statuses.soulMark && target.statuses.soulMark.turns > 0) {
+    const actualLoss = Math.max(0, Math.min(dmg, hpBeforeSoul));
+    if (actualLoss > 0) {
+      const beforeDebt = target.soulDebt || 0;
+      target.soulDebt = Math.min(3, beforeDebt + actualLoss);
+      addLog("🔗 灵魂烙印记录 " + label(target) + " 的实际伤害 " + actualLoss + "，灵魂债务 " + target.soulDebt + "/3。");
+      if (window.BFX) {
+        try { window.BFX.cast({ type: "soulDebt", heroId: "warlock", caster: findPos(target), amount: actualLoss }); } catch (e) { /* ignore */ }
+      }
+    }
+  }
 
   // 鬼雄的反击在「锁血生效之后」执行：对九宫格内所有敌人各 2 点（走统一结算）
   // 若西楚霸王正处于时间停止，反击进入待结算队列，等时停结束后再执行。
@@ -4259,6 +4292,8 @@ function skillStageLabel(a, s) {
   if (s.type === "titan") return "确认巨大化位置";
   if (s.type === "guardianmark") return "选择守护目标";
   if (s.type === "destinybond") return "选择羁绊目标";
+  if (s.type === "soulbrand") return "选择烙印目标";
+  if (s.type === "soulclear") return "选择清算目标";
   if (s.type === "meteor") return "选择陨星落点";
   return "";
 }
@@ -5460,6 +5495,60 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
         try { window.BFX.cast({ type: "guardianMark", heroId: "guardian", caster: { r, c }, target: { r: tr, c: tc } }); } catch (e) { /* ignore */ }
       }
       if (window.SFX) window.SFX.play("shield", { hero: "guardian" });
+      break;
+    }
+
+    case "soulbrand": {
+      if (!inThunderRange(tr, tc, r, c)) {
+        addLog("灵魂烙印：目标不在雷电之主同范围内。");
+        render();
+        return;
+      }
+      if (!target || target.player === a.player || isMirror(target) || !findPos(target)) {
+        addLog("灵魂烙印：请选择范围内的敌方英雄。");
+        render();
+        return;
+      }
+      if (isWaterGuarded(target)) {
+        addLog("💧 水之庇护：目标免疫【灵魂烙印】。");
+        render();
+        return;
+      }
+      target.statuses = target.statuses || {};
+      target.statuses.soulMark = { kind: "soulMark", label: "灵魂烙印", turns: 2, ownerUid: a.uid, ownerPlayer: a.player };
+      addLog("🔗 " + label(a) + " 对 " + label(target) + " 施加【灵魂烙印】（2 回合，攻击 -0.5）。");
+      if (window.BFX) {
+        try { window.BFX.cast({ type: "soulBrand", heroId: "warlock", caster: { r, c }, target: { r: tr, c: tc } }); } catch (e) { /* ignore */ }
+      }
+      break;
+    }
+
+    case "soulclear": {
+      if (!target || target.player === a.player || isMirror(target) || !findPos(target) || !(target.soulDebt > 0)) {
+        addLog("灵魂清算：请选择一名拥有灵魂债务的敌人。");
+        render();
+        return;
+      }
+      if (isWaterGuarded(target)) {
+        addLog("💧 水之庇护：目标处于无敌状态，无法清算。");
+        render();
+        return;
+      }
+      const debt = Math.min(3, target.soulDebt || 0);
+      const actual = Math.min(debt, Math.max(0, target.hp));
+      target.soulDebt = 0;
+      target.hp = Math.max(0, target.hp - debt);
+      addLog("⛓ 灵魂清算：" + label(a) + " 对 " + label(target) + " 造成 " + actual + " 点真实伤害，灵魂债务归零。");
+      if (actual > 0) {
+        const before = a.hp;
+        a.hp = Math.min(a.maxHp, a.hp + actual * 0.5);
+        addLog("💜 灵魂清算回复：" + label(a) + " 恢复 " + (a.hp - before) + " 点生命（" + a.hp + "/" + a.maxHp + "）。");
+      }
+      if (actual > 0) matchStats.damage[a.player] = (matchStats.damage[a.player] || 0) + actual;
+      if (window.BFX) {
+        try { window.BFX.cast({ type: "soulClear", heroId: "warlock", caster: { r, c }, target: { r: tr, c: tc } }); } catch (e) { /* ignore */ }
+      }
+      if (target.hp <= 0) handleUnitDeath(target, a, { r: tr, c: tc });
       break;
     }
 
@@ -8322,6 +8411,8 @@ function render() {
         if (u.bondGuardianUid != null || u.bondTargetUid != null) cell.classList.add("bonded");
         if (u.waterGuard) cell.classList.add("water-guarded");
         if (u.inheritedElement) cell.classList.add("element-inherited");
+        if (u.statuses && u.statuses.soulMark && u.statuses.soulMark.turns > 0) cell.classList.add("soul-marked");
+        if (u.soulDebt > 0) cell.classList.add("soul-debt");
         if (u.chaseMark) cell.classList.add("chase-marked");
         if (isStealthed(u)) cell.classList.add("stealth-unit");
         if (u.ravenBuff) cell.classList.add("raven-buffed");
@@ -8413,6 +8504,20 @@ function render() {
           b.className = "element-glyph";
           b.title = "归一·" + ELEMENTS[u.inheritedElement].name;
           b.textContent = ELEMENTS[u.inheritedElement].icon;
+          cell.appendChild(b);
+        }
+        if (u.statuses && u.statuses.soulMark && u.statuses.soulMark.turns > 0) {
+          const b = document.createElement("span");
+          b.className = "soul-mark-glyph";
+          b.title = "灵魂烙印：攻击 -0.5";
+          b.textContent = "🔗";
+          cell.appendChild(b);
+        }
+        if (u.soulDebt > 0) {
+          const b = document.createElement("span");
+          b.className = "soul-debt-glyph";
+          b.title = "灵魂债务 " + u.soulDebt + "/3";
+          b.textContent = "🔮" + u.soulDebt;
           cell.appendChild(b);
         }
       }
@@ -8664,6 +8769,8 @@ function updateHeroCard() {
   if (u.bondTargetUid != null) chips.push('<span class="chip">💫 命运羁绊：守护着另一名友军</span>');
   if (u.inheritedElement && ELEMENTS[u.inheritedElement]) chips.push('<span class="chip">' + ELEMENTS[u.inheritedElement].icon + ' 归一·' + ELEMENTS[u.inheritedElement].name + (u.inheritedElementUsed ? "（已使用）" : "（1 次）") + '</span>');
   if (u.waterGuard) chips.push('<span class="chip">💧 水之庇护：无敌 · 无法行动 · 下回合开始时反击</span>');
+  if (u.statuses && u.statuses.soulMark && u.statuses.soulMark.turns > 0) chips.push('<span class="chip">🔗 灵魂烙印：攻击 -0.5 · 剩 ' + u.statuses.soulMark.turns + ' 回合</span>');
+  if (u.soulDebt > 0) chips.push('<span class="chip">🔮 灵魂债务：' + u.soulDebt.toFixed(1).replace(/\.0$/, "") + ' / 3</span>');
   if (u.heroId === "mage" && u.elementsUsed && u.elementsUsed.length) chips.push('<span class="chip">五元已用：' + u.elementsUsed.map((k) => ELEMENTS[k] ? ELEMENTS[k].name : k).join(" / ") + '</span>');
   if (u.heroId === "hillking") {
     const hm = findHammer(u.player);
@@ -8916,6 +9023,8 @@ function renderDetailCard() {
   if (u.bondTargetUid != null) st.push("命运羁绊：正在守护羁绊目标");
   if (u.inheritedElement && ELEMENTS[u.inheritedElement]) st.push("归一元素：" + ELEMENTS[u.inheritedElement].name + "（" + ELEMENTS[u.inheritedElement].skill + "，剩余 " + (u.inheritedElementUsed ? 0 : 1) + " 次）");
   if (u.waterGuard) st.push("水之庇护：无敌且无法行动，下回合开始时结束并造成九宫格 1 点反击");
+  if (u.statuses && u.statuses.soulMark && u.statuses.soulMark.turns > 0) st.push("灵魂烙印：攻击 -0.5，剩余 " + u.statuses.soulMark.turns + " 回合；受到实际伤害会转化为灵魂债务");
+  if (u.soulDebt > 0) st.push("灵魂债务：当前 " + u.soulDebt + " / 3，等待术士清算");
   if (u.heroId === "mage" && u.elementsUsed && u.elementsUsed.length) st.push("五元已使用元素：" + u.elementsUsed.map((k) => ELEMENTS[k] ? ELEMENTS[k].name : k).join(" / "));
   if (u.heroId === "hillking") {
     const hm = findHammer(u.player);
@@ -9490,6 +9599,15 @@ function aiSkillScore(u, s, pos, rr, cc, w) {
     case "destinybond": {
       if (!t || t.player !== u.player || t === u || t.bondGuardianUid != null || u.bondTargetUid != null) return null;
       return 22 + Math.max(0, t.maxHp - t.hp) * 3 + (t.hp <= 3 ? 18 : 0);
+    }
+    case "soulbrand": {
+      if (!t || t.player === u.player) return null;
+      return 12 + (t.soulDebt ? 6 : 0) + (t.hp <= 2 ? 14 : 0);
+    }
+    case "soulclear": {
+      if (!t || t.player === u.player || !(t.soulDebt > 0)) return null;
+      const debt = Math.min(3, t.soulDebt);
+      return debt * (w.dmgW + w.healW * 0.5) + (t.hp <= debt ? w.killW : 0) + 12;
     }
     case "warhammer": {
       if (findHammer(u.player) || !hammerLandingLegal(rr, cc, u.player)) return null;
@@ -11545,6 +11663,7 @@ window.GameAPI = {
         bondTargetUid: spec.bondTargetUid == null ? null : spec.bondTargetUid,
         bondGuardianUid: spec.bondGuardianUid == null ? null : spec.bondGuardianUid,
         elementsUsed: Array.isArray(spec.elementsUsed) ? spec.elementsUsed.slice() : [],
+        soulDebt: spec.soulDebt || 0,
         inheritedElement: spec.inheritedElement || null,
         inheritedElementUsed: !!spec.inheritedElementUsed,
         elementLegacyUsed: !!spec.elementLegacyUsed,

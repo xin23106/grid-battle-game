@@ -54,6 +54,8 @@
     guardianmark: "雷电之主同范围（3×3 + 四方向第 2 格），可选择自己",
     destinybond: "全地图友军（不含自己）",
     fiveelements: "根据所选元素决定：雷/风为雷电之主同范围；火全图空格；木为任意 2×2；水为全图友军",
+    soulbrand: "雷电之主同范围（3×3 + 四方向第 2 格）",
+    soulclear: "全地图拥有灵魂债务的敌人",
     damage_single: "按技能射程内的单个敌人",
     dash: "直线方向最多 3 格",
     divinepalm: "相邻敌人",
@@ -125,6 +127,7 @@
     warhammer: "投掷 / 实体 / 强化", titan: "巨大化 / 减伤 / 范围普攻",
     guardianmark: "伤害转移 / 守护", destinybond: "永久羁绊 / 换位 / 致命保护",
     fiveelements: "五元素选择 / 控制 / 场地",
+    soulbrand: "灵魂债务 / 攻击削弱", soulclear: "真实伤害 / 生命回复",
     raikiri: "直线二段", thunderblade: "三段连招", susano_dash: "斜线位移",
     susano_pull: "拉拽", susano_arrow: "范围 / 地形", susano_crow: "变身 / 范围",
   };

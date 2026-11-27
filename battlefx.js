@@ -1427,6 +1427,27 @@
           spawn(tx, ty, 26, { color: "#fde68a", speed: 2.6, life: 520, size: 3 });
         }
         break;
+      case "soulBrand":
+        if (tx != null) {
+          push({ kind: "line", x, y, x2: tx, y2: ty, color: "#a855f7", width: 2.4, dur: 520, alpha: .85 });
+          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.55, r1: geo.cell * 0.1, color: "#c084fc", width: 2.2, dur: 420 });
+          spawn(tx, ty, 18, { color: "#c084fc", speed: 1.4, life: 520, size: 2 });
+        }
+        break;
+      case "soulDebt":
+        if (tx != null) {
+          push({ kind: "line", x: tx, y: ty, x2: x, y2: y, color: "#c084fc", width: 1.8, dur: 280, alpha: .7 });
+          spawn(tx, ty, 10, { color: "#c084fc", speed: 2.4, life: 360, size: 2 });
+        }
+        break;
+      case "soulClear":
+        if (tx != null) {
+          push({ kind: "line", x: tx, y: ty, x2: x, y2: y, color: "#a855f7", width: 4.5, dur: 240, alpha: .95 });
+          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.85, r1: geo.cell * 0.12, color: "#c084fc", width: 3, dur: 480 });
+          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.1, r1: geo.cell * 0.9, color: "#7e22ce", width: 3, dur: 520 });
+          spawn(tx, ty, 28, { color: "#d8b4fe", speed: 2.7, life: 560, size: 3 });
+        }
+        break;
       case "elementThunder":
         if (tx != null) {
           push({ kind: "beam", x: tx, y: ty - geo.cell, x2: tx, y2: ty, color: "#a78bfa", width: 7, dur: 260 });
