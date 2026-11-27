@@ -1695,7 +1695,59 @@ function tickShieldLayersS(s, player) {
   }
 }
 
-function applyDamage(s, target, amount, source) {
+/* ---------------- 护卫·舍身守护 / 命运羁绊 ---------------- */
+function bondGuardianForS(s, target) {
+  return target && target.bondGuardianUid != null ? findUnitByUidS(s, target.bondGuardianUid) : null;
+}
+function swapUnitPositionsS(s, a, b) {
+  if (!a || !b || a === b || isTitanS(a) || isTitanS(b)) return false;
+  const pa = findPos(s, a), pb = findPos(s, b);
+  if (!pa || !pb) return false;
+  if (pa.r === pb.r && pa.c === pb.c) return false;
+  s.board[pa.r][pa.c] = b;
+  s.board[pb.r][pb.c] = a;
+  return true;
+}
+function clearGuardianEffectsForDeathS(s, u) {
+  if (!u) return;
+  const deadUid = u.uid;
+  for (const other of unitsOf(s, 1).concat(unitsOf(s, 2))) {
+    if (other.guardMark && other.guardMark.guardianUid === deadUid) other.guardMark = null;
+    if (other.bondGuardianUid === deadUid) other.bondGuardianUid = null;
+    if (other.bondTargetUid === deadUid) other.bondTargetUid = null;
+  }
+  const g = findUnitByUidS(s, u.bondGuardianUid);
+  if (g && g.bondTargetUid === deadUid) g.bondTargetUid = null;
+  const t = u.bondTargetUid != null ? findUnitByUidS(s, u.bondTargetUid) : null;
+  if (t && t.bondGuardianUid === deadUid) t.bondGuardianUid = null;
+  u.guardMark = null;
+  u.bondTargetUid = null;
+  u.bondGuardianUid = null;
+}
+function tickGuardianMarksS(s) {
+  for (const u of unitsOf(s, 1).concat(unitsOf(s, 2))) {
+    if (!u.guardMark) continue;
+    if (u.guardMark.untilTurn != null && (s.turnSerial || 0) >= u.guardMark.untilTurn) {
+      u.guardMark = null;
+      slog(s, "🛡 " + uname(s, u) + " 的【守护标记】到期消失");
+    }
+  }
+}
+function tryDestinyBondS(s, target, dmg, source) {
+  if (!target || dmg <= 0 || target.hp - dmg > 0) return false;
+  const guardian = bondGuardianForS(s, target);
+  if (!guardian || !findPos(s, guardian) || guardian === target || isTitanS(guardian) || isTitanS(target)) return false;
+  if (!swapUnitPositionsS(s, guardian, target)) return false;
+  target.bondGuardianUid = null;
+  guardian.bondTargetUid = null;
+  slog(s, "💫 命运羁绊触发：" + uname(s, guardian) + " 与 " + uname(s, target) + " 瞬间换位，替其承担 " + dmg + " 点伤害");
+  const dealt = applyDamage(s, guardian, dmg, source, { skipProtection: true });
+  slog(s, "🛡 命运羁绊结算：" + uname(s, guardian) + (dealt > 0 ? " 实际承担 " + dealt + " 点伤害" : " 的护盾/减伤完全吸收了本次伤害"));
+  return true;
+}
+
+function applyDamage(s, target, amount, source, opts) {
+  opts = opts || {};
   const pos = findPos(s, target);
   if (isMirrorS(target)) {
     if (!pos || amount <= 0) return 0;
@@ -1710,6 +1762,24 @@ function applyDamage(s, target, amount, source) {
   if (isFormImmuneS(target)) {
     slog(s, (isCrowFormS(target) ? "🪶 鸦天狗·无敌：" : "🛡 禅坐·无敌：") + uname(s, target) + " 免疫了本次伤害");
     return 0;
+  }
+  // 舍身守护：优先于命运羁绊，拦截目标下一次独立伤害事件。
+  if (!opts.skipProtection && amount > 0 && target.guardMark) {
+    const mark = target.guardMark;
+    target.guardMark = null;
+    const guardian = findUnitByUidS(s, mark.guardianUid);
+    if (guardian && guardian !== target && findPos(s, guardian)) {
+      slog(s, "🛡 舍身守护触发：" + uname(s, guardian) + " 冲上前替 " + uname(s, target) + " 承担本次伤害");
+      const dealt = applyDamage(s, guardian, amount, source, { skipProtection: true });
+      if (findPos(s, guardian)) {
+        const beforeHeal = guardian.hp;
+        guardian.hp = Math.min(guardian.maxHp, guardian.hp + 0.5);
+        slog(s, "💚 舍身守护成功：" + uname(s, guardian) + " 恢复 " + (guardian.hp - beforeHeal) + " 点生命（" + guardian.hp + "/" + guardian.maxHp + "）");
+      } else {
+        slog(s, "💀 护卫为守护队友倒下，但 " + uname(s, target) + " 不承受本次伤害");
+      }
+      return 0;
+    }
   }
   let dmg = amount;
   if (s.guardPlayer === target.player && dmg > 0) { const before = dmg; dmg = Math.max(0, dmg - 1); if (before > dmg) slog(s, "🛡 坚守令为 " + uname(s, target) + " 减免 1 点伤害"); }
@@ -1733,6 +1803,8 @@ function applyDamage(s, target, amount, source) {
     slog(s, "🛡 " + blockSource + "·格挡：" + uname(s, target) + " 抵消 0.5 点伤害（" + beforeBlock + " → " + dmg + "）");
   }
   if (target.shield > 0) { const a = Math.min(target.shield, dmg); target.shield -= a; dmg -= a; consumeShieldLayersS(target, a); if (a > 0) slog(s, uname(s, target) + " 的护盾抵挡了 " + a + " 点伤害"); }
+  // 命运羁绊：目标护盾结算后仍会受到致命伤害时，换位并由护卫承担剩余伤害。
+  if (!opts.skipProtection && dmg > 0 && tryDestinyBondS(s, target, dmg, source)) return 0;
   // 龙魂：龙人 1/2 概率闪避（护盾等前置处理之后、完全抵消则不触发）
   if (dmg > 0 && hasPassiveEffectS(target, "longren", "龙魂") && Math.random() < 1 / 2) {
     dmg = 0;
@@ -1790,8 +1862,12 @@ function handleUnitDeathS(s, target, source, pos) {
   const titanSnapshot = JSON.parse(JSON.stringify(target));
   titanSnapshot.size = 1;
   titanSnapshot.titanTurns = 0;
+  titanSnapshot.guardMark = null;
+  titanSnapshot.bondTargetUid = null;
+  titanSnapshot.bondGuardianUid = null;
   if (isTitanS(target)) clearTitanFootprintS(s, target);
   if (target.heroId === "hillking") removeHammerS(s, target.uid);
+  clearGuardianEffectsForDeathS(s, target);
   target.chaseMark = 0;
   if (target.heroId === "assassin") clearChaseMarks(s, target.uid);
   s.graveyard.push({ player: target.player, heroId: target.heroId, deadUid: target.uid, r: pos.r, c: pos.c, usesLeft: target.usesLeft || 0, usesArr: target.usesArr ? target.usesArr.slice() : null, swords: target.swords || 0, lockUsed: !!target.lockUsed, guixiongUsed: !!target.guixiongUsed, snapshot: titanSnapshot });
@@ -2123,6 +2199,7 @@ function endTurnOnce(s) {
   tickPillarsS(s);
   tickHolyDomainsS(s);
   tickTitansS(s, s.currentPlayer);
+  tickGuardianMarksS(s);
   for (const u of unitsOf(s, s.currentPlayer)) if (!isTimeStopped(u) && u.frozen > 0) u.frozen--;
   tickStatuses(s, s.currentPlayer);
   // 雷电之主：强化按自身回合递减，归零清除护盾
@@ -2278,6 +2355,7 @@ function applyAction(state, player, action) {
                       stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false, metalBuff: false, metalTide: 0, meditate: null,
                       timeStop: null, timeStopPending: [], skillTurnUsed: {},
                       size: 1, titanTurns: 0, hammerBuff: false,
+                      guardMark: null, bondTargetUid: null, bondGuardianUid: null,
                       facing: player === 1 ? [0, 1] : [0, -1], rbStage: 0, rbBlade: null, rbDir: null, crowForm: null,
                       copiedSkill: null, copiedUses: 0, copiedFrom: null,
                       usesArr: heroSkills(def).map((sk) => (sk.uses == null ? 9999 : sk.uses)) };
@@ -2651,6 +2729,19 @@ function applyAction(state, player, action) {
       u.titanTurns = sk.duration || 4;
       placeTitanFootprintS(s, u, anchor.r, anchor.c);
       slog(s, "🗿 " + uname(s, u) + " 释放【泰坦之力】，选择占据以 (" + (anchor.r + 1) + "," + (anchor.c + 1) + ") 为左上角的 2×2 区域，持续 " + u.titanTurns + " 回合");
+    } else if (sk.type === "guardianmark") {
+      if (!inThunderRangeS(r, c, from.r, from.c)) return err("舍身守护：目标不在范围内");
+      if (!isUnit(t) || isMirrorS(t) || t.player !== player) return err("舍身守护：目标必须是己方存活英雄（可选中自己）");
+      t.guardMark = { guardianUid: u.uid, guardianPlayer: player, untilTurn: (s.turnSerial || 0) + 1, self: t === u };
+      slog(s, "🛡 " + uname(s, u) + " 对 " + uname(s, t) + " 施加【守护标记】（持续一个完整回合）");
+    } else if (sk.type === "destinybond") {
+      if (!isUnit(t) || isMirrorS(t) || t.player !== player || t === u) return err("命运羁绊：目标必须是其他己方存活英雄");
+      if (u.bondTargetUid != null) return err("命运羁绊：当前已经有一条未解除的羁绊");
+      if (t.bondGuardianUid != null) return err("命运羁绊：目标已经处于另一条命运羁绊中");
+      u.bondTargetUid = t.uid;
+      t.bondGuardianUid = u.uid;
+      t.shield = (t.shield || 0) + (sk.shield || 2);
+      slog(s, "💫 " + uname(s, u) + " 与 " + uname(s, t) + " 建立【命运羁绊】，目标获得 2 点护盾");
     } else if (sk.type === "damage_adjacent_all") {
       let any = false;
       for (const [dr, dc] of DIRS) {

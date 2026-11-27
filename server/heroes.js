@@ -26,8 +26,11 @@ module.exports = [
     extraSkills: [
       { name: "神圣加护", type: "holyguard", range: "thunder", uses: 1, free: true, duration: 3, block: 0.5 },
     ] },
-  { id: "guardian", name: "守卫", hp: 8, sfx: "shield",
-    skill: { name: "铁壁", type: "shield_ally", range: 0, shield: 2, uses: 1, free: true } },
+  { id: "guardian", name: "护卫", hp: 8, sfx: "shield",
+    skill: { name: "舍身守护", type: "guardianmark", range: "thunder", uses: 2, free: true, duration: 1 },
+    extraSkills: [
+      { name: "命运羁绊", type: "destinybond", range: 0, uses: 1, free: true, shield: 2 },
+    ] },
   { id: "asura", name: "阿修罗", hp: 6, sfx: "blade", blades: 3,
     passive: { name: "锻剑" },
     skill: { name: "剑圣", type: "dash", range: 3, damage: 1, uses: 2, perTurn: 2, costSwords: 1 } },

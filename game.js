@@ -331,6 +331,45 @@ function tickTitans(player) {
     }
   }
 }
+/* ---------------- 护卫·舍身守护 / 命运羁绊 ---------------- */
+function bondGuardianFor(target) {
+  return target && target.bondGuardianUid != null ? findUnitByUid(target.bondGuardianUid) : null;
+}
+function swapUnitPositions(a, b) {
+  if (!a || !b || a === b || isTitan(a) || isTitan(b)) return false;
+  const pa = findPos(a), pb = findPos(b);
+  if (!pa || !pb) return false;
+  if (pa.r === pb.r && pa.c === pb.c) return false;
+  board[pa.r][pa.c] = b;
+  board[pb.r][pb.c] = a;
+  return true;
+}
+function clearGuardianEffectsForDeath(u) {
+  if (!u) return;
+  const deadUid = u.uid;
+  for (const other of unitsOf(1).concat(unitsOf(2))) {
+    if (other.guardMark && other.guardMark.guardianUid === deadUid) other.guardMark = null;
+    if (other.bondGuardianUid === deadUid) other.bondGuardianUid = null;
+    if (other.bondTargetUid === deadUid) other.bondTargetUid = null;
+  }
+  const g = findUnitByUid(u.bondGuardianUid);
+  if (g && g.bondTargetUid === deadUid) g.bondTargetUid = null;
+  const t = u.bondTargetUid != null ? findUnitByUid(u.bondTargetUid) : null;
+  if (t && t.bondGuardianUid === deadUid) t.bondGuardianUid = null;
+  u.guardMark = null;
+  u.bondTargetUid = null;
+  u.bondGuardianUid = null;
+}
+function tickGuardianMarks() {
+  for (const u of unitsOf(1).concat(unitsOf(2))) {
+    if (!u.guardMark) continue;
+    if (u.guardMark.untilTurn != null && turnSerial >= u.guardMark.untilTurn) {
+      u.guardMark = null;
+      addLog("🛡 " + label(u) + " 的【守护标记】到期消失。");
+    }
+  }
+}
+
 /* ---------------- 山丘之王·战争之锤实体 ---------------- */
 function hammerAt(r, c) {
   const cell = inBounds(r, c) ? board[r][c] : null;
@@ -1990,6 +2029,8 @@ function endTurnOnce() {
   tickHolyDomains();
   // 泰坦之力：按自身行动回合计时，结束立即恢复 1×1。
   tickTitans(currentPlayer);
+  // 舍身守护：标记持续一个完整回合（施放回合结束后才开始计时）。
+  tickGuardianMarks();
   for (const u of unitsOf(currentPlayer)) {
     if (!isTimeStopped(u) && u.frozen > 0) u.frozen -= 1;
   }
@@ -2600,6 +2641,24 @@ function computeSkillTargets() {
           skillTargets.push([rr, cc]);
         }
         dashOptions.push({ kind: "titan-placement", path: cells, anchor: { r: a.r, c: a.c } });
+      }
+      break;
+    }
+
+    case "guardianmark": {
+      for (const [rr, cc] of thunderRangeCells(r, c, true)) {
+        const t = unitAt(rr, cc);
+        if (t && t.player === u.player) skillTargets.push([rr, cc]);
+      }
+      break;
+    }
+
+    case "destinybond": {
+      if (u.bondTargetUid != null) break;
+      for (const v of unitsOf(u.player)) {
+        const p = findPos(v);
+        if (!p || v === u || v.bondGuardianUid != null) continue;
+        skillTargets.push([p.r, p.c]);
       }
       break;
     }
@@ -3307,8 +3366,12 @@ function handleUnitDeath(target, source, pos) {
   const titanSnapshot = JSON.parse(JSON.stringify(target));
   titanSnapshot.size = 1;
   titanSnapshot.titanTurns = 0;
+  titanSnapshot.guardMark = null;
+  titanSnapshot.bondTargetUid = null;
+  titanSnapshot.bondGuardianUid = null;
   if (isTitan(target)) clearTitanFootprint(target);
   if (target.heroId === "hillking") removeHammer(target.player);
+  clearGuardianEffectsForDeath(target);
   // 须佐：阵亡立即清除鸦天狗形态
   resetCrowForm(target);
   // 追猎标记清理：目标阵亡 → 清除其标记；若阵亡者是刺客本人 → 清除其遗留的全部标记
@@ -3427,7 +3490,24 @@ function tickShieldLayers(player) {
   }
 }
 
-function applyDamage(target, amount, kind, source) {
+function tryDestinyBond(target, dmg, kind, source) {
+  if (!target || dmg <= 0 || target.hp - dmg > 0) return false;
+  const guardian = bondGuardianFor(target);
+  if (!guardian || !findPos(guardian) || guardian === target || isTitan(guardian) || isTitan(target)) return false;
+  if (!swapUnitPositions(guardian, target)) return false;
+  target.bondGuardianUid = null;
+  guardian.bondTargetUid = null;
+  addLog("💫 命运羁绊触发：" + label(guardian) + " 与 " + label(target) + " 瞬间换位，替其承担 " + dmg + " 点伤害。");
+  if (window.BFX) {
+    try { window.BFX.cast({ type: "bondTrigger", heroId: "guardian", caster: findPos(guardian), target: findPos(target) }); } catch (e) { /* ignore */ }
+  }
+  const dealt = applyDamage(guardian, dmg, kind, source, { skipProtection: true });
+  addLog("🛡 命运羁绊结算：" + label(guardian) + (dealt > 0 ? " 实际承担 " + dealt + " 点伤害" : " 的护盾/减伤完全吸收了本次伤害") + "。");
+  return true;
+}
+
+function applyDamage(target, amount, kind, source, opts) {
+  opts = opts || {};
   const pos = findPos(target);
   // 镜影·镜像：1 点生命，受到任意正伤害立即破碎；破碎反伤由独立被动结算
   if (isMirror(target)) {
@@ -3453,6 +3533,32 @@ function applyDamage(target, amount, kind, source) {
     if (pos && window.BFX) window.BFX.cast({ type: crow ? "crowGuard" : "meditateGuard", heroId: target.heroId, caster: pos });
     if (window.SFX) window.SFX.play(crow ? "crowGuard" : "meditateGuard", { hero: target.heroId });
     return 0;
+  }
+  // 舍身守护：优先于命运羁绊，拦截目标下一次独立伤害事件。
+  if (!opts.skipProtection && amount > 0 && target.guardMark) {
+    const mark = target.guardMark;
+    target.guardMark = null;
+    const guardian = findUnitByUid(mark.guardianUid);
+    if (guardian && guardian !== target && findPos(guardian)) {
+      addLog("🛡 舍身守护触发：" + label(guardian) + " 冲上前替 " + label(target) + " 承担本次伤害。");
+      if (window.BFX) {
+        try { window.BFX.cast({ type: "guardianIntercept", heroId: "guardian", caster: findPos(guardian), target: pos }); } catch (e) { /* ignore */ }
+      }
+      const dealt = applyDamage(guardian, amount, kind, source, { skipProtection: true });
+      if (findPos(guardian)) {
+        const beforeHeal = guardian.hp;
+        guardian.hp = Math.min(guardian.maxHp, guardian.hp + 0.5);
+        addLog("💚 舍身守护成功：护卫恢复 " + (guardian.hp - beforeHeal) + " 点生命（" + guardian.hp + "/" + guardian.maxHp + "）。");
+        if (guardian.hp > beforeHeal && window.BFX) {
+          const gp = findPos(guardian);
+          if (gp) window.BFX.cast({ type: "heal", heroId: "guardian", caster: gp, target: gp, amount: guardian.hp - beforeHeal });
+        }
+      } else {
+        addLog("💀 护卫为守护队友倒下，但 " + label(target) + " 不承受本次伤害。");
+      }
+      return 0;
+    }
+    // 保护自己/护卫已阵亡：标记消耗，但伤害正常结算，且不触发治疗。
   }
   let dmg = amount;
 
@@ -3506,6 +3612,8 @@ function applyDamage(target, amount, kind, source) {
     consumeShieldLayers(target, absorbed);
     if (absorbed > 0) addLog(label(target) + " 的护盾抵挡了 " + absorbed + " 点伤害。");
   }
+  // 命运羁绊：目标护盾结算后仍会受到致命伤害时，换位并由护卫承担剩余伤害。
+  if (!opts.skipProtection && dmg > 0 && tryDestinyBond(target, dmg, kind, source)) return 0;
   // 孤胆侠·霸体：首次致命伤害 → 锁血到 1（每局一次，规则层判定，非致命伤害不消耗）
   if (dmg > 0 && target.hp - dmg <= 0 && hasPassiveEffect(target, "lone", "孤胆") && hasSuperArmor(target) && !target.lockUsed) {
     target.lockUsed = true;
@@ -3820,6 +3928,8 @@ function skillStageLabel(a, s) {
   if (s.type === "holyguard") return "选择领域中心";
   if (s.type === "warhammer") return "选择投掷落点";
   if (s.type === "titan") return "确认巨大化位置";
+  if (s.type === "guardianmark") return "选择守护目标";
+  if (s.type === "destinybond") return "选择羁绊目标";
   if (s.type === "meteor") return "选择陨星落点";
   return "";
 }
@@ -4979,6 +5089,58 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
         try { window.BFX.cast({ type: "titanStart", heroId: "hillking", caster: anchor, cells: titanPlacementCells(anchor) }); } catch (e) { /* ignore */ }
       }
       if (window.SFX) window.SFX.play("buffUp", { hero: "hillking" });
+      break;
+    }
+
+    case "guardianmark": {
+      if (!inThunderRange(tr, tc, r, c)) {
+        addLog("舍身守护：请选择雷电之主同范围内的己方英雄。");
+        render();
+        return;
+      }
+      if (!target || isMirror(target) || target.player !== a.player || !findPos(target)) {
+        addLog("舍身守护：目标必须是己方存活英雄（可选中自己）。");
+        render();
+        return;
+      }
+      target.guardMark = {
+        guardianUid: a.uid,
+        guardianPlayer: a.player,
+        untilTurn: turnSerial + 1,
+        self: target === a,
+      };
+      addLog("🛡 " + label(a) + " 对 " + label(target) + " 施加【守护标记】（持续一个完整回合）。");
+      if (window.BFX) {
+        try { window.BFX.cast({ type: "guardianMark", heroId: "guardian", caster: { r, c }, target: { r: tr, c: tc } }); } catch (e) { /* ignore */ }
+      }
+      if (window.SFX) window.SFX.play("shield", { hero: "guardian" });
+      break;
+    }
+
+    case "destinybond": {
+      if (!target || isMirror(target) || target.player !== a.player || target === a || !findPos(target)) {
+        addLog("命运羁绊：请选择一名其他己方存活英雄。");
+        render();
+        return;
+      }
+      if (a.bondTargetUid != null) {
+        addLog("命运羁绊：当前已经拥有一条尚未解除的羁绊。");
+        render();
+        return;
+      }
+      if (target.bondGuardianUid != null) {
+        addLog("命运羁绊：目标已经处于另一条命运羁绊中。");
+        render();
+        return;
+      }
+      a.bondTargetUid = target.uid;
+      target.bondGuardianUid = a.uid;
+      target.shield = (target.shield || 0) + (s.shield || 2);
+      addLog("💫 " + label(a) + " 与 " + label(target) + " 建立【命运羁绊】，目标获得 2 点护盾。");
+      if (window.BFX) {
+        try { window.BFX.cast({ type: "bondLink", heroId: "guardian", caster: { r, c }, target: { r: tr, c: tc } }); } catch (e) { /* ignore */ }
+      }
+      if (window.SFX) window.SFX.play("shield", { hero: "guardian" });
       break;
     }
 
@@ -7789,6 +7951,8 @@ function render() {
         if (bzStage > 0) cell.classList.add("berserk-stage-" + bzStage);
         if (isTitan(u)) cell.classList.add("titan-anchor-cell", "titan-mode");
         if (u.hammerBuff) cell.classList.add("hammer-buffed");
+        if (u.guardMark) cell.classList.add("guard-marked");
+        if (u.bondGuardianUid != null || u.bondTargetUid != null) cell.classList.add("bonded");
         if (u.chaseMark) cell.classList.add("chase-marked");
         if (isStealthed(u)) cell.classList.add("stealth-unit");
         if (u.ravenBuff) cell.classList.add("raven-buffed");
@@ -7852,6 +8016,20 @@ function render() {
           const b = document.createElement("span");
           b.className = "badge-cell hammer";
           b.textContent = "锤击+1";
+          cell.appendChild(b);
+        }
+        if (u.guardMark) {
+          const b = document.createElement("span");
+          b.className = "guard-mark-glyph";
+          b.title = "舍身守护：下一次伤害由护卫承担";
+          b.textContent = "🛡";
+          cell.appendChild(b);
+        }
+        if (u.bondGuardianUid != null || u.bondTargetUid != null) {
+          const b = document.createElement("span");
+          b.className = "bond-glyph";
+          b.title = "命运羁绊";
+          b.textContent = "💫";
           cell.appendChild(b);
         }
       }
@@ -8098,6 +8276,9 @@ function updateHeroCard() {
   if (holyDomainAt(u)) chips.push('<span class="chip holy">✨ 神圣加护：格挡 0.5</span>');
   if (isTitan(u)) chips.push('<span class="chip">🗿 泰坦形态：2×2 · 减伤 50% · 免疫夹击 · 剩 ' + (u.titanTurns || 0) + ' 回合</span>');
   if (u.hammerBuff) chips.push('<span class="chip">🔨 战争之锤强化：下一次普攻 +1</span>');
+  if (u.guardMark) chips.push('<span class="chip">🛡 舍身守护：下一次伤害转移给护卫（剩余 ' + Math.max(1, (u.guardMark.untilTurn || turnSerial + 1) - turnSerial) + ' 回合）</span>');
+  if (u.bondGuardianUid != null) chips.push('<span class="chip">💫 命运羁绊：致命伤害时与护卫换位</span>');
+  if (u.bondTargetUid != null) chips.push('<span class="chip">💫 命运羁绊：守护着另一名友军</span>');
   if (u.heroId === "hillking") {
     const hm = findHammer(u.player);
     if (hm) chips.push('<span class="chip">🔨 战争之锤位于 (' + (hm.r + 1) + "," + (hm.c + 1) + ')</span>');
@@ -8326,6 +8507,9 @@ function renderDetailCard() {
   if (holyDomainAt(u)) st.push("神圣加护：处于己方领域，获得 0.5 格挡");
   if (isTitan(u)) st.push("泰坦形态：占据 2×2，受伤 -50%，免疫夹击，剩余 " + (u.titanTurns || 0) + " 回合");
   if (u.hammerBuff) st.push("战争之锤强化：下一次普通攻击 +1");
+  if (u.guardMark) st.push("舍身守护：下一次受到的独立伤害由护卫承担，仅触发一次");
+  if (u.bondGuardianUid != null) st.push("命运羁绊：受到致命伤害时与护卫换位，由护卫承担剩余伤害");
+  if (u.bondTargetUid != null) st.push("命运羁绊：正在守护羁绊目标");
   if (u.heroId === "hillking") {
     const hm = findHammer(u.player);
     if (hm) st.push("战争之锤：位于 (" + (hm.r + 1) + "," + (hm.c + 1) + ")，移动到该格可回收");
@@ -8849,6 +9033,15 @@ function aiSkillScore(u, s, pos, rr, cc, w) {
         score += 8 + Math.max(0, e.maxHp - e.hp) * 5 + (e.hp <= 2 ? 12 : 0);
       }
       return allies ? score : null;
+    }
+    case "guardianmark": {
+      if (!t || t.player !== u.player || t === u) return null;
+      if (t.guardMark && t.guardMark.guardianUid === u.uid) return null;
+      return 12 + Math.max(0, t.maxHp - t.hp) * 5 + (t.hp <= 2 ? 20 : 0) + 8;
+    }
+    case "destinybond": {
+      if (!t || t.player !== u.player || t === u || t.bondGuardianUid != null || u.bondTargetUid != null) return null;
+      return 22 + Math.max(0, t.maxHp - t.hp) * 3 + (t.hp <= 3 ? 18 : 0);
     }
     case "warhammer": {
       if (findHammer(u.player) || !hammerLandingLegal(rr, cc, u.player)) return null;
@@ -10866,6 +11059,9 @@ window.GameAPI = {
         size: spec.size || 1,
         titanTurns: spec.titanTurns || 0,
         hammerBuff: !!spec.hammerBuff,
+        guardMark: spec.guardMark ? JSON.parse(JSON.stringify(spec.guardMark)) : null,
+        bondTargetUid: spec.bondTargetUid == null ? null : spec.bondTargetUid,
+        bondGuardianUid: spec.bondGuardianUid == null ? null : spec.bondGuardianUid,
         lockUsed: !!spec.lockUsed,
         sdStage: spec.sdStage || 0,
         dragonMoves: spec.dragonMoves || 0,

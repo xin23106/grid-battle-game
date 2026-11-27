@@ -1396,6 +1396,37 @@
       case "titanGuard":
         push({ kind: "ring", x, y, r0: geo.cell * 0.16, r1: geo.cell * 0.62, color: "#d6d3d1", width: 2, dur: 300 });
         break;
+      case "guardianMark":
+        if (tx != null) {
+          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.08, r1: geo.cell * 0.62, color: "#fbbf24", width: 2.4, dur: 500 });
+          push({ kind: "rune", x: tx, y: ty, r: geo.cell * 0.3, color: "#fde68a", sides: 6, dur: 520 });
+          spawn(tx, ty, 16, { color: "#fde68a", speed: 1.2, life: 520, size: 2 });
+        }
+        break;
+      case "guardianIntercept":
+        if (tx != null) {
+          push({ kind: "line", x, y, x2: tx, y2: ty, color: "#fbbf24", width: 4, dur: 260, alpha: .85 });
+          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.55, r1: geo.cell * 0.1, color: "#fde68a", width: 3, dur: 420 });
+          push({ kind: "ring", x, y, r0: geo.cell * 0.12, r1: geo.cell * 0.68, color: "#fbbf24", width: 2.4, dur: 360 });
+          spawn(x, y, 22, { color: "#fde68a", speed: 2.2, life: 500, size: 3 });
+        }
+        break;
+      case "bondLink":
+        if (tx != null) {
+          push({ kind: "line", x, y, x2: tx, y2: ty, color: "#fbbf24", width: 2.4, dur: 520, alpha: .8 });
+          push({ kind: "ring", x, y, r0: geo.cell * 0.12, r1: geo.cell * 0.55, color: "#fde68a", width: 2, dur: 420 });
+          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.55, r1: geo.cell * 0.12, color: "#fde68a", width: 2, dur: 420 });
+          spawn(tx, ty, 16, { color: "#fde68a", speed: 1.4, life: 500, size: 2 });
+        }
+        break;
+      case "bondTrigger":
+        if (tx != null) {
+          push({ kind: "line", x, y, x2: tx, y2: ty, color: "#fbbf24", width: 5, dur: 220, alpha: .95 });
+          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.8, r1: geo.cell * 0.12, color: "#fde68a", width: 3, dur: 440 });
+          push({ kind: "ring", x, y, r0: geo.cell * 0.1, r1: geo.cell * 0.9, color: "#fbbf24", width: 3, dur: 440 });
+          spawn(tx, ty, 26, { color: "#fde68a", speed: 2.6, life: 520, size: 3 });
+        }
+        break;
       case "crosstep":
         // 狂战士·狂徒：脚下红色十字法阵 → 残影横移 → 落点红色冲击波
         if (tx != null) {

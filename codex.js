@@ -51,6 +51,8 @@
     damage_adjacent_all: "所有相邻敌人",
     titan: "自身（2×2 巨大化，占用 4 格）",
     warhammer: "雷电之主同范围（3×3 + 四方向第 2 格）",
+    guardianmark: "雷电之主同范围（3×3 + 四方向第 2 格），可选择自己",
+    destinybond: "全地图友军（不含自己）",
     damage_single: "按技能射程内的单个敌人",
     dash: "直线方向最多 3 格",
     divinepalm: "相邻敌人",
@@ -120,6 +122,7 @@
     shadowfang: "单体攻击", push: "推击 / 地形", charge: "冲锋 / 击退", crosstep: "十字位移",
     riftslash: "位移 / 斩击 / 时停", voidstep: "全图传送 / 延迟爆发", holyguard: "领域防御",
     warhammer: "投掷 / 实体 / 强化", titan: "巨大化 / 减伤 / 范围普攻",
+    guardianmark: "伤害转移 / 守护", destinybond: "永久羁绊 / 换位 / 致命保护",
     raikiri: "直线二段", thunderblade: "三段连招", susano_dash: "斜线位移",
     susano_pull: "拉拽", susano_arrow: "范围 / 地形", susano_crow: "变身 / 范围",
   };
