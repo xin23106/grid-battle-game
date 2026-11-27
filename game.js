@@ -4678,6 +4678,7 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
         skillSub = { kind: "rift-landing", r: tr, c: tc, stay };
         computeSkillTargets();
         render();
+        addLog(stay ? "🌌 裂空斩：已选择【原地劈】，请点击相邻敌人。" : "🌌 裂空斩：已选择落点 (" + (tr + 1) + "," + (tc + 1) + ")，请点击相邻敌人。");
         return;
       }
       const lr = skillSub.r, lc = skillSub.c;
