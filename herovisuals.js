@@ -218,7 +218,7 @@
     bloodburst:"area", ziwei:"teleport", exile:"channel", tianwei:"area", shenluo:"area",
     wxt:"pull", metalpierce:"ranged", metalarmor:"defense", metaltide:"buff", meditate:"lotus",
     divinepalm:"thrust", stealth:"stealth", mistdash:"dash", shadowfang:"slash",
-    push:"thrust", charge:"dash", raikiri:"ranged", thunderblade:"dash", crosstep:"dash", riftslash:"dash", voidstep:"teleport", holyguard:"defense",
+    push:"thrust", charge:"dash", raikiri:"ranged", thunderblade:"dash", crosstep:"dash", riftslash:"dash", voidstep:"teleport", holyguard:"defense", warhammer:"thrust", titan:"defense",
     susano_dash:"dash", susano_pull:"pull", susano_arrow:"ranged", susano_crow:"summon",
   };
   function poseFor(heroId, skill, stage) {
@@ -266,6 +266,8 @@
       "timewalker:riftslash": "timewalker-rift",
       "timewalker:voidstep": "timewalker-void",
       "cleric:holyguard": "cleric-holyguard",
+      "hillking:warhammer": "hillking-hammer",
+      "hillking:titan": "hillking-titan",
     };
     const key = heroId + ":" + type + (type === "thunderblade" ? ":" + (stage || 0) : "");
     if (special[key]) return special[key];
@@ -320,6 +322,10 @@
       inner = '<path d="M10 3 H14 V9 H20 V13 H14 V21 H10 V13 H4 V9 H10 Z"/>';
     } else if (/holyguard/.test(t)) {
       inner = '<path d="M12 2 Q19 5 19 12 Q19 18 12 22 Q5 18 5 12 Q5 5 12 2 Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 6 V18 M6 12 H18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/>';
+    } else if (/warhammer/.test(t)) {
+      inner = '<path d="M3 11 L9 5 L15 11 L12 14 L9 11 L5 15 Z"/><path d="M12 12 L21 21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M4 21 L8 17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>';
+    } else if (/titan/.test(t)) {
+      inner = '<path d="M12 2 L20 6 V13 Q20 19 12 22 Q4 19 4 13 V6 Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 9 V15 M16 9 V15 M8 12 H16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M9 18 H15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>';
     } else if (/shield|metalarmor|guard|defense/.test(t)) {
       inner = '<path d="M12 2 Q19 5 19 12 Q19 18 12 22 Q5 18 5 12 Q5 5 12 2 Z"/>';
     } else if (/summon|crow|wings/.test(t)) {

@@ -1363,6 +1363,39 @@
         spawn(x, y, 24, { color: "#fde68a", speed: 1.8, life: 620, size: 2 });
         break;
       }
+      case "warhammer": {
+        const tx = px(m.target.c), ty = py(m.target.r);
+        push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.08, r1: geo.cell * 0.72, color: "#fb923c", width: 3, dur: 520 });
+        for (const [rr, cc] of (m.cells || [])) {
+          push({ kind: "ring", x: px(cc), y: py(rr), r0: geo.cell * 0.1, r1: geo.cell * 0.5, color: "#fed7aa", width: 1.6, dur: 420 });
+        }
+        spawn(tx, ty, 26, { color: "#fb923c", speed: 2.2, life: 620, size: 3 });
+        break;
+      }
+      case "hammerPickup":
+        push({ kind: "ring", x, y, r0: geo.cell * 0.1, r1: geo.cell * 0.7, color: "#fbbf24", width: 2.4, dur: 380 });
+        spawn(x, y, 16, { color: "#fde68a", speed: 1.5, life: 460, size: 2 });
+        break;
+      case "titanStart":
+      case "titanEnd": {
+        const fade = t === "titanEnd";
+        for (const [rr, cc] of (m.cells || [])) {
+          push({ kind: "ring", x: px(cc), y: py(rr), r0: geo.cell * (fade ? 0.55 : 0.08), r1: geo.cell * (fade ? 0.1 : 0.62), color: "#d6d3d1", width: 2, dur: 520 });
+        }
+        push({ kind: "ring", x, y, r0: geo.cell * 0.1, r1: geo.cell * (fade ? 0.9 : 1.15), color: "#fbbf24", width: 3, dur: 600 });
+        spawn(x, y, fade ? 18 : 30, { color: fade ? "#a8a29e" : "#fde68a", speed: fade ? 1.1 : 2.4, life: 700, size: 3 });
+        break;
+      }
+      case "titanSmash":
+        for (const [rr, cc] of (m.cells || [])) {
+          const cx = px(cc), cy = py(rr);
+          push({ kind: "ring", x: cx, y: cy, r0: geo.cell * 0.05, r1: geo.cell * 0.7, color: "#fb923c", width: 3, dur: 380 });
+          spawn(cx, cy, 14, { color: "#fed7aa", speed: 2.0, life: 460, size: 3 });
+        }
+        break;
+      case "titanGuard":
+        push({ kind: "ring", x, y, r0: geo.cell * 0.16, r1: geo.cell * 0.62, color: "#d6d3d1", width: 2, dur: 300 });
+        break;
       case "crosstep":
         // 狂战士·狂徒：脚下红色十字法阵 → 残影横移 → 落点红色冲击波
         if (tx != null) {

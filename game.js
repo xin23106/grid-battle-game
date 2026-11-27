@@ -185,7 +185,10 @@ function territoryOf(c) {
 function unitAt(r, c) {
   if (!inBounds(r, c)) return null;
   const cell = board[r][c];
-  return cell && !cell.pillar ? cell : null; // 石柱不是单位，不可被选中/攻击
+  if (!cell) return null;
+  if (cell.titanPart) return findUnitByUid(cell.ownerUid); // 2×2 泰坦的占位格，解析为锚点单位
+  if (cell.pillar || cell.hammer) return null; // 石柱 / 战争之锤不是单位，不可被选中/攻击
+  return cell;
 }
 function heroDef(id) {
   return getHeroById(id) || SUMMON_DEFS[id] || null;
@@ -232,7 +235,178 @@ function isPillar(cell) {
   return !!cell && cell.pillar === true;
 }
 function isUnit(cell) {
-  return !!cell && !cell.sword && !cell.pillar;
+  return !!cell && !cell.sword && !cell.pillar && !cell.hammer && !cell.titanPart;
+}
+function isHammer(cell) {
+  return !!cell && cell.hammer === true;
+}
+function isTitanPart(cell) {
+  return !!cell && cell.titanPart === true;
+}
+function isTitan(u) {
+  return !!(u && !u.sword && u.size === 2);
+}
+function findUnitByUid(uid) {
+  if (uid == null) return null;
+  for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+    const u = board[r][c];
+    if (u && u.uid === uid && isUnit(u)) return u;
+  }
+  return null;
+}
+function titanCellsForAnchor(tr, tc) {
+  return [[tr, tc], [tr, tc + 1], [tr + 1, tc], [tr + 1, tc + 1]].filter(([r, c]) => inBounds(r, c));
+}
+function titanCells(u) {
+  const p = findPos(u);
+  return p && isTitan(u) ? titanCellsForAnchor(p.r, p.c) : (p ? [[p.r, p.c]] : []);
+}
+function titanPartAt(r, c, u) {
+  const cell = inBounds(r, c) ? board[r][c] : null;
+  return !!(cell && cell.titanPart && u && cell.ownerUid === u.uid);
+}
+function clearTitanFootprint(u) {
+  if (!u) return;
+  for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+    const cell = board[r][c];
+    if (cell === u || (cell && cell.titanPart && cell.ownerUid === u.uid)) board[r][c] = null;
+  }
+}
+function canTitanFit(u, tr, tc, pickOwnHammer) {
+  if (!u) return false;
+  for (const [r, c] of titanCellsForAnchor(tr, tc)) {
+    if (!inBounds(r, c)) return false;
+    const cell = board[r][c];
+    if (cell === u || titanPartAt(r, c, u)) continue;
+    if (!cell) continue;
+    if (pickOwnHammer && isHammer(cell) && cell.owner === u.player) continue;
+    return false;
+  }
+  return inBounds(tr, tc) && inBounds(tr + 1, tc + 1);
+}
+function placeTitanFootprint(u, tr, tc) {
+  clearTitanFootprint(u);
+  if (!u) return false;
+  board[tr][tc] = u;
+  for (const [r, c] of titanCellsForAnchor(tr, tc)) {
+    if (r === tr && c === tc) continue;
+    board[r][c] = { titanPart: true, ownerUid: u.uid };
+  }
+  return true;
+}
+function relocateUnitOnBoard(u, tr, tc) {
+  if (!u || !inBounds(tr, tc)) return false;
+  if (isTitan(u)) return placeTitanFootprint(u, tr, tc);
+  const p = findPos(u);
+  if (p) board[p.r][p.c] = null;
+  board[tr][tc] = u;
+  return true;
+}
+function endTitanForm(u, silent) {
+  if (!u || !isTitan(u)) return;
+  const p = findPos(u);
+  clearTitanFootprint(u);
+  u.size = 1;
+  u.titanTurns = 0;
+  if (p) {
+    board[p.r][p.c] = u;
+    if (!silent) addLog("🗿 " + label(u) + " 的泰坦之力结束，恢复 1×1 体型。");
+    if (!silent && window.BFX) {
+      try { window.BFX.cast({ type: "titanEnd", heroId: "hillking", caster: p }); } catch (e) { /* ignore */ }
+    }
+  }
+}
+function tickTitans(player) {
+  for (const u of unitsOf(player)) {
+    if (!isTitan(u) || isTimeStopped(u)) continue;
+    u.titanTurns = Math.max(0, (u.titanTurns || 0) - 1);
+    if (u.titanTurns <= 0) endTitanForm(u, false);
+    else {
+      const p = findPos(u);
+      if (p) addLog("🗿 " + label(u) + " 的泰坦之力剩余 " + u.titanTurns + " 回合。");
+    }
+  }
+}
+/* ---------------- 山丘之王·战争之锤实体 ---------------- */
+function hammerAt(r, c) {
+  const cell = inBounds(r, c) ? board[r][c] : null;
+  return isHammer(cell) ? cell : null;
+}
+function findHammer(owner) {
+  for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+    const cell = board[r][c];
+    if (isHammer(cell) && (owner == null || cell.owner === owner)) return { r, c, cell };
+  }
+  return null;
+}
+function removeHammer(owner) {
+  const h = findHammer(owner);
+  if (!h || !hammerAt(h.r, h.c)) return false;
+  board[h.r][h.c] = null;
+  return true;
+}
+function placeHammer(owner, ownerUid, r, c) {
+  if (!inBounds(r, c) || board[r][c]) return false;
+  board[r][c] = { hammer: true, owner, ownerUid, uid: unitSeq++ };
+  return true;
+}
+function pickupHammerAt(u, cells) {
+  if (!u || u.heroId !== "hillking") return false;
+  const check = cells && cells.length ? cells : [[findPos(u)?.r, findPos(u)?.c]];
+  for (const [r, c] of check) {
+    const h = hammerAt(r, c);
+    if (!h || h.owner !== u.player) continue;
+    board[r][c] = null;
+    u.hammerBuff = true;
+    addLog("🔨 " + label(u) + " 捡起战争之锤，下一次普通攻击 +1。");
+    if (window.SFX) window.SFX.play("heavy", { hero: "hillking" });
+    if (window.BFX) {
+      try {
+        const p = findPos(u);
+        if (p) window.BFX.cast({ type: "hammerPickup", heroId: "hillking", caster: p, target: { r, c } });
+      } catch (e) { /* ignore */ }
+    }
+    return true;
+  }
+  return false;
+}
+function pushUnitToAdjacent(tgt) {
+  if (!tgt || isFormImmune(tgt) || !findPos(tgt)) return null;
+  const p = findPos(tgt);
+  const dirs = DIRS.slice().sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]));
+  for (const [dr, dc] of dirs) {
+    const nr = p.r + dr, nc = p.c + dc;
+    if (!inBounds(nr, nc) || board[nr][nc]) continue;
+    if (isTitan(tgt)) {
+      if (!canTitanFit(tgt, nr, nc, false)) continue;
+      placeTitanFootprint(tgt, nr, nc);
+    } else {
+      board[nr][nc] = tgt; board[p.r][p.c] = null;
+    }
+    if (window.BFX) window.BFX.knockback({ from: p, to: { r: nr, c: nc }, color: window.BFX.heroColor(tgt.heroId) });
+    return { r: nr, c: nc };
+  }
+  return null;
+}
+function hammerCrossCells(r, c) {
+  return [[r, c], ...DIRS.map(([dr, dc]) => [r + dr, c + dc])].filter(([rr, cc]) => inBounds(rr, cc));
+}
+function hammerLandingLegal(r, c, player) {
+  if (!inBounds(r, c)) return false;
+  const cell = board[r][c];
+  if (!cell) return true;
+  if (isUnit(cell) && cell.player !== player && !isTitan(cell)) return !!findAdjacentFreeFor(cell, r, c);
+  return false;
+}
+function findAdjacentFreeFor(unit, r, c) {
+  const p = findPos(unit) || { r, c };
+  for (const [dr, dc] of DIRS) {
+    const nr = p.r + dr, nc = p.c + dc;
+    if (!inBounds(nr, nc) || board[nr][nc]) continue;
+    if (isTitan(unit) && !canTitanFit(unit, nr, nc, false)) continue;
+    return { r: nr, c: nc };
+  }
+  return null;
 }
 function hasSwordPassive(u) {
   return !!(u && !u.sword && hasPassiveEffect(u, "asura", "锻剑"));
@@ -430,6 +604,7 @@ function initUnitUses(u, def) {
  * 返回 { dir, dest, hits }：dest=最远合法落点，hits=沿途敌人。 */
 function computeDashPath(u, r, c, dr, dc, maxSteps) {
   const hits = [];
+  const seen = new Set();
   let dest = null;
   for (let k = 1; k <= maxSteps; k++) {
     const rr = r + dr * k;
@@ -438,9 +613,11 @@ function computeDashPath(u, r, c, dr, dc, maxSteps) {
     const cell = board[rr][cc];
     if (!cell) { dest = { r: rr, c: cc }; continue; }
     if (isSword(cell)) { dest = { r: rr, c: cc }; continue; }
-    if (isPillar(cell)) break;                    // 石柱：阻挡突进
-    if (cell.player === u.player) continue;       // 友军：穿过，不挡不伤
-    hits.push({ r: rr, c: cc });                  // 敌人：造成伤害（不停顿）
+    if (isPillar(cell) || isHammer(cell)) break;  // 石柱 / 战争之锤：阻挡突进
+    const hitTarget = isTitanPart(cell) ? unitAt(rr, cc) : cell;
+    if (!hitTarget) continue;
+    if (hitTarget.player === u.player) continue;  // 友军：穿过，不挡不伤
+    if (!seen.has(hitTarget.uid)) { seen.add(hitTarget.uid); hits.push({ r: rr, c: cc }); }
   }
   return { dir: [dr, dc], dest, hits };
 }
@@ -451,12 +628,17 @@ function computeDashPath(u, r, c, dr, dc, maxSteps) {
 function computeChaseLine(u, r, c, dr, dc) {
   const path = [];
   const hits = [];
+  const seen = new Set();
   let rr = r + dr;
   let cc = c + dc;
   while (inBounds(rr, cc)) {
     path.push([rr, cc]);
     const cell = board[rr][cc];
-    if (cell && !cell.sword && !cell.pillar && cell.player !== u.player) hits.push({ r: rr, c: cc });
+    const hitTarget = isTitanPart(cell) ? unitAt(rr, cc) : cell;
+    if (isUnit(hitTarget) && hitTarget.player !== u.player && !seen.has(hitTarget.uid)) {
+      seen.add(hitTarget.uid);
+      hits.push({ r: rr, c: cc });
+    }
     rr += dr;
     cc += dc;
   }
@@ -554,10 +736,11 @@ function chaseBlinkCells(tr, tc) {
 /* 某格九宫格（3×3）内的敌方英雄（不含剑刃、不含友军） */
 function enemiesInBox3(r, c, player) {
   const out = [];
+  const seen = new Set();
   for (let dr = -1; dr <= 1; dr++) {
     for (let dc = -1; dc <= 1; dc++) {
       const v = unitAt(r + dr, c + dc);
-      if (v && !v.sword && v.player !== player) out.push(v);
+      if (v && !v.sword && v.player !== player && !seen.has(v.uid)) { seen.add(v.uid); out.push(v); }
     }
   }
   return out;
@@ -571,7 +754,7 @@ const BOARD_CORNERS = [
 ];
 /* 该墙角是否可用于放逐：四宫格内没有任何英雄，且墙角格本身为空 */
 function cornerExileOk(cn) {
-  if (!cn || !cn.cells.every(([r, c]) => !unitAt(r, c))) return false;
+  if (!cn || !cn.cells.every(([r, c]) => !board[r][c])) return false;
   const cr = cn.corner.r, cc = cn.corner.c;
   return inBounds(cr, cc) && !board[cr][cc];
 }
@@ -623,21 +806,24 @@ function knockOutBoxAway(t, boxR, boxC, fromR, fromC) {
   for (const d of dirs) {
     const nr = p.r + d[0], nc = p.c + d[1];
     if (!ok(nr, nc)) continue;
-    board[nr][nc] = t;
-    board[p.r][p.c] = null;
+    if (isTitan(t) && !canTitanFit(t, nr, nc, false)) continue;
+    if (isTitan(t)) placeTitanFootprint(t, nr, nc);
+    else { board[nr][nc] = t; board[p.r][p.c] = null; }
     if (window.BFX) window.BFX.knockback({ from: p, to: { r: nr, c: nc }, color: window.BFX.heroColor(t.heroId) });
     if (window.SFX) window.SFX.play("knockback", { hero: t.heroId });
     return { r: nr, c: nc };
   }
   const far = [];
   for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
-    if (ok(r, c)) far.push({ r, c, d: Math.abs(r - p.r) + Math.abs(c - p.c) });
+    if (!ok(r, c)) continue;
+    if (isTitan(t) && !canTitanFit(t, r, c, false)) continue;
+    far.push({ r, c, d: Math.abs(r - p.r) + Math.abs(c - p.c) });
   }
   if (!far.length) return null;
   far.sort((A, B) => A.d - B.d || A.r - B.r || A.c - B.c);
   const dest = far[0];
-  board[dest.r][dest.c] = t;
-  board[p.r][p.c] = null;
+  if (isTitan(t)) placeTitanFootprint(t, dest.r, dest.c);
+  else { board[dest.r][dest.c] = t; board[p.r][p.c] = null; }
   if (window.BFX) window.BFX.knockback({ from: p, to: dest, color: window.BFX.heroColor(t.heroId) });
   if (window.SFX) window.SFX.play("knockback", { hero: t.heroId });
   return dest;
@@ -656,8 +842,9 @@ function pushAwayOne(t, fromR, fromC) {
   for (const d of dirs) {
     const nr = p.r + d[0], nc = p.c + d[1];
     if (!ok(nr, nc)) continue;
-    board[nr][nc] = t;
-    board[p.r][p.c] = null;
+    if (isTitan(t) && !canTitanFit(t, nr, nc, false)) continue;
+    if (isTitan(t)) placeTitanFootprint(t, nr, nc);
+    else { board[nr][nc] = t; board[p.r][p.c] = null; }
     if (window.BFX) window.BFX.knockback({ from: p, to: { r: nr, c: nc }, color: window.BFX.heroColor(t.heroId) });
     if (window.SFX) window.SFX.play("knockback", { hero: t.heroId });
     return { r: nr, c: nc };
@@ -694,11 +881,12 @@ function alliesIn3x3(u) {
   const p = findPos(u);
   if (!p) return [];
   const res = [];
+  const seen = new Set();
   for (let dr = -1; dr <= 1; dr++) {
     for (let dc = -1; dc <= 1; dc++) {
       if (dr === 0 && dc === 0) continue;
       const v = unitAt(p.r + dr, p.c + dc);
-      if (v && !v.sword && !isMirror(v) && v.player === u.player) res.push(v);
+      if (v && v !== u && !v.sword && !isMirror(v) && v.player === u.player && !seen.has(v.uid)) { seen.add(v.uid); res.push(v); }
     }
   }
   return res;
@@ -732,9 +920,9 @@ function berserkerBlock(u) {
 function hasSuperArmor(u) {
   return isLoneActive(u) || berserkerStage(u) >= 2;
 }
-/* 夹击免疫：只有孤胆侠在“孤胆”被动激活时免疫夹击加成。狂化不提供夹击免疫。 */
+/* 夹击免疫：孤胆侠激活时、山丘之王泰坦形态期间免疫夹击加成。 */
 function flankImmune(u) {
-  return isLoneActive(u);
+  return isLoneActive(u) || isTitan(u);
 }
 /* 攻击方伤害加成：猛攻令 +1 / 孤胆（无友军）+1；狂化只加普通攻击，故不放在这里。 */
 function attackerBonus(u) {
@@ -957,7 +1145,8 @@ function holyDomainAt(u) {
   if (!u) return null;
   const p = findPos(u);
   if (!p) return null;
-  return holyDomains.find((d) => d.owner === u.player && d.cells.some(([r, c]) => r === p.r && c === p.c)) || null;
+  const cells = isTitan(u) ? titanCells(u) : [[p.r, p.c]];
+  return holyDomains.find((d) => d.owner === u.player && d.cells.some(([r, c]) => cells.some(([ur, uc]) => ur === r && uc === c))) || null;
 }
 function unitBlockSource(u) {
   if (berserkerBlock(u)) return "狂化";
@@ -1258,10 +1447,11 @@ function dirName(dir) {
  * 返回 { enemy, wall, total }。 */
 function flankCountAt(r, c) {
   const u = board[r][c];
-  if (!u || u.sword || isMirror(u)) return { enemy: 0, wall: 0, total: 0 };
+  if (!isUnit(u) || isMirror(u)) return { enemy: 0, wall: 0, total: 0 };
   const f = u.player;
   let enemy = 0;
   let wall = 0;
+  const seen = new Set();
   for (const [dr, dc] of DIRS) {
     const nr = r + dr;
     const nc = c + dc;
@@ -1269,8 +1459,8 @@ function flankCountAt(r, c) {
       wall++; // 棋盘边界（墙）算 1 个夹击方向
       continue;
     }
-    const t = board[nr][nc];
-    if (t && !t.sword && !isMirror(t) && t.player !== f) enemy++; // 相邻敌人算 1 个夹击方向（剑刃/镜像不算）
+    const t = unitAt(nr, nc);
+    if (t && !isMirror(t) && t.player !== f && !seen.has(t.uid)) { seen.add(t.uid); enemy++; } // 同一 2×2 实体只算一个夹击方向
   }
   return { enemy, wall, total: enemy + wall };
 }
@@ -1291,7 +1481,7 @@ function computeFlankInfo() {
   for (let r = 0; r < SIZE; r++)
     for (let c = 0; c < SIZE; c++) {
       const u = board[r][c];
-      if (!u || u.sword || isMirror(u)) continue;
+      if (!isUnit(u) || isMirror(u)) continue;
       const fc = flankCountAt(r, c);
       info.set(u.uid, {
         enemy: fc.enemy,
@@ -1308,7 +1498,7 @@ function computeFlankInfo() {
   for (let r = 0; r < SIZE; r++)
     for (let c = 0; c < SIZE; c++) {
       const u = board[r][c];
-      if (!u || u.sword || isMirror(u)) continue;
+      if (!isUnit(u) || isMirror(u)) continue;
       const d = info.get(u.uid);
       if (!d || !d.base) continue;
       for (const [dr, dc] of DIRS) {
@@ -1324,7 +1514,7 @@ function computeFlankInfo() {
   for (let r = 0; r < SIZE; r++)
     for (let c = 0; c < SIZE; c++) {
       const u = board[r][c];
-      if (!u || u.sword || isMirror(u)) continue;
+      if (!isUnit(u) || isMirror(u)) continue;
       const d = info.get(u.uid);
       if (!d) continue;
       d.immune = flankImmune(u);                       // 免疫夹击（孤胆侠·孤胆生效）
@@ -1793,6 +1983,8 @@ function endTurnOnce() {
   tickPillars();
   // 神圣加护：释放回合计为第 1 回合，此后每个回合结束递减。
   tickHolyDomains();
+  // 泰坦之力：按自身行动回合计时，结束立即恢复 1×1。
+  tickTitans(currentPlayer);
   for (const u of unitsOf(currentPlayer)) {
     if (!isTimeStopped(u) && u.frozen > 0) u.frozen -= 1;
   }
@@ -2002,27 +2194,65 @@ function showResultPanelImmediate() {
   showResultPanel();
 }
 
+/* 泰坦形态：与 2×2 四条边相邻的“连续两格”攻击区 */
+function titanAttackPairs(u) {
+  const p = findPos(u);
+  if (!p || !isTitan(u)) return [];
+  const sides = [
+    [[p.r - 1, p.c], [p.r - 1, p.c + 1]],
+    [[p.r + 2, p.c], [p.r + 2, p.c + 1]],
+    [[p.r, p.c - 1], [p.r + 1, p.c - 1]],
+    [[p.r, p.c + 2], [p.r + 1, p.c + 2]],
+  ];
+  return sides.filter((pair) => pair.every(([r, c]) => inBounds(r, c)));
+}
+function titanPairFor(u, r, c) {
+  return titanAttackPairs(u).find((pair) => pair.some(([rr, cc]) => rr === r && cc === c)) || null;
+}
+function computeTitanTargets(u, pos) {
+  if (!isRooted(u)) {
+    for (const [dr, dc] of DIRS) {
+      const nr = pos.r + dr, nc = pos.c + dc;
+      if (!canTitanFit(u, nr, nc, true)) continue;
+      moveTargets.push([nr, nc]);
+    }
+  }
+  for (const pair of titanAttackPairs(u)) {
+    for (const [r, c] of pair) {
+      const t = unitAt(r, c);
+      if (t && t !== u && t.player !== u.player) attackTargets.push([r, c]);
+    }
+  }
+}
+
 function computeTargets() {
   moveTargets = [];
   attackTargets = [];
   if (!selected) return;
   const u = board[selected.r][selected.c];
-  if (!u || u.sword) return;
+  if (!isUnit(u)) return;
   if (isDisabled(u)) return; // 被抓取 / 眩晕：不能移动或攻击
   if (isMeditating(u)) return; // 禅坐：不能移动或攻击
   if (isCrowForm(u)) return; // 鸦天狗：不能移动或攻击
+  if (isTitan(u)) { computeTitanTargets(u, selected); return; }
   const canMove = !isRooted(u); // 定身：不能移动，但仍可攻击
   for (const [dr, dc] of DIRS) {
     const nr = selected.r + dr;
     const nc = selected.c + dc;
     if (!inBounds(nr, nc)) continue;
-    const t = board[nr][nc];
-    if (!t) { if (canMove) moveTargets.push([nr, nc]); }
-    else if (t.sword) {
+    const raw = board[nr][nc];
+    const t = unitAt(nr, nc);
+    if (!raw) { if (canMove) moveTargets.push([nr, nc]); }
+    else if (isHammer(raw)) {
+      if (raw.owner === u.player && u.heroId === "hillking" && canMove) moveTargets.push([nr, nc]);
+    } else if (raw.sword) {
       if (hasSwordPassive(u) && canMove) moveTargets.push([nr, nc]); // 锻剑被动可进入并回收剑
-    } else if (isPillar(t)) {
+    } else if (isPillar(raw)) {
       // 石柱：阻挡移动，也不能被普通攻击
-    } else if (t.player !== u.player) {
+    } else if (isTitanPart(raw)) {
+      // 泰坦占位：可攻击敌方泰坦（解析到 2×2 锚点），但仍阻挡进入
+      if (t && t !== u && t.player !== u.player) attackTargets.push([nr, nc]);
+    } else if (t && t !== u && t.player !== u.player) {
       attackTargets.push([nr, nc]);
     }
   }
@@ -2054,7 +2284,11 @@ function skyarrowPlan(u, r, c, dr, dc) {
     if (!inBounds(rr, cc)) return { path, hit: null, blocked: "edge", target: null, dir: [dr, dc] };
     const cell = board[rr][cc];
     path.push([rr, cc]);
-    if (isPillar(cell)) return { path, hit: null, blocked: "pillar", target: null, dir: [dr, dc] };
+    if (isPillar(cell) || isHammer(cell)) return { path, hit: null, blocked: "pillar", target: null, dir: [dr, dc] };
+    if (isTitanPart(cell)) {
+      const t = unitAt(rr, cc);
+      return { path, hit: t && t.player !== u.player ? t : null, blocked: t && t.player === u.player ? "ally" : "enemy", target: { r: rr, c: cc }, dir: [dr, dc] };
+    }
     if (isUnit(cell)) {
       return { path, hit: cell.player !== u.player ? cell : null, blocked: cell.player === u.player ? "ally" : "enemy", target: { r: rr, c: cc }, dir: [dr, dc] };
     }
@@ -2309,6 +2543,20 @@ function computeSkillTargets() {
       break;
     }
 
+    case "warhammer": {
+      if (findHammer(u.player)) break;
+      for (const [rr, cc] of thunderRangeCells(r, c, true)) {
+        if (hammerLandingLegal(rr, cc, u.player)) skillTargets.push([rr, cc]);
+      }
+      break;
+    }
+
+    case "titan": {
+      if (isTitan(u)) break;
+      if (canTitanFit(u, r, c, false)) skillTargets.push([r, c]);
+      break;
+    }
+
     case "damage_adjacent_all":
       for (const [dr, dc] of DIRS) {
         const t = unitAt(r + dr, c + dc);
@@ -2394,7 +2642,7 @@ function computeSkillTargets() {
 
     case "blink":
       for (const [rr, cc] of cellsWithin(r, c, s.range, false)) {
-        if (!unitAt(rr, cc)) skillTargets.push([rr, cc]);
+        if (!board[rr][cc]) skillTargets.push([rr, cc]);
       }
       break;
 
@@ -2915,6 +3163,38 @@ function moveHero(r, c) {
     render();
     return;
   }
+  if (isTitan(u)) {
+    if (Math.abs(r - fr) + Math.abs(c - fc) !== 1) {
+      addLog("泰坦形态只能整体向上下左右移动 1 格。");
+      clearSelection();
+      render();
+      return;
+    }
+    if (!canTitanFit(u, r, c, true)) {
+      addLog("泰坦形态无法移动到该位置：2×2 占据区域被阻挡。");
+      clearSelection();
+      render();
+      return;
+    }
+    pushHistory();
+    const newCells = titanCellsForAnchor(r, c);
+    const oldPos = findPos(u);
+    if (window.BFX) window.BFX.move({ from: oldPos || { r: fr, c: fc }, to: { r, c }, color: window.BFX.heroColor(u.heroId) });
+    pickupHammerAt(u, newCells);
+    placeTitanFootprint(u, r, c);
+    addLog("🗿 " + label(u) + " 整体移动到 (" + (r + 1) + "," + (c + 1) + ")，占据 2×2。");
+    if (isExtra) {
+      extraMoves -= 1;
+      addLog("🐎 行军令：额外移动一次（剩余 " + extraMoves + " 次）。");
+      clearSelection();
+      if (checkVictory()) return;
+      render();
+      return;
+    }
+    turnActionUsed = true;
+    afterAction(u);
+    return;
+  }
   pushHistory();
   // 渡鸦·潜行双动：隐身期间第一次「走」不消耗行动，之后还可再走一次或普通攻击
   const isDoubleFirst = !isExtra && !turnActionUsed && isStealthed(u) && u.ravenDouble && !u.ravenDoubleUsed;
@@ -2927,6 +3207,7 @@ function moveHero(r, c) {
       dash: hasSwordPassive(u),
     });
   }
+  pickupHammerAt(u, [[r, c]]);
   board[r][c] = u;
   board[fr][fc] = null;
   if (picked) {
@@ -2975,6 +3256,12 @@ function handleUnitDeath(target, source, pos) {
   }
   // 鹰佐：阵亡立即终止雷鸣刀连招并移除雷刀标记（复活快照不保留残留连招）
   resetThunderblade(target);
+  // 山丘之王：泰坦 2×2 占位与未回收锤子必须清理，复活快照恢复 1×1
+  const titanSnapshot = JSON.parse(JSON.stringify(target));
+  titanSnapshot.size = 1;
+  titanSnapshot.titanTurns = 0;
+  if (isTitan(target)) clearTitanFootprint(target);
+  if (target.heroId === "hillking") removeHammer(target.player);
   // 须佐：阵亡立即清除鸦天狗形态
   resetCrowForm(target);
   // 追猎标记清理：目标阵亡 → 清除其标记；若阵亡者是刺客本人 → 清除其遗留的全部标记
@@ -2997,9 +3284,10 @@ function handleUnitDeath(target, source, pos) {
     swords: target.swords || 0,
     lockUsed: !!target.lockUsed,
     guixiongUsed: !!target.guixiongUsed,
-    snapshot: JSON.parse(JSON.stringify(target)), // 复活时原样恢复阵亡瞬间的全部状态
+    snapshot: titanSnapshot, // 复活时恢复阵亡瞬间状态（泰坦体型强制恢复 1×1）
   });
-  board[pos.r][pos.c] = null;
+  if (isTitan(target)) clearTitanFootprint(target);
+  else board[pos.r][pos.c] = null;
   addLog(label(target) + " 阵亡！");
   const cr = addDeathCross(target, pos);
   if (cr) {
@@ -3136,6 +3424,16 @@ function applyDamage(target, amount, kind, source) {
     if (window.SFX) window.SFX.play("metalGuard", { hero: "metal" });
   }
 
+  // 山丘之王·泰坦之力：形态期间受到的所有伤害减少 50%（最低 0），不影响控制。
+  if (dmg > 0 && isTitan(target)) {
+    const beforeTitan = dmg;
+    dmg = Math.max(0, dmg * 0.5);
+    addLog("🗿 泰坦减伤：" + label(target) + " 受到的伤害减少 50%（" + beforeTitan + " → " + dmg + "）。");
+    if (pos) fx.push({ r: pos.r, c: pos.c, text: "泰坦减伤50%", kind: "shield" });
+    if (window.BFX) {
+      try { window.BFX.cast({ type: "titanGuard", heroId: "hillking", caster: pos }); } catch (e) { /* ignore */ }
+    }
+  }
   // 统一格挡：狂化 / 神圣加护等来源只取一次 0.5，避免重复叠加。
   const blockSource = unitBlockSource(target);
   if (dmg > 0 && blockSource) {
@@ -3250,6 +3548,48 @@ function applyDamage(target, amount, kind, source) {
   return dmg;
 }
 
+function titanNormalAttack(attacker, target) {
+  const tp = target ? findPos(target) : null;
+  const pair = tp ? titanPairFor(attacker, tp.r, tp.c) : null;
+  if (!pair) {
+    addLog("泰坦普攻：请选择与泰坦相邻的连续两格区域。");
+    clearSelection();
+    render();
+    return;
+  }
+  const victims = pair.map(([r, c]) => unitAt(r, c)).filter((v, i, arr) => v && v !== attacker && v.player !== attacker.player && arr.indexOf(v) === i);
+  if (!victims.length) {
+    addLog("泰坦普攻：该两格区域内没有敌方英雄。");
+    clearSelection();
+    render();
+    return;
+  }
+  pushHistory();
+  queueUnitFx(attacker.uid, "attack", 0, window.HeroVisuals ? window.HeroVisuals.attackPose(attacker.heroId) : "slash");
+  const aBonus = attackerBonus(attacker);
+  const ravenBuff = attacker.ravenBuff ? 1 : 0;
+  const metalBuff = attacker.metalBuff ? 1 : 0;
+  const hammerBuff = attacker.hammerBuff ? 1 : 0;
+  if (window.SFX) window.SFX.play("attack", { hero: attacker.heroId, heavy: true });
+  if (window.BFX) {
+    try { window.BFX.cast({ type: "titanSmash", heroId: "hillking", caster: findPos(attacker), cells: pair }); } catch (e) { /* ignore */ }
+  }
+  for (const v of victims) {
+    if (!findPos(v)) continue;
+    const res = resolveNormalAttack(attacker, v);
+    const total = res.damage + aBonus + ravenBuff + metalBuff + hammerBuff;
+    addLog("🗿 泰坦普攻：连续两格内的 " + label(v) + " 受到 " + total + " 点伤害" +
+      (hammerBuff ? "（战争之锤强化 +1）" : "") + "。");
+    applyDamage(v, total, res.flank ? "flank" : "normal", attacker);
+  }
+  if (hammerBuff) {
+    attacker.hammerBuff = false;
+    addLog("🔨 战争之锤强化已消耗。");
+  }
+  turnActionUsed = true;
+  afterAction(attacker);
+}
+
 function normalAttack(attacker, target) {
   if (gameMode === "online") {
     const a = attacker ? findPos(attacker) : null;
@@ -3299,6 +3639,10 @@ function normalAttack(attacker, target) {
       }
     }
   }
+  if (isTitan(attacker)) {
+    titanNormalAttack(attacker, target);
+    return;
+  }
   pushHistory();
   queueUnitFx(attacker.uid, "attack", 0, window.HeroVisuals ? window.HeroVisuals.attackPose(attacker.heroId) : "slash");
   // 记录攻击前的位置：普通攻击若最终击杀目标，攻击者需占据目标原先所在的格子
@@ -3308,7 +3652,8 @@ function normalAttack(attacker, target) {
   const aBonus = attackerBonus(attacker); // 猛攻令 +1 / 孤胆 +1
   const ravenBuff = attacker.ravenBuff ? 1 : 0; // 渡鸦·影袭强化 +1
   const metalBuff = attacker.metalBuff ? 1 : 0; // 金元素·金属强化 +1
-  const total = res.damage + aBonus + ravenBuff + metalBuff;
+  const hammerBuff = attacker.hammerBuff ? 1 : 0; // 战争之锤强化 +1
+  const total = res.damage + aBonus + ravenBuff + metalBuff + hammerBuff;
 
   const furyTxt = res.berserker ? (res.berserker >= 2 ? "狂化 +2" : "狂化 +1") : "";
   if (res.flank) {
@@ -3366,6 +3711,10 @@ function normalAttack(attacker, target) {
       } catch (e) { /* 表现层失败不影响结算 */ }
     }
   }
+  if (hammerBuff) {
+    attacker.hammerBuff = false;
+    addLog("🔨 战争之锤强化：本次普通攻击额外 +1，强化已消耗。");
+  }
   // 渡鸦：主动攻击成功执行 → 立刻破隐并消耗影袭强化
   if (attacker.heroId === "raven" || attacker.ravenBuff || attacker.stealth) consumeRavenAttackState(attacker);
   // 金元素·金属强化：伤害 +1 已计入；成功执行后消耗，目标存活则定身 1 回合
@@ -3385,7 +3734,7 @@ function normalAttack(attacker, target) {
   // 普通攻击击杀 → 攻击者占据目标原先所在的格子（仅限相邻攻击；远程游侠不位移）
   // 仅在「伤害 / 护盾 / 闪避 / 锁血 / 死亡」全部结算完成后判定；夹击击杀同样生效
   const atkAdjacent = !!atkBefore && !!tgtBefore && (Math.abs(atkBefore.r - tgtBefore.r) + Math.abs(atkBefore.c - tgtBefore.c) === 1);
-  if (atkAdjacent && target.hp <= 0 && !findPos(target) && !board[tgtBefore.r][tgtBefore.c]) {
+  if (atkAdjacent && !isTitan(target) && target.hp <= 0 && !findPos(target) && !board[tgtBefore.r][tgtBefore.c]) {
     const ap = findPos(attacker);
     if (ap && ap.r === atkBefore.r && ap.c === atkBefore.c) {
       board[ap.r][ap.c] = null;
@@ -3422,6 +3771,8 @@ function skillStageLabel(a, s) {
   if (s.type === "voidstep") return "选择穿梭落点";
   if (s.type === "heal" && s.range === "thunder") return "选择范围内友军";
   if (s.type === "holyguard") return "选择领域中心";
+  if (s.type === "warhammer") return "选择投掷落点";
+  if (s.type === "titan") return "确认巨大化位置";
   if (s.type === "meteor") return "选择陨星落点";
   return "";
 }
@@ -3463,12 +3814,17 @@ function chargeKnockback(tgt, dr, dc) {
     if (!p) break;
     const nr = p.r + dr, nc = p.c + dc;
     if (!inBounds(nr, nc)) break;              // 棋盘边界 = 墙
+    if (isTitan(tgt)) {
+      if (!canTitanFit(tgt, nr, nc, false)) break;
+      placeTitanFootprint(tgt, nr, nc); moved++;
+      continue;
+    }
     const cell = board[nr][nc];
     if (!cell) {
       board[nr][nc] = tgt; board[p.r][p.c] = null; moved++;
       continue;
     }
-    if (cell.sword || isPillar(cell)) break;                   // 剑刃 / 石柱阻挡
+    if (cell.sword || isPillar(cell) || isHammer(cell)) break;  // 剑刃 / 石柱 / 战争之锤阻挡
     // 垂直于击退方向的两侧（左/右相对冲锋方向）
     const perp = [[-dc, dr], [dc, -dr]];
     const opts = [];
@@ -3496,7 +3852,7 @@ function chargePreview(u, tr, tc, dr, dc) {
     if (!inBounds(nr, nc)) break;
     const cell = board[nr][nc];
     if (!cell) { r = nr; c = nc; moved++; continue; }
-    if (cell.sword || isPillar(cell)) break;
+    if (cell.sword || isPillar(cell) || isHammer(cell)) break;
     if (isFormImmune(cell)) break; // 禅坐 / 鸦天狗敌人不可被侧推
     const perp = [[-dc, dr], [dc, -dr]];
     let ok = false;
@@ -3539,6 +3895,12 @@ function pushUnitForward(tgt, dr, dc, steps) {
     if (!p) break;
     const nr = p.r + dr, nc = p.c + dc;
     if (!inBounds(nr, nc)) break;
+    if (isTitan(tgt)) {
+      if (!canTitanFit(tgt, nr, nc, false)) break;
+      placeTitanFootprint(tgt, nr, nc);
+      moved++;
+      continue;
+    }
     if (board[nr][nc]) break;
     board[nr][nc] = tgt; board[p.r][p.c] = null; moved++;
   }
@@ -3555,7 +3917,12 @@ function squeezeOutOfCell(unit, cr, cc, nr, nc) {
   for (const [rr, cc2] of dirs) {
     const tr = p.r + rr, tc = p.c + cc2;
     if (!ok(tr, tc)) continue;
-    board[tr][tc] = unit; board[p.r][p.c] = null;
+    if (isTitan(unit)) {
+      if (!canTitanFit(unit, tr, tc, false)) continue;
+      placeTitanFootprint(unit, tr, tc);
+    } else {
+      board[tr][tc] = unit; board[p.r][p.c] = null;
+    }
     if (window.BFX) window.BFX.knockback({ from: p, to: { r: tr, c: tc }, color: window.BFX.heroColor(unit.heroId) });
     if (window.SFX) window.SFX.play("knockback", { hero: unit.heroId });
     return { r: tr, c: tc };
@@ -3564,12 +3931,14 @@ function squeezeOutOfCell(unit, cr, cc, nr, nc) {
   for (let r = 0; r < SIZE; r++) {
     for (let c = 0; c < SIZE; c++) {
       if (!ok(r, c)) continue;
+      if (isTitan(unit) && !canTitanFit(unit, r, c, false)) continue;
       const d = Math.abs(r - p.r) + Math.abs(c - p.c);
       if (!best || d < best.d || (d === best.d && (r < best.r || (r === best.r && c < best.c)))) best = { r, c, d };
     }
   }
   if (!best) return null;
-  board[best.r][best.c] = unit; board[p.r][p.c] = null;
+  if (isTitan(unit)) placeTitanFootprint(unit, best.r, best.c);
+  else { board[best.r][best.c] = unit; board[p.r][p.c] = null; }
   if (window.BFX) window.BFX.knockback({ from: p, to: { r: best.r, c: best.c }, color: window.BFX.heroColor(unit.heroId) });
   if (window.SFX) window.SFX.play("knockback", { hero: unit.heroId });
   return { r: best.r, c: best.c };
@@ -3639,7 +4008,7 @@ function mistDashPath(u, r, c, dr, dc, maxSteps) {
     const rr = r + dr * k, cc = c + dc * k;
     if (!inBounds(rr, cc)) break;
     const cell = board[rr][cc];
-    if (isPillar(cell)) break;              // 石柱阻挡
+    if (isPillar(cell) || isHammer(cell)) break; // 石柱 / 战争之锤阻挡
     path.push([rr, cc]);                    // 经过的格（英雄/剑刃可穿过）
     if (!cell) dest = { r: rr, c: cc };     // 最远合法空落点
   }
@@ -4490,6 +4859,81 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
       break;
     }
 
+    case "warhammer": {
+      if (!inThunderRange(tr, tc, r, c)) {
+        addLog("战争之锤：请选择雷电之主同范围内的落点。");
+        render();
+        return;
+      }
+      if (findHammer(a.player)) {
+        addLog("战争之锤：场上已有未回收的锤子。");
+        render();
+        return;
+      }
+      const landing = board[tr][tc];
+      let pushed = null;
+      if (landing) {
+        if (!isUnit(landing) || landing.player === a.player || isTitan(landing)) {
+          addLog("战争之锤：落点被实体或友军占据，无法投掷。");
+          render();
+          return;
+        }
+        pushed = pushUnitToAdjacent(landing);
+        if (!pushed) {
+          addLog("战争之锤：无法挤开落点上的敌人（没有合法相邻空格）。");
+          render();
+          return;
+        }
+        addLog("🔨 战争之锤挤开了 " + label(landing) + "，将其推到 (" + (pushed.r + 1) + "," + (pushed.c + 1) + ")。");
+        const pp = findPos(landing);
+        if (pp && window.BFX) window.BFX.knockback({ from: { r: tr, c: tc }, to: pp, color: window.BFX.heroColor(landing.heroId) });
+      }
+      if (!placeHammer(a.player, a.uid, tr, tc)) {
+        addLog("战争之锤：无法落在该位置。");
+        render();
+        return;
+      }
+      const victims = [];
+      for (const [rr, cc] of hammerCrossCells(tr, tc)) {
+        const v = unitAt(rr, cc);
+        if (v && v.player !== a.player && !victims.some((x) => x.uid === v.uid)) victims.push(v);
+      }
+      for (const v of victims) {
+        if (!findPos(v)) continue;
+        applyDamage(v, s.damage || 1, "skill", a);
+      }
+      addLog("🔨 " + label(a) + " 投掷战争之锤到 (" + (tr + 1) + "," + (tc + 1) + ")，落点十字范围命中 " + victims.length + " 名敌人。");
+      if (window.BFX) {
+        try {
+          window.BFX.cast({ type: "warhammer", heroId: "hillking", caster: { r, c }, target: { r: tr, c: tc }, cells: hammerCrossCells(tr, tc) });
+        } catch (e) { /* ignore */ }
+      }
+      if (window.SFX) window.SFX.play("heavy", { hero: "hillking" });
+      break;
+    }
+
+    case "titan": {
+      if (isTitan(a)) {
+        addLog("泰坦之力已经生效。");
+        render();
+        return;
+      }
+      if (!canTitanFit(a, r, c, false)) {
+        addLog("泰坦之力：当前位置周围的 2×2 区域被单位或实体阻挡，无法巨大化。");
+        render();
+        return;
+      }
+      a.size = 2;
+      a.titanTurns = s.duration || 3;
+      placeTitanFootprint(a, r, c);
+      addLog("🗿 " + label(a) + " 释放【泰坦之力】，占据以 (" + (r + 1) + "," + (c + 1) + ") 为左上角的 2×2 区域，持续 " + a.titanTurns + " 回合。");
+      if (window.BFX) {
+        try { window.BFX.cast({ type: "titanStart", heroId: "hillking", caster: { r, c }, cells: titanCellsForAnchor(r, c) }); } catch (e) { /* ignore */ }
+      }
+      if (window.SFX) window.SFX.play("buffUp", { hero: "hillking" });
+      break;
+    }
+
     case "damage_adjacent_all": {
       let hit = 0;
       let assault = 0;
@@ -4750,6 +5194,11 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
       break;
 
     case "blink":
+      if (board[tr][tc]) {
+        addLog("瞬移落点被实体占据。");
+        render();
+        return;
+      }
       if (window.BFX) window.BFX.cast({ type: "blink", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc } });
       board[tr][tc] = a;
       board[r][c] = null;
@@ -6526,7 +6975,17 @@ function handleBattle(r, c) {
     return;
   }
 
-  const clicked = board[r][c];
+  const clicked = unitAt(r, c);
+  const clickedPos = clicked ? findPos(clicked) : { r, c };
+  // 已选单位的目标格优先：泰坦的移动/攻击目标可能是自身 2×2 的占位格。
+  if (selected && isTarget(moveTargets, r, c)) {
+    moveHero(r, c);
+    return;
+  }
+  if (selected && isTarget(attackTargets, r, c)) {
+    normalAttack(board[selected.r][selected.c], clicked);
+    return;
+  }
 
   // 镜影·镜像不是英雄：不能选中/控制；敌方镜像作为普通攻击目标由下方 selected 分支处理
   if (isMirror(clicked)) {
@@ -6554,12 +7013,12 @@ function handleBattle(r, c) {
       render();
       return;
     }
-    if (selected && selected.r === r && selected.c === c) {
+    if (selected && selected.r === clickedPos.r && selected.c === clickedPos.c) {
       clearSelection();
       render();
       return;
     }
-    selected = { r, c };
+    selected = { r: clickedPos.r, c: clickedPos.c };
     activeSkillIdx = 0;
     skillSub = null;
     computeTargets();
@@ -6675,12 +7134,13 @@ function randomKnockback(t) {
     const nc = p.c + dc;
     if (!inBounds(nr, nc)) continue;
     if (board[nr][nc]) continue;
+    if (isTitan(t) && !canTitanFit(t, nr, nc, false)) continue;
     opts.push({ r: nr, c: nc });
   }
   if (!opts.length) return null;
   const pick = opts[Math.floor(Math.random() * opts.length)];
-  board[pick.r][pick.c] = t;
-  board[p.r][p.c] = null;
+  if (isTitan(t)) placeTitanFootprint(t, pick.r, pick.c);
+  else { board[pick.r][pick.c] = t; board[p.r][p.c] = null; }
   if (window.BFX) window.BFX.knockback({ from: p, to: pick, color: window.BFX.heroColor(t.heroId) });
   if (window.SFX) window.SFX.play("knockback", { hero: t.heroId });
   return pick;
@@ -6704,7 +7164,7 @@ function onCellClick(r, c) {
     return;
   }
   // 点击英雄 → 显示技能详情（不影响选中/移动/攻击/回合流程）
-  const clickedUnit = isUnit(board[r][c]) ? board[r][c] : null;
+  const clickedUnit = unitAt(r, c);
   if (clickedUnit && !isMirror(clickedUnit)) showUnitDetail(clickedUnit);
   else if (clickedUnit && isMirrorDisguised(clickedUnit)) showUnitDetail(mirrorViewUnit(clickedUnit));
   if (phase === "placement") handlePlacement(r, c);
@@ -6868,6 +7328,13 @@ function buildBlackFlameObj(bf) {
 }
 
 /* 山丘之王·石柱：独立临时地形，显示剩余回合；阻挡移动 / 突进 / 传送 / 推击 */
+function buildHammerObj(h) {
+  const el = document.createElement("span");
+  el.className = "hammer-obj";
+  el.title = "战争之锤：独立实体，占据该格，阻挡移动/位移/击退；只有山丘之王移动到此格才能捡起";
+  el.innerHTML = '<i class="hammer-head">🔨</i><i class="hammer-glow"></i>';
+  return el;
+}
 function buildPillarObj(p) {
   const el = document.createElement("div");
   el.className = "pillar-obj";
@@ -7240,7 +7707,12 @@ function render() {
         mw.innerHTML = '<i class="meteor-star">☄</i><b class="meteor-count">' + centerMeteor.turns + "</b>";
         cell.appendChild(mw);
       }
-      if (isSword(u)) {
+      if (isHammer(u)) {
+        cell.classList.add("hammer-cell");
+        cell.appendChild(buildHammerObj(u));
+      } else if (isTitanPart(u)) {
+        cell.classList.add("titan-part-cell");
+      } else if (isSword(u)) {
         cell.classList.add("sword-cell");
         cell.appendChild(buildSwordObj());
       } else if (isPillar(u)) {
@@ -7265,6 +7737,8 @@ function render() {
         if (holyDomainAt(u)) cell.classList.add("unit-blocked");
         const bzStage = berserkerStage(u);
         if (bzStage > 0) cell.classList.add("berserk-stage-" + bzStage);
+        if (isTitan(u)) cell.classList.add("titan-anchor-cell", "titan-mode");
+        if (u.hammerBuff) cell.classList.add("hammer-buffed");
         if (u.chaseMark) cell.classList.add("chase-marked");
         if (isStealthed(u)) cell.classList.add("stealth-unit");
         if (u.ravenBuff) cell.classList.add("raven-buffed");
@@ -7318,31 +7792,47 @@ function render() {
           b.textContent = "强化" + u.empowerTurns;
           cell.appendChild(b);
         }
+        if (isTitan(u)) {
+          const b = document.createElement("span");
+          b.className = "badge-cell titan";
+          b.textContent = "泰坦 " + (u.titanTurns || 0);
+          cell.appendChild(b);
+        }
+        if (u.hammerBuff) {
+          const b = document.createElement("span");
+          b.className = "badge-cell hammer";
+          b.textContent = "锤击+1";
+          cell.appendChild(b);
+        }
       }
 
       // 目标高亮覆盖层（盖在单位之上，保证可见）
       if (isMove || isAtk || isSkill) {
         const ov = document.createElement("div");
         ov.className = "target-overlay " + (isSkill ? "ov-skill" : isAtk ? "ov-atk" : "ov-move");
-        if (!u) ov.classList.add("ov-empty");
+        if (!unitAt(r, c) && !isHammer(u)) ov.classList.add("ov-empty");
         cell.appendChild(ov);
       }
 
-      // 普通攻击预览：显示本次攻击的伤害与是否夹击
-      if (isAtk && u) {
-        const d = info.get(u.uid);
-        const prev = document.createElement("span");
-        prev.className = "atk-preview";
-        if (d && d.flanked) {
-          prev.classList.add("flank");
-          prev.textContent = "夹击×" + d.count + " -" + (BASE_ATTACK + d.bonus);
-        } else if (d && d.base && d.protected) {
-          prev.classList.add("guard");
-          prev.textContent = "护 -" + BASE_ATTACK;
-        } else {
-          prev.textContent = "-" + BASE_ATTACK;
+      // 普通攻击预览：显示本次攻击的伤害与是否夹击（2×2 目标按锚点计算）
+      if (isAtk) {
+        const atkU = unitAt(r, c);
+        if (!atkU) { /* 目标格无单位 */ }
+        else {
+          const d = info.get(atkU.uid);
+          const prev = document.createElement("span");
+          prev.className = "atk-preview";
+          if (d && d.flanked) {
+            prev.classList.add("flank");
+            prev.textContent = "夹击×" + d.count + " -" + (BASE_ATTACK + d.bonus);
+          } else if (d && d.base && d.protected) {
+            prev.classList.add("guard");
+            prev.textContent = "护 -" + BASE_ATTACK;
+          } else {
+            prev.textContent = "-" + BASE_ATTACK;
+          }
+          cell.appendChild(prev);
         }
-        cell.appendChild(prev);
       }
 
       // 飘字特效
@@ -7503,6 +7993,12 @@ function updateHeroCard() {
     chips.push('<span class="chip">🪓 狂化未触发（生命 > 4）</span>');
   }
   if (holyDomainAt(u)) chips.push('<span class="chip holy">✨ 神圣加护：格挡 0.5</span>');
+  if (isTitan(u)) chips.push('<span class="chip">🗿 泰坦形态：2×2 · 减伤 50% · 免疫夹击 · 剩 ' + (u.titanTurns || 0) + ' 回合</span>');
+  if (u.hammerBuff) chips.push('<span class="chip">🔨 战争之锤强化：下一次普攻 +1</span>');
+  if (u.heroId === "hillking") {
+    const hm = findHammer(u.player);
+    if (hm) chips.push('<span class="chip">🔨 战争之锤位于 (' + (hm.r + 1) + "," + (hm.c + 1) + ')</span>');
+  }
   if (u.heroId === "cleric") {
     const d = holyDomains.find((x) => x.owner === u.player);
     if (d) chips.push('<span class="chip holy">✨ 神圣加护领域：剩 ' + d.turns + " 回合</span>");
@@ -7725,6 +8221,12 @@ function renderDetailCard() {
     if (ta) st.push("时空锚点：(" + (ta.r + 1) + "," + (ta.c + 1) + ") · " + (ta.kind === "void" ? "破空" : "裂空") + " · 下一回合结束回归");
   }
   if (holyDomainAt(u)) st.push("神圣加护：处于己方领域，获得 0.5 格挡");
+  if (isTitan(u)) st.push("泰坦形态：占据 2×2，受伤 -50%，免疫夹击，剩余 " + (u.titanTurns || 0) + " 回合");
+  if (u.hammerBuff) st.push("战争之锤强化：下一次普通攻击 +1");
+  if (u.heroId === "hillking") {
+    const hm = findHammer(u.player);
+    if (hm) st.push("战争之锤：位于 (" + (hm.r + 1) + "," + (hm.c + 1) + ")，移动到该格可回收");
+  }
   if (u.heroId === "cleric") {
     const d = holyDomains.find((x) => x.owner === u.player);
     if (d) st.push("神圣加护领域：中心 (" + (d.center.r + 1) + "," + (d.center.c + 1) + ") · 剩余 " + d.turns + " 回合 · 己方 0.5 格挡");
@@ -8244,6 +8746,33 @@ function aiSkillScore(u, s, pos, rr, cc, w) {
       }
       return allies ? score : null;
     }
+    case "warhammer": {
+      if (findHammer(u.player) || !hammerLandingLegal(rr, cc, u.player)) return null;
+      const seen = new Set();
+      let sc = 0;
+      for (const [ar, ac] of hammerCrossCells(rr, cc)) {
+        const e = unitAt(ar, ac);
+        if (!e || e.player === u.player || seen.has(e.uid)) continue;
+        seen.add(e.uid);
+        sc += w.dmgW + (e.hp <= (s.damage || 1) ? w.killW : 0) + 4;
+      }
+      const landing = board[rr][cc];
+      if (landing && isUnit(landing) && landing.player !== u.player && !isTitan(landing)) sc += 10;
+      // 靠近当前山丘之王的前置落点更容易后续回收
+      const p = findPos(u);
+      if (p) sc += Math.max(0, 5 - (Math.abs(p.r - rr) + Math.abs(p.c - cc)));
+      return sc > 0 ? sc : null;
+    }
+    case "titan": {
+      if (isTitan(u) || !canTitanFit(u, pos.r, pos.c, false)) return null;
+      let near = 0;
+      for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) {
+        const e = unitAt(pos.r + dr, pos.c + dc);
+        if (e && e.player !== u.player) near++;
+      }
+      if (!near) return null;
+      return 18 + near * 12 + (u.hp <= 3 ? 18 : 0);
+    }
     case "shield_self":
       return 10;
     case "ziwei": {
@@ -8528,11 +9057,29 @@ function aiEnumerate() {
 
     // 普通攻击（本回合若已行动则不可）
     if (!turnActionUsed) {
+      if (isTitan(u)) {
+        const seenPair = new Set();
+        for (const pair of titanAttackPairs(u)) {
+          const victims = pair.map(([r, c]) => unitAt(r, c)).filter((v, i, arr) => v && v.player !== u.player && !hiddenFrom(v, u.player) && arr.indexOf(v) === i);
+          if (!victims.length) continue;
+          const key = pair.map(([r, c]) => r + "_" + c).join("|");
+          if (seenPair.has(key)) continue;
+          seenPair.add(key);
+          let sc = 0;
+          for (const v of victims) {
+            const res = resolveNormalAttack(u, v);
+            const dmg = res.damage + (u.hammerBuff ? 1 : 0);
+            sc += w.dmgW * dmg + (v.hp <= dmg ? w.killW : 0) + 6;
+          }
+          const tgt = pair.find(([r, c]) => { const v = unitAt(r, c); return v && v.player !== u.player; }) || pair[0];
+          acts.push({ type: "attack", u, pos, target: { r: tgt[0], c: tgt[1] }, score: sc });
+        }
+      } else {
       for (const [dr, dc] of DIRS) {
         const t = unitAt(pos.r + dr, pos.c + dc);
         if (t && !t.sword && t.player !== u.player && !hiddenFrom(t, u.player)) {
           const res = resolveNormalAttack(u, t);
-          const dmg = res.damage + (u.ravenBuff ? 1 : 0);
+          const dmg = res.damage + (u.ravenBuff ? 1 : 0) + (u.hammerBuff ? 1 : 0);
           const kill = t.hp <= dmg;
           let splashScore = 0;
           if (u.heroId === "yangjian") {
@@ -8551,6 +9098,7 @@ function aiEnumerate() {
             score: w.dmgW * dmg + (kill ? w.killW : 0) + (res.flank ? w.flankW : 0) + 6 + splashScore + furyAggro,
           });
         }
+      }
       }
       // 天穹射手：2 格普攻只能沿同一行/列直线
       if (u.heroId === "ranger") {
@@ -9118,13 +9666,16 @@ function aiEnumerate() {
         const nc = pos.c + dc;
         if (!inBounds(nr, nc)) continue;
         const t = board[nr][nc];
-        const canEnter = !t || (t.sword && hasSwordPassive(u));
+        const canEnter = isTitan(u)
+          ? canTitanFit(u, nr, nc, true)
+          : (!t || (t.sword && hasSwordPassive(u)) || (isHammer(t) && t.owner === u.player && u.heroId === "hillking"));
         if (!canEnter) continue;
         const before = nearestEnemyDist(pos.r, pos.c, u.player);
         const after = nearestEnemyDist(nr, nc, u.player);
         let sc = (before - after) * w.distW - dangerAt(nr, nc, u) * (w.riskW / 10);
         const collect = !!t && t.sword;
         if (collect && hasSwordPassive(u)) sc += w.swordW;
+        if (isHammer(t) && t.owner === u.player && u.heroId === "hillking") sc += 12;
         if (u.hp <= 2) sc -= dangerAt(nr, nc, u) * (w.riskW / 10);
         if (u._lastKey === nr + "_" + nc) sc -= 18; // 反来回踱步
         acts.push({ type: "move", u, pos, target: { r: nr, c: nc }, collect, score: sc });
@@ -9140,7 +9691,7 @@ function aiApplyAction(act) {
   if (mover) mover._lastKey = pos.r + "_" + pos.c; // 记录行动前位置，用于反踱步
   selected = { r: pos.r, c: pos.c };
   if (act.type === "attack") {
-    normalAttack(board[pos.r][pos.c], board[act.target.r][act.target.c]);
+    normalAttack(board[pos.r][pos.c], unitAt(act.target.r, act.target.c));
   } else if (act.type === "move") {
     moveHero(act.target.r, act.target.c);
   } else {
@@ -9158,9 +9709,7 @@ function aiApplyAction(act) {
       skillSub = { kind: "rb-step1", r: act.moveTo.r, c: act.moveTo.c, dir: stay ? [fd[0], fd[1]] : [act.moveTo.r - pos.r, act.moveTo.c - pos.c], stay };
       useSkill(act.target.r, act.target.c);
     } else if (mover && mover.heroId === "hillking" && (act.skillIdx || 0) === 0) {
-      // 山丘之王·推山：第一步十字位移（无 moveTo 则原地），第二步推击
-      const mv = act.moveTo || { r: pos.r, c: pos.c };
-      useSkill(mv.r, mv.c);
+      // 山丘之王·战争之锤：单个落点结算
       useSkill(act.target.r, act.target.c);
     } else {
       useSkill(act.target.r, act.target.c, act.copyIdx, act.mirrorSwap);
@@ -9986,6 +10535,15 @@ window.GameAPI = {
   getGraveyard() { return graveyard.slice(); },
   getTimeAnchors() { return JSON.parse(JSON.stringify(timeAnchors)); },
   getHolyDomains() { return JSON.parse(JSON.stringify(holyDomains)); },
+  findPos,
+  unitAt,
+  isTitan,
+  titanCellsForAnchor,
+  titanAttackPairs,
+  hammerAt,
+  findHammer,
+  pickupHammerAt,
+  getAttackTargets() { return attackTargets.slice(); },
   isTimeStopped,
   timeAnchorFor,
   applyTimeStop,
@@ -10127,6 +10685,9 @@ window.GameAPI = {
         timeStop: spec.timeStop ? JSON.parse(JSON.stringify(spec.timeStop)) : null,
         timeStopPending: spec.timeStopPending ? JSON.parse(JSON.stringify(spec.timeStopPending)) : [],
         skillTurnUsed: spec.skillTurnUsed ? JSON.parse(JSON.stringify(spec.skillTurnUsed)) : {},
+        size: spec.size || 1,
+        titanTurns: spec.titanTurns || 0,
+        hammerBuff: !!spec.hammerBuff,
         lockUsed: !!spec.lockUsed,
         sdStage: spec.sdStage || 0,
         dragonMoves: spec.dragonMoves || 0,

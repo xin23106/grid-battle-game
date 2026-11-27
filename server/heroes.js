@@ -62,8 +62,11 @@ module.exports = [
     ] },
   { id: "huamulan", name: "花木兰", hp: 8, sfx: "heavy",
     skill: { name: "所向披靡", type: "charge", damage: 2, uses: 1, knockback: 2 } },
-  { id: "hillking", name: "山丘之王", hp: 6, sfx: "heavy",
-    skill: { name: "推山", type: "push", damage: 1, uses: 3, push: 2 } },
+  { id: "hillking", name: "山丘之王", hp: 7, sfx: "heavy",
+    skill: { name: "战争之锤", type: "warhammer", range: "thunder", uses: 1, free: true, damage: 1 } ,
+    extraSkills: [
+      { name: "泰坦之力", type: "titan", uses: 1, free: false, duration: 3, range: 0 },
+    ] },
   { id: "raven", name: "渡鸦", hp: 5, sfx: "fast",
     skill: { name: "潜行", type: "stealth", uses: 1, range: 2 },
     extraSkills: [
