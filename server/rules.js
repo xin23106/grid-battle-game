@@ -1923,7 +1923,7 @@ function applyAction(state, player, action) {
       slog(s, "🪞 " + uname(s, u) + " 与镜像交换位置：(" + (from.r + 1) + "," + (from.c + 1) + ") ↔ (" + (r + 1) + "," + (c + 1) + ")");
     } else if (sk.type === "steal") {
       // 窃神·窃取权柄：复制目标一个主动/被动技能，独立次数
-      if (!isUnit(t) || t.player === player || hiddenFromS(t, player)) return err("窃取权柄：请选择一名可见的敌方英雄");
+      if (!isUnit(t) || isMirrorS(t) || t.player === player || hiddenFromS(t, player)) return err("窃取权柄：请选择一名可见的敌方英雄");
       const choices = copyableSkillsS(t);
       const ci = action.copyIdx == null ? -1 : (action.copyIdx | 0);
       if (ci < 0 || ci >= choices.length) return err("窃取权柄：请选择一个可复制的技能");
