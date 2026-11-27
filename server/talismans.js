@@ -9,4 +9,5 @@ module.exports = [
   { id: "refresh", name: "技能重整令", icon: "♻️", target: "none", effect: "refresh" },
   { id: "guard", name: "坚守令", icon: "🛡️", target: "none", effect: "guard" },
   { id: "heal", name: "战地急救令", icon: "➕", target: "allyWounded", effect: "heal", heal: 2 },
+  { id: "omni", name: "全能锦囊", icon: "🌈", target: "omni", effect: "omni" },
 ];

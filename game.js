@@ -158,6 +158,7 @@ let talisman = { 1: null, 2: null };   // 各自持有的锦囊 id（使用后�
 let talismanUsed = { 1: false, 2: false }; // 是否已使用
 let talismanMode = null;               // 正在选择目标的锦囊 id
 let talismanTargets = [];              // 当前锦囊的可选目标格
+let omniPendingChoice = null;          // 全能锦囊等待目标选择时，已选中的普通锦囊 id
 let talismanBuff = { assaultPlayer: 0, guardPlayer: 0 }; // 猛攻令 / 坚守令 生效阵营
 let extraMoves = 0;                    // （已废弃）行军令旧机制：本回合额外移动次数
 let extraTurnPending = false;          // 行军令：本回合结束后，当前玩家额外获得一个完整回合
@@ -862,6 +863,7 @@ function talismanTargetsFor(id, player) {
     }
   } else if (t.target === "allyAlive") {
     for (const u of unitsOf(player)) {
+      if (t.effect === "refresh" && !talismanCanRefreshUnit(u)) continue;
       const p = findPos(u);
       if (p) res.push([p.r, p.c]);
     }
@@ -873,6 +875,31 @@ function talismanTargetsFor(id, player) {
     }
   }
   return res;
+}
+/* 全能锦囊：普通锦囊列表与可用性判断（omni 自身永不出现在可选项中） */
+function ordinaryTalismans() {
+  return TALISMANS.filter((t) => t && t.id !== "omni" && t.effect !== "omni");
+}
+function talismanCanRefreshUnit(u) {
+  if (!u || u.sword) return false;
+  return unitSkills(u).some((sk, i) => {
+    if (!sk || isPassiveSkill(sk) || sk.uses == null) return false;
+    const max = sk.perTurn ? sk.perTurn : sk.uses;
+    return skillUsesLeft(u, i) < max;
+  });
+}
+function talismanAvailableFor(id, player) {
+  const t = getTalismanById(id);
+  if (!t || t.effect === "omni") return { ok: false, reason: "全能锦囊不能选择自身", targets: [] };
+  const targets = talismanTargetsFor(id, player);
+  if (t.target === "allyWounded") {
+    if (!targets.length) return { ok: false, reason: "没有生命未满的己方英雄", targets };
+  } else if (t.target === "deadAlly") {
+    if (!targets.length) return { ok: false, reason: "没有可复活的己方阵亡英雄（或原位置被占用）", targets };
+  } else if (t.target === "allyAlive") {
+    if (!unitsOf(player).some((u) => talismanCanRefreshUnit(u))) return { ok: false, reason: "没有可刷新技能次数的己方英雄", targets };
+  }
+  return { ok: true, reason: "", targets };
 }
 /* 当前玩家是否还有任何可执行的行动（用于“不能直接跳过回合”的兜底） */
 function hasAnyAction(player) {
@@ -1389,6 +1416,10 @@ function clearSelection() {
   dashOptions = [];
   talismanMode = null;
   talismanTargets = [];
+  omniPendingChoice = null;
+  closeOmniPanel();
+  closeStealPanel();
+  closeMirrorSwapPanel();
   skillSub = null;
   // 龙胆选点与普通选择互斥；换回合 / 执行其它行动时一并取消
   dragonMoveUnit = null;
@@ -5637,6 +5668,11 @@ function startTalismanUse(id) {
     return;
   }
 
+  if (t.effect === "omni") {
+    openOmniPanel();
+    return;
+  }
+
   if (t.target === "none") {
     if (gameMode === "online") { onlineForward({ type: "talisman", id: tid }); return; }
     useTalismanEffect(tid, null, null);
@@ -5661,6 +5697,55 @@ function startTalismanUse(id) {
   addLog("🎴 请选择【" + t.name + "】的目标（点击高亮格子；再次点按钮可取消）。");
 }
 
+function closeOmniPanel() {
+  const el = document.querySelector(".omni-overlay");
+  if (el) el.remove();
+}
+function openOmniPanel() {
+  closeOmniPanel();
+  const options = ordinaryTalismans();
+  const cards = options.map((t) => {
+    const av = talismanAvailableFor(t.id, currentPlayer);
+    return '<button class="omni-card ' + (av.ok ? "" : "disabled") + '" data-id="' + t.id + '" ' + (av.ok ? "" : "disabled") + '>' +
+      '<span class="omni-icon">' + t.icon + "</span>" +
+      '<span class="omni-main"><b>' + t.name + "</b><em>" + t.desc + "</em>" +
+      (av.ok ? "" : '<small class="omni-reason">不可用：' + av.reason + "</small>") +
+      "</span></button>";
+  }).join("");
+  const ov = document.createElement("div");
+  ov.className = "omni-overlay";
+  ov.innerHTML = '<div class="omni-panel" role="dialog" aria-modal="true">' +
+    '<div class="omni-head"><div><b>全能锦囊</b><span>选择一张普通锦囊进行转化</span></div>' +
+    '<button class="omni-cancel" type="button">取消</button></div>' +
+    '<div class="omni-list">' + cards + "</div></div>";
+  document.body.appendChild(ov);
+  ov.querySelector(".omni-cancel").addEventListener("click", () => { closeOmniPanel(); render(); });
+  ov.addEventListener("click", (e) => { if (e.target === ov) { closeOmniPanel(); render(); } });
+  ov.querySelectorAll(".omni-card").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-id");
+      const av = talismanAvailableFor(id, currentPlayer);
+      if (!av.ok) { addLog("全能锦囊：" + av.reason + "，无法选择【" + (getTalismanById(id) || {}).name + "】。"); return; }
+      const t = getTalismanById(id);
+      closeOmniPanel();
+      if (t.target === "none") {
+        if (gameMode === "online") onlineForward({ type: "talisman", id: "omni", choice: id });
+        else useTalismanEffect("omni", null, null, id);
+        return;
+      }
+      omniPendingChoice = id;
+      talismanMode = "omni";
+      talismanTargets = av.targets;
+      skillMode = false;
+      skillTargets = [];
+      moveTargets = [];
+      attackTargets = [];
+      render();
+      addLog("🌈 全能锦囊已转化为【" + t.name + "】，请选择目标。");
+    });
+  });
+}
+
 function handleTalismanClick(r, c) {
   const tid = talismanMode;
   if (!tid) {
@@ -5673,6 +5758,16 @@ function handleTalismanClick(r, c) {
     render();
     return; // 保持选择状态，允许重新选择
   }
+  if (tid === "omni") {
+    const choice = omniPendingChoice;
+    if (!choice) { addLog("全能锦囊：尚未选择要转化的普通锦囊。"); render(); return; }
+    if (gameMode === "online") {
+      onlineForward({ type: "talisman", id: "omni", choice, to: { r, c } });
+      return;
+    }
+    useTalismanEffect("omni", r, c, choice);
+    return;
+  }
   if (gameMode === "online") {
     onlineForward({ type: "talisman", id: tid, to: { r, c } });
     return;
@@ -5680,10 +5775,20 @@ function handleTalismanClick(r, c) {
   useTalismanEffect(tid, r, c);
 }
 
-/* 执行锦囊效果。tr/tc 为目标格（可空）。非法目标不消耗锦囊。 */
-function useTalismanEffect(id, tr, tc) {
-  const t = getTalismanById(id);
+/* 执行锦囊效果。tr/tc 为目标格（可空）。非法目标不消耗锦囊。
+ * 当 id==="omni" 时，choiceId 指定被模拟的普通锦囊。 */
+function useTalismanEffect(id, tr, tc, choiceId) {
+  let t = getTalismanById(id);
   if (!t) return false;
+  let omniUsed = false;
+  if (t.effect === "omni") {
+    const chosen = getTalismanById(choiceId);
+    if (!chosen || chosen.effect === "omni") return false;
+    const av = talismanAvailableFor(chosen.id, currentPlayer);
+    if (!av.ok) { addLog("全能锦囊：" + av.reason + "。"); return false; }
+    t = chosen;
+    omniUsed = true;
+  }
   pushHistory();
   const player = currentPlayer;
   let ok = true;
@@ -5817,6 +5922,10 @@ function useTalismanEffect(id, tr, tc) {
       ok = false;
   }
   if (!ok) { render(); return false; }            // 非法：不消耗锦囊
+  if (omniUsed) {
+    addLog("🌈 使用全能锦囊，转化为【" + t.name + "】。");
+    omniPendingChoice = null;
+  }
   talismanUsed[player] = true;                     // 使用后消耗
   // 锦囊演出：卡牌飞向目标 → 展开 → 专属效果（纯视觉，状态已在上面结算完成）
   let tzPlayed = false;
@@ -5826,6 +5935,8 @@ function useTalismanEffect(id, tr, tc) {
         id: t.id,
         name: t.name,
         icon: t.icon,
+        omni: omniUsed,
+        sourceName: omniUsed ? "全能锦囊" : "",
         target: (tr != null && tc != null) ? { r: tr, c: tc } : null,
         caster: player,
       });
@@ -7025,8 +7136,8 @@ function updateTalismanUI() {
   const id = talisman[cardSide];
   const t = id ? getTalismanById(id) : null;
   const isAI = gameMode === "ai" && currentPlayer === aiPlayer;
-  const CAT = { assault: "atk", revive: "life", march: "march", refresh: "arcane", guard: "guard", heal: "life" };
-  const CAT_NAME = { atk: "攻击强化", life: "生命", march: "额外回合", arcane: "技能", guard: "防御" };
+  const CAT = { assault: "atk", revive: "life", march: "march", refresh: "arcane", guard: "guard", heal: "life", omni: "omni" };
+  const CAT_NAME = { atk: "攻击强化", life: "生命", march: "额外回合", arcane: "技能", guard: "防御", omni: "万能转化" };
   const used = talismanUsed[cardSide];
   const cat = t ? (CAT[t.effect] || "atk") : "";
   // 卡面分类（颜色 + 图案 + 已使用印章）；整串重设，避免残留旧分类
@@ -7068,9 +7179,9 @@ function updateTalismanUI() {
     return;
   }
   talismanBtn.disabled = false;
-  talismanBtn.textContent = t.target === "none"
-    ? "使用【" + t.name + "】"
-    : "使用【" + t.name + "】（选择目标）";
+  talismanBtn.textContent = t.effect === "omni"
+    ? (talismanMode === "omni" ? "✖ 取消全能锦囊目标选择" : "使用【全能锦囊】（选择普通锦囊）")
+    : (t.target === "none" ? "使用【" + t.name + "】" : "使用【" + t.name + "】（选择目标）");
 }
 
 function updatePanel() {
@@ -7649,11 +7760,60 @@ function aiUseDragonMoves() {
 }
 
 /* AI 判断是否使用自己的锦囊（返回是否使用） */
+function aiUseOmniTalisman() {
+  const options = ordinaryTalismans().filter((x) => talismanAvailableFor(x.id, aiPlayer).ok);
+  if (!options.length) return false;
+  let best = null;
+  for (const choice of options) {
+    let score = 0, target = null;
+    if (choice.effect === "revive") {
+      const targets = talismanTargetsFor(choice.id, aiPlayer);
+      if (!targets.length) continue;
+      score = 58 + unitsOf(aiPlayer).length * 2;
+      target = targets[0];
+    } else if (choice.effect === "heal") {
+      for (const u of unitsOf(aiPlayer)) {
+        if (u.hp >= u.maxHp) continue;
+        const p = findPos(u);
+        if (!p) continue;
+        const val = Math.min(choice.heal || 2, u.maxHp - u.hp) * 8 + (u.hp <= 2 ? 10 : 0);
+        if (!target || val > score) { score = val; target = [p.r, p.c]; }
+      }
+      if (!target) continue;
+    } else if (choice.effect === "refresh") {
+      let bestU = null;
+      for (const u of unitsOf(aiPlayer)) {
+        if (!talismanCanRefreshUnit(u)) continue;
+        const p = findPos(u);
+        if (!p) continue;
+        if (!bestU || u.hp > bestU.hp) bestU = { u, p };
+      }
+      if (!bestU) continue;
+      score = 26;
+      target = [bestU.p.r, bestU.p.c];
+    } else if (choice.effect === "assault") {
+      if (!aiEnumerate().some((a) => a.type === "attack" || a.type === "skill")) continue;
+      score = 34;
+    } else if (choice.effect === "guard") {
+      if (!unitsOf(aiPlayer).some((u) => u.hp < u.maxHp)) continue;
+      score = 24;
+    } else if (choice.effect === "march") {
+      score = 20;
+    }
+    if (!best || score > best.score) best = { choice, score, target };
+  }
+  if (!best) return false;
+  const p = best.target;
+  useTalismanEffect("omni", p ? p[0] : null, p ? p[1] : null, best.choice.id);
+  return true;
+}
+
 function aiUseTalisman() {
   if (talismanUsed[aiPlayer] || !talisman[aiPlayer]) return false;
   const id = talisman[aiPlayer];
   const t = getTalismanById(id);
   if (!t) return false;
+  if (t.effect === "omni") return aiUseOmniTalisman();
   if (t.effect === "revive") {
     const targets = talismanTargetsFor(id, aiPlayer);
     if (targets.length > 0) { useTalismanEffect(id, targets[0][0], targets[0][1]); return true; }

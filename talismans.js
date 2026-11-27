@@ -65,6 +65,14 @@ const TALISMANS = [
     effect: "heal",
     heal: 2,         // 可配置：恢复量
   },
+  {
+    id: "omni",
+    name: "全能锦囊",
+    icon: "🌈",
+    target: "omni",
+    desc: "万能型锦囊：从当前所有普通锦囊中选择一张，按该锦囊的完整规则结算；使用后消耗全能锦囊，不会获得所选的锦囊实体，也不能再次选择全能锦囊。",
+    effect: "omni",
+  },
 ];
 
 function getTalismanById(id) {

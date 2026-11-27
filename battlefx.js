@@ -2270,7 +2270,7 @@
       }
     }
 
-    cardEl.className = "bfx-tcard " + cat.cls;
+    cardEl.className = "bfx-tcard " + cat.cls + (o.omni ? " omni" : "");
     cardEl.querySelector(".bfx-tcard-sigil").textContent = o.icon || "🎴";
     cardEl.querySelector(".bfx-tcard-name").textContent = o.name || "锦囊";
     cardEl.querySelector(".bfx-tcard-line").textContent = cat.line || "";

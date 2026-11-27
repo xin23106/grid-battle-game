@@ -17,6 +17,31 @@ const SUMMON_DEFS = {
 const heroDef = (id) => HEROES.find((h) => h.id === id) || SUMMON_DEFS[id] || null;
 const talDef = (id) => TALISMANS.find((t) => t.id === id) || null;
 const drawTalismanId = () => TALISMANS[Math.floor(Math.random() * TALISMANS.length)].id;
+function ordinaryTalismansS() {
+  return TALISMANS.filter((t) => t && t.id !== "omni" && t.effect !== "omni");
+}
+function talismanCanRefreshUnitS(u) {
+  if (!u || u.sword) return false;
+  return unitSkills(u).some((sk, i) => {
+    if (!sk || isPassiveSkillS(sk) || sk.uses == null) return false;
+    const max = sk.perTurn ? sk.perTurn : sk.uses;
+    return skillUsesLeft(null, u, i) < max;
+  });
+}
+function talismanAvailableS(s, player, id) {
+  const t = talDef(id);
+  if (!t || t.effect === "omni") return { ok: false, reason: "全能锦囊不能选择自身" };
+  if (t.target === "allyWounded") {
+    if (!unitsOf(s, player).some((u) => u.hp < u.maxHp)) return { ok: false, reason: "没有生命未满的己方英雄" };
+  } else if (t.target === "deadAlly") {
+    let any = false;
+    for (const g of s.graveyard) if (g.player === player && reviveCellForS(s, g)) { any = true; break; }
+    if (!any) return { ok: false, reason: "没有可复活的己方阵亡英雄（或原位置被占用）" };
+  } else if (t.target === "allyAlive") {
+    if (!unitsOf(s, player).some((u) => talismanCanRefreshUnitS(u))) return { ok: false, reason: "没有可刷新技能次数的己方英雄" };
+  }
+  return { ok: true, reason: "" };
+}
 /* 英雄全部技能（含 extraSkills） */
 function heroSkills(def) {
   if (!def) return [];
@@ -1706,8 +1731,19 @@ function applyAction(state, player, action) {
 
   if (act === "talisman") {
     if (s.talismanUsed[player] || !s.talisman[player]) return err("没有可用的锦囊");
-    const t = talDef(s.talisman[player]);
-    if (!t) return err("未知锦囊");
+    const owned = talDef(s.talisman[player]);
+    if (!owned) return err("未知锦囊");
+    let t = owned;
+    let omniUsed = false;
+    if (owned.effect === "omni") {
+      if (!action.choice || action.choice === "omni") return err("全能锦囊：请选择一张普通锦囊");
+      const chosen = talDef(action.choice);
+      if (!chosen || chosen.effect === "omni") return err("全能锦囊：不能选择全能锦囊本身");
+      const av = talismanAvailableS(s, player, chosen.id);
+      if (!av.ok) return err("全能锦囊：" + av.reason);
+      t = chosen;
+      omniUsed = true;
+    }
     pushUndo();
     const to = action.to || {};
     const hasTo = to.r != null && to.c != null;
@@ -1783,7 +1819,8 @@ function applyAction(state, player, action) {
     }
     s.talismanUsed[player] = true;
     // 锦囊成功使用：向双方公开“本次使用的具体名称”（未使用的锦囊与部署阶段仍保密）
-    slog(s, "🎴 玩家" + player + " 使用了【" + t.name + "】");
+    if (omniUsed) slog(s, "🌈 玩家" + player + " 使用全能锦囊，转化为【" + t.name + "】");
+    else slog(s, "🎴 玩家" + player + " 使用了【" + t.name + "】");
     return { ok: true, state: s }; // 锦囊不结束回合，也不消耗行动
   }
 
