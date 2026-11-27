@@ -1724,6 +1724,38 @@ html, body {
 .steal-skill-main small { color: #fcd34d; font-size: 10px; }
 .steal-skill-main em { color: #cbd5e1; font-size: 11px; font-style: normal; line-height: 1.45; opacity: .9; }
 
+/* 亡灵之主：死亡十字架 / 亡灵军团 */
+.death-cross-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  color: #a3e635;
+  text-shadow: 0 0 6px #a3e635, 0 0 14px #7c3aed;
+  animation: deathCrossPulse 2.4s ease-in-out infinite;
+}
+.death-cross {
+  font-style: normal;
+  font-size: 21px;
+  opacity: .82;
+  filter: drop-shadow(0 0 5px #7c3aed);
+}
+.death-cross-cell { box-shadow: inset 0 0 12px rgba(124, 58, 237, .2); }
+@keyframes deathCrossPulse { 0%,100% { opacity: .55; transform: translateY(1px) scale(.96); } 50% { opacity: 1; transform: translateY(-1px) scale(1.04); } }
+.unit[data-hero="minion"] { filter: saturate(.78); }
+.unit-pose-undead-revive .hero-figure-wrap { animation: undeadReviveBody .7s ease-out; }
+.unit-pose-undead-revive .hero-aura { animation: undeadReviveAura .7s ease-out; }
+.unit-pose-undead-army .hero-figure-wrap { animation: undeadArmyBody .9s ease-out; }
+.unit-pose-undead-army .hero-aura { animation: undeadArmyAura .9s ease-out; }
+@keyframes undeadReviveBody { 0% { transform: translateY(5px) scale(.94); opacity: .6; } 50% { transform: translateY(-3px) scale(1.03); } 100% { transform: translateY(0) scale(1); opacity: 1; } }
+@keyframes undeadReviveAura { 0%,100% { opacity: .55; } 50% { opacity: 1; transform: scale(1.16); } }
+@keyframes undeadArmyBody { 0% { transform: translateY(3px) scale(.96); } 45% { transform: translateY(-2px) scale(1.05); } 100% { transform: translateY(0) scale(1); } }
+@keyframes undeadArmyAura { 0%,100% { opacity: .6; } 45% { opacity: 1; transform: scale(1.2); } }
+
 /* 镜影：镜像占位体 / 换位面板 / 姿态 */
 .cell.mirror-cell { overflow: visible; }
 .mirror-token {

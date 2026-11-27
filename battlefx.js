@@ -45,7 +45,7 @@
     assassin: "#22d3ee", warlock: "#a5f3fc", cleric: "#86efac", guardian: "#93c5fd",
     asura: "#e2e8f0", lone: "#facc15", cang: "#38bdf8", longren: "#fbbf24",
     thunder: "#c084fc", vampire: "#e11d48", jade: "#a78bfa", xiangyu: "#f87171",
-    tiandao: "#c084fc", huamulan: "#f43f5e", hillking: "#a8a29e", raven: "#8b5cf6", metal: "#fbbf24", cicada: "#fcd34d", eagle: "#a78bfa", susanoo: "#7c3aed", yangjian: "#fbbf24", thiefgod: "#fbbf24", mirror: "#c4b5fd",
+    tiandao: "#c084fc", huamulan: "#f43f5e", hillking: "#a8a29e", raven: "#8b5cf6", metal: "#fbbf24", cicada: "#fcd34d", eagle: "#a78bfa", susanoo: "#7c3aed", yangjian: "#fbbf24", thiefgod: "#fbbf24", mirror: "#c4b5fd", undead: "#a3e635", minion: "#a3e635",
   };
   function heroColor(id) { return HERO_COLOR[id] || "#93c5fd"; }
 
@@ -1167,6 +1167,32 @@
           addMark("impact", tg.r, tg.c, "#fbbf24", 10000);
           addMark("cut", tg.r, tg.c, "#bfdbfe", 9000);
         }
+        break;
+      }
+      case "deathCross": {
+        push({ kind: "rune", x, y, r: geo.cell * 0.55, color: "#a3e635", sides: 4, dur: dur(760) });
+        push({ kind: "ring", x, y, r0: geo.cell * 0.15, r1: geo.cell * 0.75, color: "#c084fc", width: 3, dur: dur(620) });
+        spawn(x, y, 18, { color: "#a3e635", speed: 1.2, life: 760, size: 2, angle: -Math.PI / 2, spread: 0.8, grav: -0.015 });
+        push({ kind: "text", x, y: y - geo.cell * 0.42, text: "死亡十字架", color: "#d9f99d", size: 12, dur: dur(760), rise: 14 });
+        break;
+      }
+      case "soulRevive": {
+        push({ kind: "beam", x, y, x2: x, y2: y - geo.cell * 3, color: "#c084fc", width: 12, dur: dur(620) });
+        push({ kind: "beam", x, y, x2: x, y2: y - geo.cell * 3, color: "#d9f99d", width: 4, dur: dur(580), delay: dur(60) });
+        push({ kind: "ring", x, y, r0: 5, r1: geo.cell * 1.1, color: "#a3e635", width: 3, dur: dur(620) });
+        push({ kind: "text", x, y: y - geo.cell * 0.7, text: "亡语复苏", color: "#d9f99d", size: 14, dur: dur(900), rise: 20 });
+        spawn(x, y, 26, { color: "#c084fc", speed: 1.6, life: 760, size: 2, angle: -Math.PI / 2, spread: 0.7, grav: -0.02 });
+        break;
+      }
+      case "undeadArmy": {
+        push({ kind: "rune", x, y, r: geo.cell * 2.6, color: "#a3e635", sides: 8, dur: dur(900) });
+        push({ kind: "ring", x, y, r0: geo.cell * 0.3, r1: geo.cell * 4.0, color: "#c084fc", width: 5, dur: dur(780) });
+        push({ kind: "wave", x, y, r1: geo.cell * 4.3, color: "#a3e635", dur: dur(820), delay: dur(80) });
+        for (let i = 0; i < Math.min(8, m.count || 1); i++) {
+          const a = (i / Math.max(1, m.count || 1)) * Math.PI * 2;
+          push({ kind: "ghost", x: x + Math.cos(a) * geo.cell * 0.8, y: y + Math.sin(a) * geo.cell * 0.8, r: geo.cell * 0.24, color: "#a3e635", dur: dur(620), delay: dur(i * 45) });
+        }
+        push({ kind: "text", x, y: y - geo.cell * 0.8, text: "亡灵军团", color: "#d9f99d", size: 16, dur: dur(1000), rise: 24 });
         break;
       }
       case "mirrorSummon": {

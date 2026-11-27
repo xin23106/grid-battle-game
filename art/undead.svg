@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="640" viewBox="0 0 480 640">
+  <defs>
+    <radialGradient id="aura" cx="50%" cy="46%" r="56%">
+      <stop offset="0" stop-color="#a3e635" stop-opacity=".4"/>
+      <stop offset=".42" stop-color="#7c3aed" stop-opacity=".25"/>
+      <stop offset="1" stop-color="#020617" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="robe" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#312e81"/>
+      <stop offset=".45" stop-color="#111827"/>
+      <stop offset="1" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="bone" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f5f3ff"/>
+      <stop offset=".55" stop-color="#d9f99d"/>
+      <stop offset="1" stop-color="#a3e635"/>
+    </linearGradient>
+    <linearGradient id="purple" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#c4b5fd"/>
+      <stop offset=".55" stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#312e81"/>
+    </linearGradient>
+    <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d6d3d1"/>
+      <stop offset="1" stop-color="#78716c"/>
+    </linearGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="12"/></filter>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="8" stdDeviation="7" flood-color="#020617" flood-opacity=".7"/></filter>
+  </defs>
+
+  <ellipse cx="240" cy="350" rx="208" ry="226" fill="url(#aura)" filter="url(#soft)"/>
+  <ellipse cx="240" cy="596" rx="140" ry="18" fill="#020617" opacity=".65" filter="url(#soft)"/>
+
+  <!-- soul flames / crosses -->
+  <g opacity=".8" filter="url(#glow)" fill="none" stroke="#a3e635" stroke-width="2">
+    <path d="M78 160 L78 218 M58 178 H98"/>
+    <path d="M396 142 L396 204 M376 162 H416"/>
+    <path d="M82 434 L82 482 M66 450 H98"/>
+    <path d="M398 416 L398 468 M380 434 H416"/>
+  </g>
+  <g fill="#d9f99d" filter="url(#glow)">
+    <circle cx="78" cy="155" r="2.5"/><circle cx="396" cy="137" r="2.5"/><circle cx="82" cy="428" r="2"/><circle cx="398" cy="410" r="2"/>
+  </g>
+
+  <!-- cape -->
+  <path d="M156 250 C101 310 92 444 112 558 C152 576 328 576 368 558 C388 444 378 310 324 250 C286 272 194 272 156 250 Z" fill="url(#robe)" stroke="#111827" stroke-width="4"/>
+  <path d="M166 264 C126 326 118 460 132 546" stroke="#7c3aed" stroke-width="4" opacity=".75" fill="none"/>
+  <path d="M314 264 C354 326 362 460 348 546" stroke="#a3e635" stroke-width="3" opacity=".7" fill="none"/>
+
+  <!-- legs -->
+  <path d="M194 440 C186 488 188 534 196 578 L232 578 C228 528 226 480 234 442 Z" fill="#111827" stroke="#4c1d95" stroke-width="3"/>
+  <path d="M246 442 C254 486 252 532 260 578 L296 578 C302 532 302 486 286 440 Z" fill="#1e1b4b" stroke="#4c1d95" stroke-width="3"/>
+  <path d="M190 574 L234 574 L238 598 L180 598 Q176 584 190 574 Z" fill="#020617" stroke="#a3e635" stroke-width="3"/>
+  <path d="M256 574 L300 574 L314 598 L252 598 Q244 584 256 574 Z" fill="#020617" stroke="#a3e635" stroke-width="3"/>
+
+  <!-- robe / skirt -->
+  <path d="M176 386 Q240 362 304 386 L316 456 Q240 488 164 456 Z" fill="#111827" stroke="#4c1d95" stroke-width="3"/>
+  <path d="M174 386 Q240 412 306 386" stroke="url(#bone)" stroke-width="6" fill="none"/>
+  <path d="M206 430 L240 470 L274 430" stroke="#7c3aed" stroke-width="4" fill="none" opacity=".9"/>
+  <path d="M196 510 L206 550 M240 512 L240 556 M284 510 L274 550" stroke="#a3e635" stroke-width="2" opacity=".65"/>
+
+  <!-- torso / ribcage -->
+  <path d="M174 270 Q204 238 240 232 Q276 238 306 270 L298 382 Q240 414 182 382 Z" fill="#111827" stroke="#7c3aed" stroke-width="4" filter="url(#shadow)"/>
+  <path d="M188 282 Q240 254 292 282 L287 334 Q240 354 193 334 Z" fill="#1e1b4b" stroke="#a3e635" stroke-width="2"/>
+  <path d="M192 348 Q240 374 288 348" stroke="url(#bone)" stroke-width="5" fill="none"/>
+  <path d="M206 296 Q240 322 274 296 Q268 340 240 348 Q212 340 206 296 Z" fill="#312e81" stroke="#c4b5fd" stroke-width="3"/>
+  <path d="M240 295 L250 317 L274 320 L255 337 L261 360 L240 347 L219 360 L225 337 L206 320 L230 317 Z" fill="#a3e635" filter="url(#glow)"/>
+
+  <!-- shoulders / arms -->
+  <path d="M160 270 Q184 238 216 254 L208 298 Q180 304 158 292 Z" fill="#111827" stroke="#7c3aed" stroke-width="3"/>
+  <path d="M320 270 Q296 238 264 254 L272 298 Q300 304 322 292 Z" fill="#111827" stroke="#7c3aed" stroke-width="3"/>
+  <path d="M164 276 Q184 258 207 266" stroke="#a3e635" stroke-width="4" fill="none"/>
+  <path d="M316 276 Q296 258 273 266" stroke="#a3e635" stroke-width="4" fill="none"/>
+  <path d="M162 292 Q142 342 157 394 L188 386 Q176 342 184 302 Z" fill="#1e1b4b" stroke="#6d28d9" stroke-width="3"/>
+  <path d="M318 292 Q338 342 323 394 L292 386 Q304 342 296 302 Z" fill="#1e1b4b" stroke="#6d28d9" stroke-width="3"/>
+  <path d="M151 386 Q160 414 182 419 Q193 407 184 390 Z" fill="url(#skin)" stroke="#57534e" stroke-width="2"/>
+  <path d="M329 386 Q320 414 298 419 Q287 407 296 390 Z" fill="url(#skin)" stroke="#57534e" stroke-width="2"/>
+
+  <!-- staff / skull -->
+  <g filter="url(#glow)">
+    <path d="M154 200 L154 520" stroke="#7c3aed" stroke-width="7" stroke-linecap="round"/>
+    <path d="M154 200 L154 520" stroke="#d9f99d" stroke-width="2" stroke-linecap="round"/>
+    <path d="M132 180 Q132 150 154 144 Q176 150 176 180 L170 204 Q154 214 138 204 Z" fill="url(#bone)" stroke="#f5f3ff" stroke-width="2"/>
+    <ellipse cx="144" cy="172" rx="4" ry="3" fill="#111827"/><ellipse cx="164" cy="172" rx="4" ry="3" fill="#111827"/>
+    <path d="M148 194 Q154 200 160 194" stroke="#111827" stroke-width="2" fill="none"/>
+    <circle cx="154" cy="154" r="4" fill="#a3e635"/>
+  </g>
+
+  <!-- head / hood -->
+  <path d="M196 174 Q194 120 240 112 Q286 120 284 174 L272 214 Q240 232 208 214 Z" fill="url(#skin)" stroke="#57534e" stroke-width="3"/>
+  <path d="M192 176 Q190 104 240 98 Q294 104 289 176 Q272 148 240 146 Q213 146 192 176 Z" fill="#111827" stroke="#4c1d95" stroke-width="3"/>
+  <path d="M198 160 Q214 132 240 132 Q270 132 285 160 Q270 148 240 148 Q210 148 198 160 Z" fill="#1e1b4b" opacity=".95"/>
+  <path d="M202 192 Q214 202 226 194 M254 194 Q266 202 278 192" stroke="#a3e635" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <ellipse cx="220" cy="181" rx="4" ry="2.6" fill="#a3e635"/><ellipse cx="260" cy="181" rx="4" ry="2.6" fill="#a3e635"/>
+  <path d="M231 207 Q240 213 249 207" stroke="#9f1239" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M214 218 Q240 232 266 218" stroke="#c4b5fd" stroke-width="2"/>
+
+  <!-- crown of bone -->
+  <path d="M204 140 L216 108 L228 132 L240 96 L252 132 L264 108 L276 140 L260 148 Q240 134 220 148 Z" fill="url(#bone)" stroke="#f5f3ff" stroke-width="2"/>
+  <path d="M240 100 L246 116 L262 120 L250 132 L254 150 L240 140 L226 150 L230 132 L218 120 L234 116 Z" fill="#d9f99d" opacity=".9"/>
+
+  <!-- soul motes -->
+  <g fill="#a3e635" filter="url(#glow)">
+    <circle cx="326" cy="310" r="2.6"/><circle cx="350" cy="350" r="1.8"/><circle cx="324" cy="382" r="2.2"/>
+    <circle cx="142" cy="326" r="2"/><circle cx="124" cy="364" r="1.7"/><circle cx="360" cy="268" r="1.6"/>
+  </g>
+  <g fill="none" stroke="#c4b5fd" stroke-width="1.2" opacity=".65">
+    <path d="M326 382 Q342 354 360 348 M350 350 Q350 380 324 382"/>
+  </g>
+</svg>

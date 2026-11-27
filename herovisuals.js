@@ -32,6 +32,8 @@
     yangjian:  { c1:"#fbbf24", c2:"#92400e", c3:"#fef3c7", weapon:"trident", aura:"royal", build:"armored", head:"halo", acc:"cape", sigil:"eye", thirdEye:true, dur:360, tilt:4 },
     thiefgod: { c1:"#fbbf24", c2:"#0b1020", c3:"#f5d0fe", weapon:"scepter", aura:"thief", build:"robed", head:"crown", acc:"cape", sigil:"eye", dur:330, tilt:3 },
     mirror:    { c1:"#c4b5fd", c2:"#312e81", c3:"#f5f3ff", weapon:"orb", aura:"void", build:"robed", head:"mask", acc:"cape", sigil:"diamond", dur:300, tilt:3 },
+    undead:    { c1:"#a3e635", c2:"#1e1b4b", c3:"#e9d5ff", weapon:"staff", aura:"void", build:"robed", head:"hood", acc:"cape", sigil:"drop", dur:360, tilt:3 },
+    minion:    { c1:"#a3e635", c2:"#1f2937", c3:"#d9f99d", weapon:"claw", aura:"void", build:"lean", head:"mask", acc:"none", sigil:"diamond", dur:300, tilt:4 },
   };
   const DEFAULT = { c1:"#93c5fd", c2:"#334155", c3:"#e2e8f0", weapon:"sword", aura:"default", build:"lean", head:"hood", acc:"none", sigil:"diamond", dur:340, tilt:4 };
 
@@ -209,7 +211,7 @@
 
   /* 技能身体姿态分类：同一技能类型在不同英雄身上仍有专属配色/武器 */
   const POSE_BY_TYPE = {
-    damage_single:"channel", freeze:"channel", damage_line:"ranged", skyarrow:"ranged", meteor:"channel", steal:"pull", soulsteal:"area", mirrorclone:"summon", mirrorshift:"teleport", damage_adjacent_all:"area",
+    damage_single:"channel", freeze:"channel", damage_line:"ranged", skyarrow:"ranged", meteor:"channel", steal:"pull", soulsteal:"area", mirrorclone:"summon", mirrorshift:"teleport", soulrevive:"heal", undeadarmy:"summon", damage_adjacent_all:"area",
     heal:"heal", shield_self:"defense", shield_ally:"defense", blink:"teleport", dash:"dash",
     duanlang:"dash", shuidiao:"dash", dragonbreath:"area", thunder:"area", chase:"dash",
     bloodburst:"area", ziwei:"teleport", exile:"channel", tianwei:"area", shenluo:"area",
@@ -258,6 +260,8 @@
       "thiefgod:soulsteal": "thiefgod-soulsteal",
       "mirror:mirrorclone": "mirror-clone",
       "mirror:mirrorshift": "mirror-shift",
+      "undead:soulrevive": "undead-revive",
+      "undead:undeadarmy": "undead-army",
     };
     const key = heroId + ":" + type + (type === "thunderblade" ? ":" + (stage || 0) : "");
     if (special[key]) return special[key];
@@ -282,7 +286,11 @@
   function skillIcon(type) {
     const t = type || "";
     let inner = "";
-    if (/mirrorclone/.test(t)) {
+    if (/soulrevive/.test(t)) {
+      inner = '<path d="M12 3 V21 M6 8 H18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M12 3 Q18 6 18 12 Q18 18 12 21 Q6 18 6 12 Q6 6 12 3 Z" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".7"/>';
+    } else if (/undeadarmy/.test(t)) {
+      inner = '<path d="M5 21 V9 L12 3 L19 9 V21" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 21 V12 H16 V21 M10 15 H14" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 7 L7 10 M20 7 L17 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>';
+    } else if (/mirrorclone/.test(t)) {
       inner = '<rect x="7" y="4" width="10" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9 7 L14 7 L14 15 L9 15 Z" fill="currentColor" opacity=".8"/><path d="M4 20 L20 20 M6 18 L18 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>';
     } else if (/mirrorshift/.test(t)) {
       inner = '<path d="M4 12 H20 M12 4 V20" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M7 7 L17 17 M17 7 L7 17" stroke="currentColor" stroke-width="1.2" opacity=".8"/><rect x="7" y="7" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>';
@@ -327,6 +335,7 @@
     ranger: { portrait: "art/ranger-portrait.webp?v=2", board: "art/ranger-board.webp?v=2", avatar: "art/ranger-avatar.webp?v=2", icon: "art/ranger-icon.webp?v=2", silhouette: "art/ranger-silhouette.webp?v=2" },
     thiefgod: { portrait: "art/thiefgod-portrait.webp", board: "art/thiefgod-board.webp", avatar: "art/thiefgod-avatar.webp", icon: "art/thiefgod-icon.webp", silhouette: "art/thiefgod-silhouette.webp" },
     mirror: { portrait: "art/mirror-portrait.webp?v=2", board: "art/mirror-board.webp?v=2", avatar: "art/mirror-avatar.webp?v=2", icon: "art/mirror-icon.webp?v=2", silhouette: "art/mirror-silhouette.webp?v=2" },
+    undead: { portrait: "art/undead-portrait.webp", board: "art/undead-board.webp", avatar: "art/undead-avatar.webp", icon: "art/undead-icon.webp", silhouette: "art/undead-silhouette.webp" },
   };
   function portraitHTML(id, extraClass) {
     const art = HERO_ART[id];

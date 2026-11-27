@@ -87,6 +87,8 @@
     tiandao:   { wave: "sine",     base: 165, air: 1200, metal: 0.30, wet: 0.8, pan: 0.05 },
     thiefgod:  { wave: "sawtooth", base: 180, air: 3600, metal: 0.35, wet: 0.55, pan: 0.0 },
     mirror:    { wave: "sine",     base: 980, air: 6200, metal: 0.10, wet: 0.2, pan: 0.04 },
+    undead:    { wave: "sawtooth", base: 140, air: 1600, metal: 0.30, wet: 0.8, pan: -0.02 },
+    minion:    { wave: "square",   base: 320, air: 1800, metal: 0.20, wet: 0.6, pan: 0.0 },
     __default: { wave: "triangle", base: 600, air: 2400, metal: 0.25, wet: 0.3, pan: 0 },
   };
   function H(id) { return HERO[id] || HERO.__default; }
@@ -567,6 +569,16 @@
         T(L, { at: 0.01, dur: 0.5, wave: "sine", f0: 784, peak: 0.035 });
         N(L, { at: 0.08, dur: 0.55, lp: 900, lpTo: 260, peak: 0.08 });
         break;
+      case "soulrevive": // 亡灵之主·亡语：灵魂上行 + 复活钟
+        T(L, { at: 0, dur: 0.65, wave: "sine", f0: 220, f1: 880, peak: 0.07 });
+        M(L, { at: 0.08, base: 1200, dur: 0.5, peak: 0.06, partials: [1, 2.1, 4.3] });
+        N(L, { at: 0.18, dur: 0.55, bp: 2600, q: 1.2, sweepTo: 5200, peak: 0.08 });
+        break;
+      case "undeadarmy": // 亡灵之主·亡灵军团：低频墓土 + 亡灵起身
+        HP(L, { at: 0, dur: 0.65, f0: 100, f1: 32, peak: 0.35 });
+        N(L, { at: 0.05, dur: 0.65, lp: 800, lpTo: 220, peak: 0.16 });
+        [0, 3, 7].forEach((q, i) => T(L, { at: 0.22 + i * 0.1, dur: 0.45, wave: "sawtooth", f0: 196 * Math.pow(2, q / 12), peak: 0.045 }));
+        break;
       case "mirrorclone": // 镜影·镜像分身：玻璃成形 + 分身钟音
         S(L, { at: 0, f0: 620, f1: 1800, dur: 0.35, peak: 0.055, wave: "sine" });
         M(L, { at: 0.04, base: 2600, dur: 0.35, peak: 0.06, partials: [1, 2.2, 3.8] });
@@ -885,6 +897,19 @@
       case "buffUp": recipeBuffUp(h, o, L); break;
       case "buffDown": recipeBuffDown(h, o, L); break;
       case "grab": recipeGrab(h, o, L); break;
+      case "deathCross": // 死亡十字架浮现
+        M(L, { at: 0, base: 260, dur: 0.5, peak: 0.08, partials: [1, 2.3, 4.7] });
+        N(L, { at: 0.04, dur: 0.55, lp: 900, lpTo: 300, peak: 0.08 });
+        T(L, { at: 0.12, dur: 0.4, wave: "sine", f0: 196, f1: 147, peak: 0.04 });
+        break;
+      case "soulRevive": // 亡语复活
+        T(L, { at: 0, dur: 0.6, wave: "sine", f0: 220, f1: 880, peak: 0.07 });
+        M(L, { at: 0.08, base: 1200, dur: 0.5, peak: 0.05, partials: [1, 2.2, 4] });
+        break;
+      case "undeadArmy": // 亡灵军团爆发
+        HP(L, { at: 0, dur: 0.65, f0: 95, f1: 32, peak: 0.38 });
+        N(L, { at: 0.03, dur: 0.6, lp: 800, lpTo: 200, peak: 0.16 });
+        break;
       case "mirrorSummon": // 镜像成形
         M(L, { at: 0, base: 2400, dur: 0.4, peak: 0.07, partials: [1, 2.4, 4.1] });
         N(L, { at: 0.03, dur: 0.32, bp: 6400, q: 1.5, sweepTo: 1600, peak: 0.06 });

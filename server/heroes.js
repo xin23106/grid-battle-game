@@ -105,4 +105,10 @@ module.exports = [
     extraSkills: [
       { name: "镜面折射", type: "mirrorshift", uses: 1, free: true },
     ] },
+  { id: "undead", name: "亡灵之主", hp: 6, sfx: "undead",
+    passive: { name: "死亡十字架" },
+    skill: { name: "亡语", type: "soulrevive", uses: 1, free: true },
+    extraSkills: [
+      { name: "亡灵军团", type: "undeadarmy", uses: 1, free: false },
+    ] },
 ];

@@ -89,6 +89,12 @@ let mists = {};                    // "r_c" -> { turns, fresh, owner } 毒雾地
 let blackFlames = {};              // "r_c" -> { turns, fresh, owner } 须佐·黑炎地形（不阻挡移动）
 let meteors = [];                  // 天穹射手·天罚：尚未落下的陨星 [{id,r,c,owner,turns,damage,radius,...}]
 let meteorSeq = 0;                 // 本地陨星事件序号
+let crosses = [];                  // 亡灵之主·死亡十字架 [{id,r,c,player,heroId,deadUid}]
+let crossSeq = 0;
+const SUMMON_DEFS = {
+  minion: { id: "minion", name: "小亡灵", icon: "💀", hp: 2, tag: "亡灵召唤物", sfx: "undead",
+    desc: "亡灵军团召唤物：2 点生命，普通攻击 1 点；可以移动、攻击、参与夹击，不能使用技能，死亡后直接移除且不再留下十字架。", skill: null },
+};
 /* ---- 纯表现层：逻辑坐标与视觉坐标分离 ---- */
 let visualPositions = new Map();   // uid -> { pos:{r,c}, snap:单位快照 }
 let moveQueues = new Map();        // uid -> 排队中的移动 [{from,to,snap,heroId,player}]
@@ -177,7 +183,7 @@ function unitAt(r, c) {
   return cell && !cell.pillar ? cell : null; // 石柱不是单位，不可被选中/攻击
 }
 function heroDef(id) {
-  return getHeroById(id);
+  return getHeroById(id) || SUMMON_DEFS[id] || null;
 }
 function label(u) {
   if (!u) return "空格";
@@ -1129,7 +1135,7 @@ function pushHistory() {
       board, phase, currentPlayer, winner, unitSeq, toPlace, placedIds,
       talisman, talismanUsed, talismanBuff, extraMoves, graveyard, reviveOptions,
       logs, turnActionUsed, turnActionsLeft, turnActionsMax, turnActorUid,
-      empowerTurnActive, mists, blackFlames, meteors, meteorSeq, pendingHero, wildcards, localPools,
+      empowerTurnActive, mists, blackFlames, meteors, meteorSeq, crosses, crossSeq, pendingHero, wildcards, localPools,
       wildcardMode, pendingWildcard, onlineWildcards, turnSerial, matchStats,
     }));
     if (history.length > 40) history.shift();
@@ -1159,6 +1165,8 @@ function applyHistorySnapshot(s) {
   blackFlames = s.blackFlames || {};
   meteors = Array.isArray(s.meteors) ? JSON.parse(JSON.stringify(s.meteors)) : [];
   meteorSeq = s.meteorSeq || meteors.reduce((mx, m) => Math.max(mx, m.id || 0), 0);
+  crosses = Array.isArray(s.crosses) ? JSON.parse(JSON.stringify(s.crosses)) : [];
+  crossSeq = s.crossSeq || crosses.reduce((mx, x) => Math.max(mx, x.id || 0), 0);
   pendingHero = s.pendingHero || null;
   wildcards = s.wildcards || { 1: 0, 2: 0 };
   localPools = s.localPools || { 1: [], 2: [] };
@@ -1248,6 +1256,8 @@ function init() {
   blackFlames = {};
   meteors = [];
   meteorSeq = 0;
+  crosses = [];
+  crossSeq = 0;
   // 对局统计 & 结算演出：重置
   matchStats = { damage: { 1: 0, 2: 0 }, kills: { 1: 0, 2: 0 }, startedAt: Date.now(), endedAt: 0, lastKiller: null };
   clearVictoryTimers();
@@ -1552,6 +1562,7 @@ function checkVictory() {
     mists = {};
     blackFlames = {};
     meteors = [];
+    crosses = [];
     for (const u of unitsOf(1).concat(unitsOf(2))) { clearRavenStealth(u); resetThunderblade(u); resetCrowForm(u); }
     // 对局结束：清理临时石柱及其计时状态
     for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (isPillar(board[r][c]) || isMirror(board[r][c])) board[r][c] = null;
@@ -1848,6 +1859,66 @@ function mirrorViewUnit(u) {
     swords: 0,
   });
 }
+/* 亡灵之主·死亡十字架：不占格的死亡印记 */
+function crossesAt(r, c) {
+  return crosses.filter((x) => x.r === r && x.c === c);
+}
+function addDeathCross(target, pos) {
+  if (!target || !pos || target.isMinion || target.mirror) return null;
+  const m = {
+    id: ++crossSeq,
+    r: pos.r, c: pos.c,
+    player: target.player,
+    heroId: target.heroId,
+    deadUid: target.uid,
+  };
+  crosses.push(m);
+  return m;
+}
+function removeCrossesForDead(deadUid) {
+  if (!deadUid) return;
+  crosses = crosses.filter((x) => x.deadUid !== deadUid);
+}
+function removeCross(id) {
+  crosses = crosses.filter((x) => x.id !== id);
+}
+/* 亡灵军团落点：优先十字架原格，其次最近空格；避开已有单位/镜像/石柱/剑刃 */
+function reviveAllyFromGrave(rec, tr, tc, hp) {
+  if (!rec) return null;
+  const def = heroDef(rec.heroId);
+  if (!def) return null;
+  const snap = rec.snapshot ? JSON.parse(JSON.stringify(rec.snapshot)) : null;
+  const revived = snap ? Object.assign({}, snap, { uid: unitSeq++, heroId: def.id, player: rec.player, hp: Math.min(hp, def.hp), maxHp: def.hp })
+    : { uid: unitSeq++, heroId: def.id, player: rec.player, hp: Math.min(hp, def.hp), maxHp: def.hp,
+        shield: 0, shieldLayers: [], frozen: 0, swords: rec.swords || 0, usesLeft: rec.usesLeft || 0,
+        usesArr: rec.usesArr && rec.usesArr.length ? rec.usesArr.slice() : undefined, statuses: {},
+        lockUsed: !!rec.lockUsed, guixiongUsed: !!rec.guixiongUsed, sdStage: 0, dragonMoves: 0, empowerTurns: 0,
+        chaseStage: 0, chaseMark: 0, wxtStage: 0, stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false,
+        metalBuff: false, metalTide: 0, meditate: null, facing: rec.player === 1 ? [0, 1] : [0, -1], rbStage: 0, rbBlade: null,
+        rbDir: null, crowForm: null, copiedSkill: null, copiedUses: 0, copiedFrom: null };
+  if (!revived.statuses) revived.statuses = {};
+  revived.rbStage = 0; revived.rbBlade = null; revived.rbDir = null; revived.crowForm = null;
+  removeCrossesForDead(rec.deadUid || (rec.snapshot && rec.snapshot.uid));
+  board[tr][tc] = revived;
+  graveyard = graveyard.filter((g) => g !== rec);
+  addLog("💜 亡语：" + label(revived) + " 在 (" + (tr + 1) + "," + (tc + 1) + ") 复活（" + revived.hp + " 点生命）。");
+  if (window.BFX) window.BFX.cast({ type: "soulRevive", heroId: "undead", caster: { r: tr, c: tc } });
+  if (window.SFX) window.SFX.play("revive", { hero: def.id });
+  return revived;
+}
+function undeadSpawnCell(cross, reserved) {
+  if (!cross) return null;
+  const ok = (r, c) => inBounds(r, c) && !board[r][c] && !reserved.has(r + "_" + c);
+  if (ok(cross.r, cross.c)) return { r: cross.r, c: cross.c };
+  let best = null;
+  for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+    if (!ok(r, c)) continue;
+    const d = Math.abs(r - cross.r) + Math.abs(c - cross.c);
+    if (!best || d < best.d || (d === best.d && (r < best.r || (r === best.r && c < best.c)))) best = { r, c, d };
+  }
+  return best ? { r: best.r, c: best.c } : null;
+}
+
 /* 曼哈顿距离内的所有格子（includeSelf 决定是否含自身格） */
 function cellsWithin(r, c, range, includeSelf) {
   const res = [];
@@ -1932,6 +2003,20 @@ function computeSkillTargets() {
       // 天罚：全棋盘任意合法落点（含石柱 / 地形所在格；爆炸按九宫格结算）
       for (let rr = 0; rr < SIZE; rr++) for (let cc = 0; cc < SIZE; cc++) skillTargets.push([rr, cc]);
       break;
+
+    case "soulrevive": {
+      for (const g of graveyard) {
+        if (g.player !== u.player) continue;
+        const cell = reviveCellFor(g);
+        if (cell) skillTargets.push([cell.r, cell.c]);
+      }
+      break;
+    }
+
+    case "undeadarmy": {
+      if (crosses.length) skillTargets.push([r, c]);
+      break;
+    }
 
     case "mirrorclone": {
       for (const [rr, cc] of mirrorSummonCells(u, r, c)) skillTargets.push([rr, cc]);
@@ -2488,6 +2573,18 @@ function moveHero(r, c) {
 /* 单位阵亡统一处理（伤害 / 生命代价共用）：记录、移除、音画、锻剑、击杀刷新、战绩 */
 function handleUnitDeath(target, source, pos) {
   if (!target || !pos) return;
+  // 小亡灵：独立召唤物，死亡直接移除，不进入墓地、不留十字架/剑刃
+  if (target.isMinion) {
+    board[pos.r][pos.c] = null;
+    addLog("💀 " + label(target) + " 消散（小亡灵死亡不再留下十字架）。");
+    if (window.SFX) window.SFX.play("death", { hero: "minion" });
+    if (window.BFX) window.BFX.death({ r: pos.r, c: pos.c, color: "#a78bfa" });
+    if (source && !source.sword && source.player !== target.player) {
+      matchStats.kills[source.player] = (matchStats.kills[source.player] || 0) + 1;
+      matchStats.lastKiller = { player: source.player, heroId: source.heroId };
+    }
+    return;
+  }
   // 鹰佐：阵亡立即终止雷鸣刀连招并移除雷刀标记（复活快照不保留残留连招）
   resetThunderblade(target);
   // 须佐：阵亡立即清除鸦天狗形态
@@ -2502,6 +2599,7 @@ function handleUnitDeath(target, source, pos) {
     name: heroDef(target.heroId).name,
     r: pos.r,
     c: pos.c,
+    deadUid: target.uid,
     usesLeft: target.usesLeft || 0,
     usesArr: target.usesArr ? target.usesArr.slice() : null,
     swords: target.swords || 0,
@@ -2511,6 +2609,13 @@ function handleUnitDeath(target, source, pos) {
   });
   board[pos.r][pos.c] = null;
   addLog(label(target) + " 阵亡！");
+  const cr = addDeathCross(target, pos);
+  if (cr) {
+    addLog("💀 " + label(target) + " 的阵亡处留下了死亡十字架。");
+    if (window.BFX) {
+      try { window.BFX.cast({ type: "deathCross", heroId: "undead", caster: pos }); } catch (e) { /* ignore */ }
+    }
+  }
   if (window.SFX) window.SFX.play("death", { hero: target.heroId });
   if (window.SFX && target.heroId === "thunder") window.SFX.stopLoop("empower");
   if (window.BFX) window.BFX.death({ r: pos.r, c: pos.c, color: window.BFX.heroColor(target.heroId) });
@@ -2889,6 +2994,8 @@ function screenTierFor(a, s) {
   if (s.type === "susano_arrow" || s.type === "susano_crow" || s.type === "meditate" || s.type === "qiankun") return 3;
   if (s.type === "meteor") return 1; // 预警阶段不闪光；真正坠落时由 BFX.meteorImpact 播放 3 级
   if (s.type === "soulsteal") return 3;
+  if (s.type === "undeadarmy") return 3;
+  if (s.type === "soulrevive") return 1;
   if (s.type === "steal") return 2;
   if (s.type === "wxt") return (a.wxtStage || 0) >= 2 ? 3 : 2;
   if (/^(thunder|shenluo|bloodburst|charge|tianwei|raikiri|dragonbreath|metaltide)$/.test(s.type)) return 3;
@@ -3989,6 +4096,58 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
         try { window.BFX.cast({ type: "meteor", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc }, cells }); } catch (e) { /* 表现层失败不影响规则 */ }
       }
       fx.push({ r: tr, c: tc, text: "天罚", kind: "skill" });
+      break;
+    }
+
+    case "soulrevive": {
+      const rec = graveyard.find((g) => {
+        if (g.player !== a.player) return false;
+        const cell = reviveCellFor(g);
+        return cell && cell.r === tr && cell.c === tc;
+      });
+      if (!rec) {
+        addLog("亡语：该位置没有可复活的己方阵亡英雄（不消耗次数）。");
+        render();
+        return;
+      }
+      if (!inBounds(tr, tc) || board[tr][tc]) {
+        addLog("亡语：复活位置已被占用（不消耗次数）。");
+        render();
+        return;
+      }
+      reviveAllyFromGrave(rec, tr, tc, 2);
+      break;
+    }
+
+    case "undeadarmy": {
+      if (!crosses.length) {
+        addLog("亡灵军团：场上没有死亡十字架（不消耗次数）。");
+        render();
+        return;
+      }
+      const list = crosses.slice();
+      const reserved = new Set();
+      let spawned = 0;
+      for (const cr of list) {
+        const cell = undeadSpawnCell(cr, reserved);
+        if (!cell) continue;
+        const m = {
+          uid: unitSeq++, heroId: "minion", isMinion: true, player: a.player,
+          hp: 2, maxHp: 2, shield: 0, shieldLayers: [], frozen: 0, swords: 0, statuses: {},
+          usesLeft: 0, usesArr: [], facing: a.player === 1 ? [0, 1] : [0, -1],
+          lockUsed: false, guixiongUsed: false, sdStage: 0, dragonMoves: 0, empowerTurns: 0, chaseStage: 0,
+          chaseMark: 0, wxtStage: 0, stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false,
+          metalBuff: false, metalTide: 0, meditate: null, rbStage: 0, rbBlade: null, rbDir: null, crowForm: null,
+          copiedSkill: null, copiedUses: 0, copiedFrom: null,
+        };
+        board[cell.r][cell.c] = m;
+        reserved.add(cell.r + "_" + cell.c);
+        removeCross(cr.id);
+        spawned++;
+      }
+      addLog("💀 " + label(a) + " 释放【亡灵军团】：" + spawned + " 个死亡十字架转化为小亡灵。");
+      if (window.BFX) window.BFX.cast({ type: "undeadArmy", heroId: "undead", caster: { r, c }, count: spawned });
+      if (window.SFX) window.SFX.play("undeadArmy", { hero: "undead" });
       break;
     }
 
@@ -5597,6 +5756,7 @@ function useTalismanEffect(id, tr, tc) {
       }
       if (!rec) { addLog("该位置没有可复活的己方阵亡英雄。"); ok = false; break; }
       if (!inBounds(tr, tc) || board[tr][tc]) { addLog("该位置已被占用，无法复活。"); ok = false; break; }
+      removeCrossesForDead(rec.deadUid || (rec.snapshot && rec.snapshot.uid));
       const def = heroDef(rec.heroId);
       // 复活 = 恢复阵亡瞬间的全部状态，仅生命值变为 3
       const snap = rec.snapshot ? JSON.parse(JSON.stringify(rec.snapshot)) : null;
@@ -6360,6 +6520,16 @@ function render() {
       if (bf) {
         cell.classList.add("blackflame-cell");
         cell.appendChild(buildBlackFlameObj(bf));
+      }
+      // 亡灵之主：死亡十字架是地面层，不占格、不阻挡
+      const deathCrosses = crossesAt(r, c);
+      if (deathCrosses.length) {
+        cell.classList.add("death-cross-cell");
+        const cl = document.createElement("span");
+        cl.className = "death-cross-layer";
+        cl.innerHTML = deathCrosses.map(() => '<i class="death-cross">✝</i>').join("");
+        cl.title = "死亡十字架：不占格、不阻挡；可被亡语复活移除，或被亡灵军团转化为小亡灵";
+        cell.appendChild(cl);
       }
       // 天罚：双方可见的金色 3×3 预警法阵与倒计时
       const meteorZones = meteors.filter((m) => Math.abs(r - m.r) <= (m.radius == null ? 1 : m.radius) && Math.abs(c - m.c) <= (m.radius == null ? 1 : m.radius));
@@ -7275,6 +7445,20 @@ function aiSkillScore(u, s, pos, rr, cc, w) {
       const foes = unitsOf(u.player === 1 ? 2 : 1).filter((v) => v && !v.sword && !hiddenFrom(v, u.player));
       if (!foes.length) return null;
       return 24 + foes.length * 9; // 全体控制：即使无伤害也高价值
+    }
+    case "soulrevive": {
+      const rec = graveyard.find((g) => {
+        if (g.player !== u.player) return false;
+        const cell = reviveCellFor(g);
+        return cell && cell.r === rr && cell.c === cc;
+      });
+      if (!rec) return null;
+      const def = heroDef(rec.heroId);
+      return 30 + Math.min(12, (def ? def.hp : 5) * 2);
+    }
+    case "undeadarmy": {
+      if (!crosses.length) return null;
+      return 26 + crosses.length * 8;
     }
     case "steal":
       return null; // 窃取权柄由专门的目标 × 技能枚举处理
@@ -8376,12 +8560,22 @@ function applyRemoteState(state) {
   const prevPending = extraTurnPending;
   const prevPhase = phase;
   const prevMeteors = meteors.slice();
+  const prevCrosses = crosses.slice();
   board = state.board.map((row) => row.map((cell) => (cell ? Object.assign({}, cell) : null)));
   for (const row of board) for (const cell of row) if (isUnit(cell)) hydrateCopiedSkill(cell);
   mists = state.mists ? JSON.parse(JSON.stringify(state.mists)) : {};
   blackFlames = state.blackFlames ? JSON.parse(JSON.stringify(state.blackFlames)) : {};
   meteors = Array.isArray(state.meteors) ? JSON.parse(JSON.stringify(state.meteors)) : [];
   meteorSeq = state.meteorSeq || meteors.reduce((mx, m) => Math.max(mx, m.id || 0), 0);
+  crosses = Array.isArray(state.crosses) ? JSON.parse(JSON.stringify(state.crosses)) : [];
+  crossSeq = state.crossSeq || crosses.reduce((mx, x) => Math.max(mx, x.id || 0), 0);
+  if (prevSnap) {
+    const oldIds = new Set(prevCrosses.map((x) => x.id));
+    for (const cr of crosses) {
+      if (oldIds.has(cr.id)) continue;
+      if (window.BFX) window.BFX.cast({ type: "deathCross", heroId: "undead", caster: { r: cr.r, c: cr.c } });
+    }
+  }
   phase = state.phase;
   currentPlayer = state.currentPlayer;
   winner = state.winner || 0;
@@ -8951,6 +9145,7 @@ window.GameAPI = {
   get turnActionsMax() { return turnActionsMax; },
   get empowerTurnActive() { return empowerTurnActive; },
   get meteors() { return JSON.parse(JSON.stringify(meteors)); },
+  get crosses() { return JSON.parse(JSON.stringify(crosses)); },
   canActNow,
   randomKnockback,
   endTurn,
@@ -8990,6 +9185,8 @@ window.GameAPI = {
     blackFlames = {};
     meteors = Array.isArray(setupMeteors) ? JSON.parse(JSON.stringify(setupMeteors)) : [];
     meteorSeq = meteors.reduce((mx, m) => Math.max(mx, m.id || 0), 0);
+    crosses = [];
+    crossSeq = 0;
     history = [];
     historyBase = 0;
     // 对局统计 & 结算演出：重置（测试/新局共用）

@@ -11,7 +11,10 @@ const SIZE = 6, SIDE_COLS = 3, PER_PLAYER = 3, BASE_ATTACK = 1;
 const DIRS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
 
 const inB = (r, c) => r >= 0 && r < SIZE && c >= 0 && c < SIZE;
-const heroDef = (id) => HEROES.find((h) => h.id === id) || null;
+const SUMMON_DEFS = {
+  minion: { id: "minion", name: "小亡灵", icon: "💀", hp: 2, tag: "亡灵召唤物", sfx: "undead", skill: null },
+};
+const heroDef = (id) => HEROES.find((h) => h.id === id) || SUMMON_DEFS[id] || null;
 const talDef = (id) => TALISMANS.find((t) => t.id === id) || null;
 const drawTalismanId = () => TALISMANS[Math.floor(Math.random() * TALISMANS.length)].id;
 /* 英雄全部技能（含 extraSkills） */
@@ -94,6 +97,53 @@ function mirrorSummonCellsS(s, u, r, c) {
 }
 function isMirrorS(cell) {
   return !!(cell && cell.mirror === true);
+}
+/* 亡灵之主·死亡十字架：不占格、永久、可被亡语复活或亡灵军团消耗 */
+function addDeathCrossS(s, target, pos) {
+  if (!target || !pos || target.isMinion || target.mirror) return null;
+  if (!s.crosses) s.crosses = [];
+  if (!s.crossSeq) s.crossSeq = 0;
+  const m = { id: ++s.crossSeq, r: pos.r, c: pos.c, player: target.player, heroId: target.heroId, deadUid: target.uid };
+  s.crosses.push(m);
+  slog(s, "💀 " + uname(s, target) + " 的阵亡处留下了死亡十字架");
+  return m;
+}
+function removeCrossesForDeadS(s, deadUid) {
+  if (!deadUid || !s.crosses) return;
+  s.crosses = s.crosses.filter((x) => x.deadUid !== deadUid);
+}
+function reviveAllyFromGraveS(s, rec, tr, tc, hp) {
+  if (!rec) return null;
+  const def = heroDef(rec.heroId);
+  if (!def) return null;
+  const snap = rec.snapshot ? JSON.parse(JSON.stringify(rec.snapshot)) : null;
+  const revived = snap ? Object.assign({}, snap, { uid: s.unitSeq++, heroId: def.id, player: rec.player, hp: Math.min(hp, def.hp), maxHp: def.hp })
+    : { uid: s.unitSeq++, heroId: def.id, player: rec.player, hp: Math.min(hp, def.hp), maxHp: def.hp,
+        shield: 0, shieldLayers: [], frozen: 0, swords: rec.swords || 0, usesLeft: rec.usesLeft || 0,
+        usesArr: rec.usesArr && rec.usesArr.length ? rec.usesArr.slice() : undefined, statuses: {},
+        lockUsed: !!rec.lockUsed, guixiongUsed: !!rec.guixiongUsed, sdStage: 0, dragonMoves: 0, empowerTurns: 0,
+        chaseStage: 0, chaseMark: 0, wxtStage: 0, stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false,
+        metalBuff: false, metalTide: 0, meditate: null, facing: rec.player === 1 ? [0, 1] : [0, -1], rbStage: 0, rbBlade: null,
+        rbDir: null, crowForm: null, copiedSkill: null, copiedUses: 0, copiedFrom: null };
+  if (!revived.statuses) revived.statuses = {};
+  revived.rbStage = 0; revived.rbBlade = null; revived.rbDir = null; revived.crowForm = null;
+  removeCrossesForDeadS(s, rec.deadUid || (rec.snapshot && rec.snapshot.uid));
+  s.board[tr][tc] = revived;
+  s.graveyard = s.graveyard.filter((g) => g !== rec);
+  slog(s, "💜 亡语：" + uname(s, revived) + " 在 (" + (tr + 1) + "," + (tc + 1) + ") 复活（" + revived.hp + " 点生命）");
+  return revived;
+}
+function undeadSpawnCellS(s, cross, reserved) {
+  if (!cross) return null;
+  const ok = (r, c) => inB(r, c) && !s.board[r][c] && !reserved.has(r + "_" + c);
+  if (ok(cross.r, cross.c)) return { r: cross.r, c: cross.c };
+  let best = null;
+  for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+    if (!ok(r, c)) continue;
+    const d = Math.abs(r - cross.r) + Math.abs(c - cross.c);
+    if (!best || d < best.d || (d === best.d && (r < best.r || (r === best.r && c < best.c)))) best = { r, c, d };
+  }
+  return best ? { r: best.r, c: best.c } : null;
 }
 /* 多技能：每个技能各自的剩余次数（uses==null 用 9999 表示无限） */
 function skillUsesLeft(s, u, idx) {
@@ -862,7 +912,7 @@ function createState() {
            toPlace: PER_PLAYER, placed: { 1: [], 2: [] }, pools: drawPools(), turnActionUsed: false,
            turnActionsMax: 1, turnActionsLeft: 1, turnActorUid: 0, empowerTurnActive: false,
            talisman: { 1: drawTalismanId(), 2: drawTalismanId() }, talismanUsed: { 1: false, 2: false }, wildcards: { 1: 3, 2: 3 },
-           assaultPlayer: 0, guardPlayer: 0, extraMoves: 0, extraTurnPending: false, graveyard: [], mists: {}, blackFlames: {}, meteors: [], meteorSeq: 0,
+           assaultPlayer: 0, guardPlayer: 0, extraMoves: 0, extraTurnPending: false, graveyard: [], mists: {}, blackFlames: {}, meteors: [], meteorSeq: 0, crosses: [], crossSeq: 0,
            stats: { damage: { 1: 0, 2: 0 }, kills: { 1: 0, 2: 0 }, startedAt: 0, endedAt: 0, lastKiller: null },
            log: [], logSeq: 0, _undo: [] };
 }
@@ -1163,13 +1213,25 @@ function applyDamage(s, target, amount, source) {
 /* 单位阵亡统一处理（伤害 / 生命代价共用） */
 function handleUnitDeathS(s, target, source, pos) {
   if (!target || !pos) return;
+  if (target.isMinion) {
+    s.board[pos.r][pos.c] = null;
+    slog(s, "💀 " + uname(s, target) + " 消散（小亡灵死亡不再留下十字架）");
+    if (source && !source.sword && source.player !== target.player) {
+      if (s.stats) {
+        s.stats.kills[source.player] = (s.stats.kills[source.player] || 0) + 1;
+        s.stats.lastKiller = { player: source.player, heroId: source.heroId };
+      }
+    }
+    return;
+  }
   resetThunderbladeS(target); // 鹰佐阵亡：终止连招并移除雷刀
   resetCrowFormS(target); // 须佐阵亡：清除鸦天狗形态
   target.chaseMark = 0;
   if (target.heroId === "assassin") clearChaseMarks(s, target.uid);
-  s.graveyard.push({ player: target.player, heroId: target.heroId, r: pos.r, c: pos.c, usesLeft: target.usesLeft || 0, usesArr: target.usesArr ? target.usesArr.slice() : null, swords: target.swords || 0, lockUsed: !!target.lockUsed, guixiongUsed: !!target.guixiongUsed, snapshot: JSON.parse(JSON.stringify(target)) });
+  s.graveyard.push({ player: target.player, heroId: target.heroId, deadUid: target.uid, r: pos.r, c: pos.c, usesLeft: target.usesLeft || 0, usesArr: target.usesArr ? target.usesArr.slice() : null, swords: target.swords || 0, lockUsed: !!target.lockUsed, guixiongUsed: !!target.guixiongUsed, snapshot: JSON.parse(JSON.stringify(target)) });
   s.board[pos.r][pos.c] = null;
   slog(s, "☠ " + uname(s, target) + " 阵亡！");
+  addDeathCrossS(s, target, pos);
   spawnSword(s, pos.r, pos.c);
   if (source && !source.sword && source.player !== target.player && findPos(s, source)) {
     refreshSkillOnKill(s, source);
@@ -1517,6 +1579,7 @@ function checkVictory(s) {
     s.mists = {};
     s.blackFlames = {};
     s.meteors = [];
+    s.crosses = [];
     for (const u of unitsOf(s, 1).concat(unitsOf(s, 2))) { clearRavenStealthS(u); resetThunderbladeS(u); resetCrowFormS(u); }
     if (s.stats && !s.stats.endedAt) s.stats.endedAt = Date.now();
     slog(s, "🏆 玩家" + s.winner + " 获胜，对局结束！");
@@ -1687,6 +1750,7 @@ function applyAction(state, player, action) {
         if (idx < 0) return err("该位置没有可复活的己方英雄");
         if (!inB(to.r, to.c) || s.board[to.r][to.c]) return err("该位置已被占用，无法复活");
         const rec = s.graveyard[idx];
+        removeCrossesForDeadS(s, rec.deadUid || (rec.snapshot && rec.snapshot.uid));
         const def = heroDef(rec.heroId);
         // 复活 = 恢复阵亡瞬间的全部状态，仅生命值变为 3
         let revived;
@@ -1902,6 +1966,40 @@ function applyAction(state, player, action) {
       if (!inB(r, c)) return err("天罚：请选择棋盘内的合法落点");
       const m = addMeteorS(s, u, r, c, sk);
       slog(s, "☄ " + uname(s, u) + " 发动【天罚】，在 (" + (r + 1) + "," + (c + 1) + ") 标记 3×3 陨星区域；" + m.turns + " 个完整对手回合后坠落");
+    } else if (sk.type === "soulrevive") {
+      // 亡灵之主·亡语：原地复活己方阵亡英雄至 2 血
+      const rec = s.graveyard.find((g) => {
+        if (g.player !== player) return false;
+        const cell = reviveCellForS(s, g);
+        return cell && cell.r === r && cell.c === c;
+      });
+      if (!rec) return err("亡语：该位置没有可复活的己方阵亡英雄");
+      if (!inB(r, c) || s.board[r][c]) return err("亡语：复活位置已被占用");
+      reviveAllyFromGraveS(s, rec, r, c, 2);
+    } else if (sk.type === "undeadarmy") {
+      // 亡灵之主·亡灵军团：所有有效十字架一次性转化为己方小亡灵
+      if (!s.crosses || !s.crosses.length) return err("亡灵军团：场上没有死亡十字架");
+      const list = s.crosses.slice();
+      const reserved = new Set();
+      let spawned = 0;
+      for (const cr of list) {
+        const cell = undeadSpawnCellS(s, cr, reserved);
+        if (!cell) continue;
+        const m = {
+          uid: s.unitSeq++, heroId: "minion", isMinion: true, player,
+          hp: 2, maxHp: 2, shield: 0, shieldLayers: [], frozen: 0, swords: 0, statuses: {},
+          usesLeft: 0, usesArr: [], facing: player === 1 ? [0, 1] : [0, -1],
+          lockUsed: false, guixiongUsed: false, sdStage: 0, dragonMoves: 0, empowerTurns: 0, chaseStage: 0,
+          chaseMark: 0, wxtStage: 0, stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false,
+          metalBuff: false, metalTide: 0, meditate: null, rbStage: 0, rbBlade: null, rbDir: null, crowForm: null,
+          copiedSkill: null, copiedUses: 0, copiedFrom: null,
+        };
+        s.board[cell.r][cell.c] = m;
+        reserved.add(cell.r + "_" + cell.c);
+        s.crosses = s.crosses.filter((x) => x.id !== cr.id);
+        spawned++;
+      }
+      slog(s, "💀 " + uname(s, u) + " 释放【亡灵军团】：" + spawned + " 个死亡十字架转化为小亡灵");
     } else if (sk.type === "mirrorclone") {
       // 镜影·镜像分身：雷霆万钧同范围空格召唤永久镜像，可选与镜像换位
       const valid = mirrorSummonCellsS(s, u, from.r, from.c).some(([rr, cc]) => rr === r && cc === c);
