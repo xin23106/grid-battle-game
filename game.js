@@ -8487,6 +8487,7 @@ function aiApplyAction(act) {
 }
 /* AI 完成一次回合（可能包含多次「不结束回合」的剑圣突进） */
 function aiTakeTurn() {
+  if (window.Codex && window.Codex.isOpen && window.Codex.isOpen()) return; // 图鉴打开时暂停 AI，关闭后恢复
   if (gameMode !== "ai" || phase !== "battle" || currentPlayer !== aiPlayer) return;
   aiUseTalisman(); // 先考虑使用锦囊（不占用行动）
   aiUseDragonMoves(); // 龙胆：先消耗额外移动机会
@@ -8517,6 +8518,7 @@ function aiTakeTurn() {
 }
 function aiSchedule() {
   if (gameMode !== "ai" || aiThinking) return;
+  if (window.Codex && window.Codex.isOpen && window.Codex.isOpen()) return;
   if (phase === "battle" && currentPlayer === aiPlayer) {
     aiThinking = true;
     setTimeout(() => {
@@ -9189,6 +9191,32 @@ init();
 showMenu();
 handleUrlParams();
 
+/* 图鉴使用的只读战斗快照：只返回当前可见的英雄单位，不包含隐身敌人、镜像分身等隐藏信息。 */
+function buildCodexBattleData() {
+  const viewer = gameMode === "online" && window.NET && window.NET.myPlayer ? window.NET.myPlayer : null;
+  const sides = { 1: [], 2: [] };
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const u = board[r][c];
+      if (!u || !isUnit(u) || u.sword || isMirror(u) || u.isMinion) continue;
+      if (gameMode === "online") {
+        if (!viewer) continue;
+        if (u.player !== viewer && hiddenFrom(u, viewer)) continue;
+      }
+      if (!sides[u.player]) continue;
+      sides[u.player].push({
+        heroId: u.heroId,
+        hp: u.hp,
+        maxHp: u.maxHp,
+        r, c,
+        player: u.player,
+        isCurrentTurn: currentPlayer === u.player,
+      });
+    }
+  }
+  return { phase, mode: gameMode, currentPlayer, myPlayer: viewer, sides };
+}
+
 /* =========================================================================
  * 自动化测试钩子（不影响正常游戏，仅用于在浏览器控制台 / 自动化中验证规则）
  * ========================================================================= */
@@ -9221,6 +9249,8 @@ window.GameAPI = {
     updateModeBadge();
   },
   get gameMode() { return gameMode; },
+  getCodexBattleData() { return buildCodexBattleData(); },
+  resumeAfterCodex() { if (gameMode === "ai") aiKick(); },
   get aiPlayer() { return aiPlayer; },
   get aiDifficulty() { return aiDifficulty; },
   getLocalPools() { return JSON.parse(JSON.stringify(localPools)); },

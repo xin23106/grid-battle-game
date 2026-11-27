@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>英雄战棋 · 夹击战术</title>
   <link rel="stylesheet" href="style.css?v=27" />
+  <link rel="stylesheet" href="codex.css?v=2" />
 </head>
 <body>
   <div class="app">
@@ -13,6 +14,7 @@
       <div class="top-actions">
         <span id="mode-badge" class="mode-badge hidden">本地双人</span>
         <span id="conn-badge" class="conn-badge hidden">未连接</span>
+        <button id="codex-btn" class="restart codex-open-btn" title="英雄图鉴：查询全部英雄、技能与机制（战斗中打开不会消耗行动）">📖 图鉴</button>
         <button id="menu-btn" class="restart">☰ 菜单</button>
         <button id="bgm-btn" class="bgm-btn" title="背景音乐（内置原创中国风；若放入 bgm.mp3 则优先播放该文件）">🎵 音乐</button>
         <button id="restart" class="restart">重新开始</button>
@@ -137,6 +139,7 @@
           <button class="menu-btn" data-mode="local">👥　本地双人对战</button>
           <button class="menu-btn" id="menu-ai-open">🤖　AI 人机对战</button>
           <button class="menu-btn" id="menu-online-open">🌐　在线真人对战 <span class="tag-warn">开发中</span></button>
+          <button class="menu-btn" id="menu-codex-open">📖　英雄图鉴 · 机制百科</button>
           <button class="menu-btn" id="menu-settings-open">⚙️　游戏设置</button>
         </div>
 
@@ -243,7 +246,8 @@
   <script src="bgm.js"></script>
   <script src="battlefx.js?v=22"></script>
   <script src="net.js?v=12"></script>
-  <script src="game.js?v=71"></script>
+  <script src="game.js?v=72"></script>
+  <script src="codex.js?v=2"></script>
 </body>
 </html>
 
