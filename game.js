@@ -5769,9 +5769,10 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
           addLog("🛡 " + label(t) + " 处于无敌形态，未被拉动。");
         } else if (hasSuperArmor(t)) {
           addLog("🛡 霸体：" + label(t) + " 抵抗了雷鸣的抓取，未被拉动（伤害已结算）。");
+        } else if (isTitan(t) && !canTitanFit(t, plan.landing.r, plan.landing.c, false)) {
+          addLog("🛡 " + label(t) + " 的 2×2 体型无法被完全拉入该格，停留原位。");
         } else {
-          board[plan.landing.r][plan.landing.c] = t;
-          board[tr][tc] = null;
+          relocateUnitOnBoard(t, plan.landing.r, plan.landing.c);
           if (window.BFX) window.BFX.move({ from: { r: tr, c: tc }, to: plan.landing, color: window.BFX.heroColor(t.heroId) });
           addLog("➡ " + label(t) + " 被拉到 (" + (plan.landing.r + 1) + "," + (plan.landing.c + 1) + ")。");
         }
@@ -5803,9 +5804,10 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
           addLog("🛡 " + label(plan.target) + " 处于无敌形态，未被牵引。");
         } else if (hasSuperArmor(plan.target)) {
           addLog("🛡 霸体：" + label(plan.target) + " 抵抗了牵引，停留在第一格。");
+        } else if (isTitan(plan.target) && !canTitanFit(plan.target, center.r, center.c, false)) {
+          addLog("🛡 " + label(plan.target) + " 的 2×2 体型无法被完全拉入该格，停留原位。");
         } else {
-          board[center.r][center.c] = plan.target;
-          board[plan.first.r][plan.first.c] = null;
+          relocateUnitOnBoard(plan.target, center.r, center.c);
           if (window.BFX) window.BFX.move({ from: plan.first, to: center, color: window.BFX.heroColor(plan.target.heroId) });
           addLog("⚡ 须佐箭牵引：" + label(plan.target) + " 被拉到第二格 (" + (center.r + 1) + "," + (center.c + 1) + ")。");
         }

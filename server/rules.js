@@ -3152,9 +3152,11 @@ function applyAction(state, player, action) {
           slog(s, "🛡 " + uname(s, t) + " 处于无敌形态，未被拉动");
         } else if (hasSuperArmor(s, t)) {
           slog(s, "🛡 霸体：" + uname(s, t) + " 抵抗了抓取，未被拉动（伤害已结算）");
+        } else if (isTitanS(t) && !canTitanFitS(s, t, plan.landing.r, plan.landing.c, false)) {
+          slog(s, "🛡 " + uname(s, t) + " 的 2×2 体型无法被完全拉入该格，停留原位");
         } else {
-          s.board[plan.landing.r][plan.landing.c] = t;
-          s.board[plan.from.r][plan.from.c] = null;
+          if (isTitanS(t)) placeTitanFootprintS(s, t, plan.landing.r, plan.landing.c);
+          else { s.board[plan.landing.r][plan.landing.c] = t; s.board[plan.from.r][plan.from.c] = null; }
           slog(s, "➡ " + uname(s, t) + " 被拉到 (" + (plan.landing.r + 1) + "," + (plan.landing.c + 1) + ")");
         }
       } else {
@@ -3174,9 +3176,11 @@ function applyAction(state, player, action) {
           slog(s, "🛡 " + uname(s, plan.target) + " 处于无敌形态，未被牵引");
         } else if (hasSuperArmor(s, plan.target)) {
           slog(s, "🛡 霸体：" + uname(s, plan.target) + " 抵抗了牵引，停留在第一格");
+        } else if (isTitanS(plan.target) && !canTitanFitS(s, plan.target, center.r, center.c, false)) {
+          slog(s, "🛡 " + uname(s, plan.target) + " 的 2×2 体型无法被完全拉入该格，停留原位");
         } else {
-          s.board[center.r][center.c] = plan.target;
-          s.board[plan.first.r][plan.first.c] = null;
+          if (isTitanS(plan.target)) placeTitanFootprintS(s, plan.target, center.r, center.c);
+          else { s.board[center.r][center.c] = plan.target; s.board[plan.first.r][plan.first.c] = null; }
           slog(s, "⚡ 须佐箭牵引：" + uname(s, plan.target) + " 被拉到第二格");
         }
       }
