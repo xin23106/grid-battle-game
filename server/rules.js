@@ -1498,6 +1498,15 @@ function hasAnyActionState(s, player) {
       if (isSword(t)) { if (hasSwordPassiveS(u) && canMove && !s.turnActionUsed) return true; continue; }
       if (isUnit(t) && t.player !== player && !hiddenFromS(t, player) && !s.turnActionUsed) return true;
     }
+    // 天穹射手：普攻可直线攻击 2 格（跨过中间单位/石柱，但不能斜向）
+    if (u.heroId === "ranger" && !s.turnActionUsed) {
+      for (const [dr, dc] of DIRS) {
+        const nr = pos.r + dr * 2, nc = pos.c + dc * 2;
+        if (!inB(nr, nc)) continue;
+        const t = s.board[nr][nc];
+        if (isUnit(t) && t.player !== player && !hiddenFromS(t, player)) return true;
+      }
+    }
     // 额外技能（雾冲 / 影牙 等）仍有次数：避免被误判为“无行动”而自动跳过
     if (!silenced && !s.turnActionUsed) {
       const extra = unitSkills(u);
@@ -1879,7 +1888,8 @@ function applyAction(state, player, action) {
     if (hiddenFromS(t, player)) return err("目标不可见");
     const atkDist = Math.abs(r - from.r) + Math.abs(c - from.c);
     const atkRange = u.heroId === "ranger" ? 2 : 1;
-    if (atkDist < 1 || atkDist > atkRange) return err(atkRange > 1 ? "只能攻击 2 格内的目标" : "只能攻击相邻目标");
+    if (atkDist < 1 || atkDist > atkRange) return err(atkRange > 1 ? "只能攻击直线 2 格内的目标" : "只能攻击相邻目标");
+    if (atkDist === 2 && r !== from.r && c !== from.c) return err("天穹射手普通攻击只能沿同一行/列直线攻击");
     const fi = flankInfo(s).get(t.uid);
     const ravenB = u.ravenBuff ? 1 : 0;
     const metalB = u.metalBuff ? 1 : 0;

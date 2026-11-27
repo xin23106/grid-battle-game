@@ -927,10 +927,11 @@ function hasAnyAction(player) {
       if (isPillar(t)) continue; // 石柱不可攻击、不可进入
       if (t.player !== player && !turnActionUsed) return true;
     }
-    // 游侠：距离 2 的敌人也可普攻
+    // 天穹射手：普攻仅直线 2 格（同一行/列）
     if (u.heroId === "ranger" && !turnActionUsed) {
       for (const [rr, cc] of cellsWithin(pos.r, pos.c, 2, false)) {
         if (Math.abs(rr - pos.r) + Math.abs(cc - pos.c) !== 2) continue;
+        if (rr !== pos.r && cc !== pos.c) continue;
         const t = unitAt(rr, cc);
         if (t && t.player !== player) return true;
       }
@@ -1725,10 +1726,11 @@ function computeTargets() {
       attackTargets.push([nr, nc]);
     }
   }
-  // 游侠：普通攻击可打到距离 2 的敌人，且无视中间阻挡
+  // 天穹射手：普通攻击只能沿同一行/列直线攻击 1–2 格；可越过中间单位/石柱
   if (u.heroId === "ranger") {
     for (const [rr, cc] of cellsWithin(selected.r, selected.c, 2, false)) {
       if (Math.abs(rr - selected.r) + Math.abs(cc - selected.c) !== 2) continue;
+      if (rr !== selected.r && cc !== selected.c) continue; // 禁止斜向/折线 2 格
       const t = unitAt(rr, cc);
       if (t && t.player !== u.player) attackTargets.push([rr, cc]);
     }
@@ -2897,6 +2899,19 @@ function normalAttack(attacker, target) {
     clearSelection();
     render();
     return;
+  }
+  // 天穹射手：普攻可以打相邻或同一直线 2 格，禁止斜向/折线
+  if (attacker.heroId === "ranger") {
+    const ap = findPos(attacker), tp = findPos(target);
+    if (ap && tp) {
+      const d = Math.abs(ap.r - tp.r) + Math.abs(ap.c - tp.c);
+      if (d > 2 || (d === 2 && ap.r !== tp.r && ap.c !== tp.c)) {
+        addLog("天穹射手普通攻击只能沿同一行/列直线攻击 1–2 格。");
+        clearSelection();
+        render();
+        return;
+      }
+    }
   }
   pushHistory();
   queueUnitFx(attacker.uid, "attack", 0, window.HeroVisuals ? window.HeroVisuals.attackPose(attacker.heroId) : "slash");
@@ -7092,7 +7107,7 @@ function renderDetailCard() {
     const wst = u.wxtStage || 0;
     st.push("万象天引：" + (wst === 0 ? "第一段待执行" : wst === 1 ? "第二段待执行（已引力汇聚）" : "第三段待执行（已万象引渡）"));
   }
-  if (u.heroId === "ranger") st.push("普攻射程 2 格（可越过中间单位与石柱）");
+  if (u.heroId === "ranger") st.push("普攻射程：相邻或同一直线 2 格（可越过中间单位与石柱，不能斜向）");
   if (u.heroId === "raven") {
     if (isStealthed(u)) st.push("隐身：剩余 " + u.stealth.turns + " 回合");
     if (u.ravenBuff) st.push("影袭强化：下一次普通攻击 / 影牙 +1");
@@ -7893,10 +7908,11 @@ function aiEnumerate() {
           });
         }
       }
-      // 游侠：2 格内敌人也能普攻（无视中间阻挡）
+      // 天穹射手：2 格普攻只能沿同一行/列直线
       if (u.heroId === "ranger") {
         for (const [rr, cc] of cellsWithin(pos.r, pos.c, 2, false)) {
           if (Math.abs(rr - pos.r) + Math.abs(cc - pos.c) !== 2) continue;
+          if (rr !== pos.r && cc !== pos.c) continue;
           const t = unitAt(rr, cc);
           if (!t || t.player === u.player || hiddenFrom(t, u.player)) continue;
           const res = resolveNormalAttack(u, t);
