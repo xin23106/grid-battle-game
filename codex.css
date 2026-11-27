@@ -573,6 +573,134 @@ body.codex-open { overflow: hidden; }
 .cx-example b { display: block; color: #d8b4fe; font-size: 9.5px; letter-spacing: 1px; margin-bottom: 3px; }
 .cx-example span { color: #c5bddb; font-size: 10.5px; line-height: 1.65; }
 
+/* ============================ 锦囊图鉴 ============================ */
+.cx-talisman-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 15px; }
+.cx-talisman-toolbar .cx-search { flex: 1 1 auto; min-width: 190px; }
+.cx-talisman-hint { flex: 0 0 auto; color: #8e86aa; font-size: 10px; }
+.cx-talisman-hint code { color: #c4b5fd; }
+.cx-talisman-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.cx-talisman-card {
+  --tzc1: #c4b5fd; --tzc2: #4c1d95;
+  position: relative;
+  display: flex;
+  gap: 12px;
+  min-height: 174px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--tzc1) 44%, rgba(148, 129, 201, .3));
+  border-radius: 15px;
+  background:
+    radial-gradient(circle at 12% 12%, color-mix(in srgb, var(--tzc1) 20%, transparent), transparent 45%),
+    linear-gradient(145deg, rgba(22, 24, 48, .97), rgba(7, 10, 22, .98));
+  color: #e8e4f4;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: transform .16s, border-color .16s, box-shadow .16s;
+  overflow: hidden;
+}
+.cx-talisman-card:hover { transform: translateY(-3px); border-color: var(--tzc1); box-shadow: 0 10px 28px rgba(0, 0, 0, .42), 0 0 22px color-mix(in srgb, var(--tzc1) 22%, transparent); }
+.cx-talisman-card::after { content: ""; position: absolute; inset: 5px; border: 1px solid rgba(255, 255, 255, .045); border-radius: 11px; pointer-events: none; }
+.cx-talisman-card.cx-tz-atk { --tzc1: #fb923c; --tzc2: #7c2d12; }
+.cx-talisman-card.cx-tz-life { --tzc1: #34d399; --tzc2: #064e3b; }
+.cx-talisman-card.cx-tz-march { --tzc1: #fbbf24; --tzc2: #78350f; }
+.cx-talisman-card.cx-tz-arcane { --tzc1: #c084fc; --tzc2: #3b0764; }
+.cx-talisman-card.cx-tz-guard { --tzc1: #60a5fa; --tzc2: #172554; }
+.cx-talisman-card.cx-tz-omni {
+  --tzc1: #fbbf24; --tzc2: #7c3aed;
+  border-color: rgba(251, 191, 36, .72);
+  background:
+    radial-gradient(circle at 12% 12%, rgba(251, 191, 36, .2), transparent 48%),
+    radial-gradient(circle at 88% 88%, rgba(168, 85, 247, .2), transparent 48%),
+    linear-gradient(145deg, rgba(35, 25, 45, .98), rgba(7, 10, 22, .98));
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, .12) inset, 0 0 24px rgba(251, 191, 36, .12);
+}
+.cx-talisman-card.cx-tz-omni::before {
+  content: "";
+  position: absolute;
+  inset: -40%;
+  background: conic-gradient(from 0deg, transparent, rgba(251, 191, 36, .18), transparent, rgba(168, 85, 247, .2), transparent);
+  animation: talismanRainbow 6s linear infinite;
+  pointer-events: none;
+}
+@keyframes talismanRainbow { to { transform: rotate(360deg); } }
+.cx-talisman-medallion {
+  position: relative;
+  flex: 0 0 58px;
+  width: 58px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  align-self: flex-start;
+  border-radius: 13px;
+  border: 1px solid color-mix(in srgb, var(--tzc1) 54%, transparent);
+  background: radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--tzc1) 32%, transparent), var(--tzc2) 78%);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--tzc1) 25%, transparent), inset 0 0 16px rgba(0, 0, 0, .35);
+  z-index: 1;
+}
+.cx-talisman-medallion b { font-size: 29px; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .55)); }
+.cx-talisman-medallion i { position: absolute; inset: 5px; border: 1px solid rgba(255, 255, 255, .18); border-radius: 9px; }
+.cx-talisman-medallion i::before, .cx-talisman-medallion i::after { content: "✦"; position: absolute; color: var(--tzc1); font-size: 8px; opacity: .8; }
+.cx-talisman-medallion i::before { top: -3px; left: -3px; }
+.cx-talisman-medallion i::after { right: -3px; bottom: -3px; }
+.cx-talisman-card-body { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cx-talisman-card-top { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.cx-talisman-card-top b { color: #fff8e7; font-size: 16px; letter-spacing: .8px; }
+.cx-talisman-card-top em { color: var(--tzc1); font-style: normal; font-size: 9.5px; white-space: nowrap; }
+.cx-talisman-target { color: #fde68a; font-size: 9.5px; line-height: 1.4; }
+.cx-talisman-desc { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; color: #a9a3c6; font-size: 10.5px; line-height: 1.5; }
+.cx-talisman-values { display: flex; flex-wrap: wrap; gap: 4px; margin-top: auto; }
+.cx-talisman-values span { padding: 2px 5px; border: 1px solid color-mix(in srgb, var(--tzc1) 26%, transparent); border-radius: 5px; background: color-mix(in srgb, var(--tzc1) 9%, transparent); color: #ddd6fe; font-size: 9px; }
+.cx-talisman-flow { margin-top: 18px; padding: 14px 16px; border: 1px solid rgba(148, 129, 201, .24); border-radius: 14px; background: linear-gradient(120deg, rgba(30, 27, 75, .55), rgba(8, 11, 25, .45)); }
+.cx-flow-title { display: flex; align-items: center; gap: 7px; margin-bottom: 11px; color: #fde68a; font-size: 12px; letter-spacing: 1px; }
+.cx-flow-title span { color: #fbbf24; font-size: 15px; text-shadow: 0 0 10px #fbbf24; }
+.cx-flow-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.cx-flow-steps > div { display: flex; flex-direction: column; gap: 3px; padding: 8px; border-left: 1px solid rgba(251, 191, 36, .28); }
+.cx-flow-steps em { color: #fbbf24; font-size: 9px; font-style: normal; letter-spacing: 1px; }
+.cx-flow-steps b { color: #e9e3f7; font-size: 11px; }
+.cx-flow-steps span { color: #948caa; font-size: 9.5px; line-height: 1.45; }
+
+.cx-talisman-detail-layout { display: grid; grid-template-columns: minmax(220px, 28%) 1fr; gap: 22px; align-items: start; }
+.cx-talisman-side { min-width: 0; }
+.cx-talisman-emblem {
+  position: relative;
+  height: 265px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(251, 191, 36, .42);
+  border-radius: 17px;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(251, 191, 36, .24), transparent 42%),
+    radial-gradient(ellipse at 50% 85%, rgba(168, 85, 247, .2), transparent 62%),
+    linear-gradient(160deg, rgba(28, 24, 52, .98), rgba(5, 8, 18, .99));
+  box-shadow: 0 15px 42px rgba(0, 0, 0, .4), 0 0 32px rgba(251, 191, 36, .1);
+  overflow: hidden;
+}
+.cx-talisman-emblem::before { content: ""; position: absolute; width: 58%; aspect-ratio: 1; border: 1px solid rgba(251, 191, 36, .5); border-radius: 50%; box-shadow: 0 0 26px rgba(251, 191, 36, .15), inset 0 0 26px rgba(251, 191, 36, .12); }
+.cx-talisman-emblem::after { content: "✦"; position: absolute; top: 15px; right: 18px; color: #fbbf24; font-size: 20px; text-shadow: 0 0 14px #fbbf24; animation: cxRune 4s ease-in-out infinite; }
+.cx-talisman-emblem b { position: relative; z-index: 1; font-size: 82px; filter: drop-shadow(0 8px 12px rgba(0, 0, 0, .55)) drop-shadow(0 0 22px rgba(251, 191, 36, .2)); }
+.cx-talisman-emblem span { position: absolute; bottom: 15px; color: #fbbf24; font-size: 13px; letter-spacing: 4px; opacity: .8; }
+.cx-talisman-side-caption { display: flex; justify-content: space-between; margin: 9px 3px; color: #948caa; font-size: 10px; }
+.cx-talisman-side-caption b { color: #fbbf24; }
+.cx-talisman-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 10px; border: 1px solid rgba(148, 129, 201, .2); border-radius: 11px; background: rgba(4, 8, 20, .42); }
+.cx-talisman-facts div { display: flex; flex-direction: column; gap: 3px; padding: 4px; }
+.cx-talisman-facts span { color: #8e86aa; font-size: 9.5px; }
+.cx-talisman-facts b { color: #e9e3f7; font-size: 11px; line-height: 1.4; }
+.cx-talisman-main { min-width: 0; }
+.cx-talisman-badges { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 16px; }
+.cx-talisman-badges span, .cx-talisman-badges em { font-style: normal; padding: 3px 7px; border-radius: 5px; border: 1px solid rgba(251, 191, 36, .28); background: rgba(251, 191, 36, .07); color: #fde68a; font-size: 10px; }
+.cx-talisman-badges em { border-color: rgba(148, 129, 201, .25); background: rgba(88, 70, 135, .15); color: #cfc7e6; }
+.cx-talisman-pool { margin-top: 17px; padding: 13px; border: 1px solid rgba(251, 191, 36, .3); border-radius: 12px; background: linear-gradient(145deg, rgba(24, 20, 45, .85), rgba(5, 8, 18, .7)); }
+.cx-talisman-pool-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; margin-bottom: 9px; }
+.cx-talisman-pool-head b { color: #fde68a; font-size: 13px; }
+.cx-talisman-pool-head span { color: #948caa; font-size: 9.5px; }
+.cx-talisman-pool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.cx-talisman-pool-item { display: flex; align-items: flex-start; gap: 7px; padding: 7px 8px; border: 1px solid rgba(148, 129, 201, .22); border-radius: 8px; background: rgba(4, 8, 20, .4); color: #e5dff2; text-align: left; font: inherit; cursor: pointer; }
+.cx-talisman-pool-item:hover { border-color: #fbbf24; background: rgba(251, 191, 36, .08); }
+.cx-talisman-pool-icon { font-size: 17px; line-height: 1.1; }
+.cx-talisman-pool-item > span:last-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cx-talisman-pool-item b { font-size: 10.5px; color: #f0e9d8; }
+.cx-talisman-pool-item em { color: #948caa; font-size: 9px; font-style: normal; line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
 /* ============================ 页脚 ============================ */
 .cx-footer {
   display: flex;
@@ -599,8 +727,9 @@ body.codex-open { overflow: hidden; }
 }
 .cx-reduce .hero-particle-field { display: none; }
 .cx-reduce .cx-card-shine { display: none; }
+.cx-reduce .cx-talisman-card::before { animation: none; }
 @media (prefers-reduced-motion: reduce) {
-  .cx-shell, .cx-view, .cx-detail-rune, .cx-card, .hero-figure-wrap, .hero-aura, .hero-particle-field i { animation: none !important; transition: none !important; }
+  .cx-shell, .cx-view, .cx-detail-rune, .cx-card, .cx-talisman-card, .cx-talisman-card::before, .cx-talisman-emblem::after, .hero-figure-wrap, .hero-aura, .hero-particle-field i { animation: none !important; transition: none !important; }
   .hero-particle-field { display: none; }
 }
 
@@ -624,6 +753,9 @@ body.codex-open { overflow: hidden; }
   .cx-detail-name { font-size: 29px; }
   .cx-skill-layout { grid-template-columns: 1fr; }
   .cx-skill-list { max-height: 220px; }
+  .cx-talisman-detail-layout { grid-template-columns: minmax(190px, 30%) 1fr; gap: 15px; }
+  .cx-talisman-emblem { height: 220px; }
+  .cx-talisman-emblem b { font-size: 68px; }
 }
 @media (max-width: 680px) {
   .cx-overlay { padding: 0; }
@@ -679,6 +811,24 @@ body.codex-open { overflow: hidden; }
   .cx-skill-intro, .cx-stage p { font-size: 10.5px; }
   .cx-mech-body { padding-left: 14px; }
   .cx-mech-summary small { font-size: 9.5px; }
+  .cx-talisman-toolbar { flex-direction: column; align-items: stretch; gap: 6px; }
+  .cx-talisman-hint { font-size: 9px; }
+  .cx-talisman-grid { grid-template-columns: 1fr; gap: 8px; }
+  .cx-talisman-card { min-height: 145px; padding: 10px; gap: 9px; }
+  .cx-talisman-medallion { flex-basis: 48px; width: 48px; height: 62px; }
+  .cx-talisman-medallion b { font-size: 24px; }
+  .cx-talisman-card-top b { font-size: 14px; }
+  .cx-talisman-desc { -webkit-line-clamp: 2; font-size: 9.5px; }
+  .cx-flow-steps { grid-template-columns: 1fr 1fr; }
+  .cx-talisman-detail-layout { grid-template-columns: 1fr; }
+  .cx-talisman-emblem { height: 205px; }
+  .cx-talisman-emblem b { font-size: 68px; }
+  .cx-talisman-side { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: start; }
+  .cx-talisman-emblem { grid-row: span 2; }
+  .cx-talisman-side-caption { margin: 0 2px; }
+  .cx-talisman-facts { grid-template-columns: 1fr; padding: 7px; }
+  .cx-talisman-facts div { padding: 3px 4px; }
+  .cx-talisman-pool-grid { grid-template-columns: 1fr; }
   .cx-footer { display: none; }
 }
 @media (max-width: 380px) {
@@ -686,4 +836,7 @@ body.codex-open { overflow: hidden; }
   .cx-detail-art-col { grid-template-columns: 1fr; }
   .cx-detail-art { grid-row: auto; height: 235px; }
   .cx-detail-facts { grid-template-columns: 1fr 1fr; }
+  .cx-talisman-side { grid-template-columns: 1fr; }
+  .cx-talisman-emblem { grid-row: auto; height: 190px; }
+  .cx-talisman-facts { grid-template-columns: 1fr 1fr; }
 }

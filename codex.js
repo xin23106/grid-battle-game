@@ -1,8 +1,9 @@
 /* =========================================================================
- * codex.js —— 英雄图鉴 / 机制百科（只读界面层）
+ * codex.js —— 英雄 / 锦囊图鉴 · 机制百科（只读界面层）
  * -------------------------------------------------------------------------
  * 数据来源：
  *   - 英雄、生命、定位、技能次数、伤害、范围、限制：直接读取 heroes.js 的 HEROES
+ *   - 锦囊名称、图标、目标、效果、数值：直接读取 talismans.js 的 TALISMANS
  *   - 立绘 / 主题色：读取 herovisuals.js
  *   - 本局可见英雄：读取 GameAPI.getCodexBattleData()（已过滤隐身/隐藏单位）
  *
@@ -22,6 +23,23 @@
   const HERO_LIST = () => (window.GameAPI && Array.isArray(window.GameAPI.HEROES) ? window.GameAPI.HEROES : []);
   const heroById = (id) => HERO_LIST().find((h) => h && h.id === id) || null;
   const heroIndex = (id) => HERO_LIST().findIndex((h) => h && h.id === id);
+  const TALISMAN_LIST = () => (typeof TALISMANS !== "undefined" && Array.isArray(TALISMANS) ? TALISMANS : []);
+  const talismanById = (id) => TALISMAN_LIST().find((t) => t && t.id === id) || null;
+  const TALISMAN_TARGET = {
+    none: "无需目标 · 点击即用",
+    allyWounded: "一名生命未满的己方英雄",
+    allyAlive: "一名己方存活英雄",
+    deadAlly: "一名已阵亡的己方英雄（需有合法复活格）",
+    omni: "先选择一张普通锦囊，再按该锦囊规则选择目标",
+  };
+  const TALISMAN_CAT = {
+    assault: "攻击强化", revive: "复活", march: "额外回合", refresh: "技能",
+    guard: "防御", heal: "恢复", omni: "万能转化",
+  };
+  const TALISMAN_THEME = {
+    assault: "atk", revive: "life", march: "march", refresh: "arcane",
+    guard: "guard", heal: "life", omni: "omni",
+  };
 
   const RANGE_BY_TYPE = {
     bloodburst: "自身九宫格（周围 8 格）",
@@ -518,6 +536,105 @@
       '<div class="cx-skill-foot">技能编号 ' + (index + 1) + " · 规则以服务端权威结算为准</div>";
   }
 
+  function talismanTargetText(t) {
+    return TALISMAN_TARGET[t && t.target] || "按锦囊效果选择目标";
+  }
+  function talismanValueTags(t) {
+    if (!t) return ["—"];
+    if (t.effect === "assault") return ["所有伤害 +1"];
+    if (t.effect === "revive") return ["复活至 3 HP"];
+    if (t.effect === "march") return ["额外回合 ×1"];
+    if (t.effect === "refresh") return ["技能次数 → 上限"];
+    if (t.effect === "guard") return ["每次伤害 −1"];
+    if (t.effect === "heal") return ["恢复 " + (t.heal == null ? 2 : t.heal) + " HP"];
+    if (t.effect === "omni") return ["普通锦囊 ×" + TALISMAN_LIST().filter((x) => x.effect !== "omni").length];
+    return ["按完整效果结算"];
+  }
+  function talismanTheme(t) {
+    return TALISMAN_THEME[t && t.effect] || "arcane";
+  }
+  function filteredTalismans() {
+    const q = state.talismanSearch.trim().toLowerCase();
+    return TALISMAN_LIST().filter((t) => {
+      if (!t) return false;
+      if (!q) return true;
+      const hay = [t.name, t.id, t.desc, TALISMAN_CAT[t.effect] || t.effect, talismanTargetText(t)].join(" ").toLowerCase();
+      return hay.includes(q);
+    });
+  }
+  function talismanCardHTML(t) {
+    const theme = talismanTheme(t);
+    return '<button type="button" class="cx-talisman-card cx-tz-' + attr(theme) + (t.effect === "omni" ? " cx-tz-omni" : "") + '" data-talisman-id="' + attr(t.id) + '" title="' + attr(t.name + "：" + t.desc) + '">' +
+      '<span class="cx-talisman-medallion"><b>' + esc(t.icon || "🎴") + "</b><i></i></span>" +
+      '<span class="cx-talisman-card-body">' +
+        '<span class="cx-talisman-card-top"><b>' + esc(t.name) + '</b><em>' + esc(TALISMAN_CAT[t.effect] || "锦囊") + "</em></span>" +
+        '<span class="cx-talisman-target">◈ ' + esc(talismanTargetText(t)) + "</span>" +
+        '<span class="cx-talisman-desc">' + esc(short(t.desc, 104)) + "</span>" +
+        '<span class="cx-talisman-values">' + talismanValueTags(t).map((v) => "<span>" + esc(v) + "</span>").join("") + "</span>" +
+      "</span></button>";
+  }
+  function talismansHTML() {
+    const rows = filteredTalismans();
+    return '<section class="cx-view cx-talismans">' +
+      '<div class="cx-heading"><div><span class="cx-eyebrow">TALISMAN ARCHIVE · 奇物档案</span><h2>锦囊图鉴</h2><p>每局抽取、自己回合使用、不占用行动；点击卡牌查看目标规则与完整效果。</p></div>' +
+      '<div class="cx-heading-stat"><b id="cx-talisman-count">' + rows.length + '</b><span>张锦囊</span></div></div>' +
+      '<div class="cx-talisman-toolbar"><label class="cx-search"><span>⌕</span><input id="cx-talisman-search" type="search" autocomplete="off" placeholder="搜索锦囊 / 效果 / 目标…" value="' + attr(state.talismanSearch) + '" aria-label="搜索锦囊"></label>' +
+      '<span class="cx-talisman-hint">全部 ' + TALISMAN_LIST().length + ' 张 · 数据来自 <code>talismans.js</code></span></div>' +
+      '<div class="cx-talisman-grid" id="cx-talisman-grid">' + rows.map(talismanCardHTML).join("") + "</div>" +
+      '<div class="cx-empty" id="cx-talisman-empty"' + (rows.length ? " hidden" : "") + ">没有符合条件的锦囊。</div>" +
+      '<section class="cx-talisman-flow"><div class="cx-flow-title"><span>✦</span><b>锦囊使用流程</b></div><div class="cx-flow-steps">' +
+        '<div><em>01</em><b>开局抽取</b><span>双方各随机获得 1 张，未使用前对对手保密。</span></div>' +
+        '<div><em>02</em><b>自己回合使用</b><span>不占用移动 / 攻击 / 技能行动，每局 1 次。</span></div>' +
+        '<div><em>03</em><b>选择目标 / 结算</b><span>需要目标时进入选择状态；非法目标不消耗锦囊。</span></div>' +
+        '<div><em>04</em><b>消耗并公开</b><span>成功使用后消耗；联机公开实际名称与公开结算结果。</span></div>' +
+      "</div></section>" +
+    "</section>";
+  }
+  function talismanDetailHTML(t) {
+    const theme = talismanTheme(t);
+    const ordinary = TALISMAN_LIST().filter((x) => x.effect !== "omni");
+    const pool = t.effect === "omni"
+      ? '<section class="cx-talisman-pool"><div class="cx-talisman-pool-head"><b>可转化的普通锦囊</b><span>动态读取当前配置 · 共 ' + ordinary.length + " 张</span></div>" +
+        '<div class="cx-talisman-pool-grid">' + ordinary.map((x) =>
+          '<button type="button" class="cx-talisman-pool-item" data-talisman-id="' + attr(x.id) + '">' +
+            '<span class="cx-talisman-pool-icon">' + esc(x.icon || "🎴") + "</span>" +
+            "<span><b>" + esc(x.name) + "</b><em>" + esc(short(x.desc, 66)) + "</em></span></button>"
+        ).join("") + "</div></section>"
+      : "";
+    return '<section class="cx-view cx-talisman-detail cx-tz-' + attr(theme) + (t.effect === "omni" ? " cx-tz-omni" : "") + '">' +
+      '<button type="button" class="cx-back" data-back>← 返回锦囊图鉴</button>' +
+      '<div class="cx-talisman-detail-layout">' +
+        '<aside class="cx-talisman-side">' +
+          '<div class="cx-talisman-emblem"><b>' + esc(t.icon || "🎴") + "</b><span>✦</span></div>" +
+          '<div class="cx-talisman-side-caption"><span>类型</span><b>' + esc(TALISMAN_CAT[t.effect] || "锦囊") + "</b></div>" +
+          '<div class="cx-talisman-facts">' +
+            '<div><span>使用次数</span><b>每局 1 次</b></div>' +
+            '<div><span>行动消耗</span><b>不消耗行动</b></div>' +
+            '<div><span>使用时机</span><b>自己的回合</b></div>' +
+            '<div><span>目标</span><b>' + esc(talismanTargetText(t)) + "</b></div>" +
+          "</div>" +
+        "</aside>" +
+        '<div class="cx-talisman-main">' +
+          '<span class="cx-detail-eyebrow">TALISMAN CODEX · 奇物档案</span>' +
+          '<h2 class="cx-detail-name">' + esc(t.name) + "</h2>" +
+          '<div class="cx-talisman-badges"><span>' + esc(TALISMAN_CAT[t.effect] || "锦囊") + "</span>" + talismanValueTags(t).map((v) => "<em>" + esc(v) + "</em>").join("") + "</div>" +
+          '<div class="cx-lore"><span class="cx-label">完整效果</span><p>' + esc(t.desc || "暂无说明。") + "</p></div>" +
+          '<div class="cx-stat-grid">' +
+            '<div><span>使用次数</span><b>每局 1 次（使用后消耗）</b></div>' +
+            '<div><span>行动消耗</span><b>不消耗正常行动</b></div>' +
+            '<div><span>目标规则</span><b>' + esc(talismanTargetText(t)) + "</b></div>" +
+            '<div><span>核心数值</span><b>' + talismanValueTags(t).map((v) => "<span>" + esc(v) + "</span>").join("") + "</b></div>" +
+          "</div>" +
+          '<div class="cx-detail-section"><span class="cx-label">使用规则</span><p>每局只能使用 1 次；成功使用后消耗。只可在自己的回合使用，不占用移动 / 普攻 / 技能的行动机会。需要目标时会进入目标选择状态，非法目标不消耗锦囊。</p></div>' +
+          '<div class="cx-condition"><span class="cx-label">联机与特殊限制</span><p>联机使用前对对手保密；成功使用后向双方公开实际名称与公开结算结果。' +
+            (t.effect === "omni" ? "全能锦囊不能选择自身，使用后不会生成所选锦囊实体；所选普通锦囊当前不可用时会显示原因并禁止选择。" : "") +
+          "</p></div>" +
+          pool +
+          '<div class="cx-skill-foot">数据实时读取 talismans.js · 规则以服务端权威结算为准</div>' +
+        "</div>" +
+      "</div></section>";
+  }
+
   function mechanicsHTML() {
     return '<section class="cx-view cx-mechanics">' +
       '<div class="cx-heading"><div><span class="cx-eyebrow">BATTLE LEXICON · 规则档案</span><h2>机制百科</h2><p>把容易混淆的战斗规则拆开讲清楚；示例只解释规则，不改变实际结算。</p></div><div class="cx-heading-stat"><b>' + MECHANICS.length + '</b><span>条机制</span></div></div>' +
@@ -532,6 +649,8 @@
   const state = {
     tab: "heroes",
     heroId: null,
+    talismanId: null,
+    talismanSearch: "",
     search: "",
     hp: "",
     role: "",
@@ -551,16 +670,17 @@
   }
 
   function shellHTML() {
-    return '<div class="cx-shell" role="dialog" aria-modal="true" aria-label="英雄图鉴">' +
-      '<header class="cx-topbar"><div class="cx-brand"><span class="cx-brand-mark">✦</span><div><b>星穹英雄图鉴</b><small>HERO CODEX · 实时读取战场配置</small></div></div>' +
+    return '<div class="cx-shell" role="dialog" aria-modal="true" aria-label="英雄与锦囊图鉴">' +
+      '<header class="cx-topbar"><div class="cx-brand"><span class="cx-brand-mark">✦</span><div><b>星穹战棋图鉴</b><small>HERO · TALISMAN · LEXICON</small></div></div>' +
       '<nav class="cx-tabs" aria-label="图鉴栏目">' +
         '<button type="button" class="cx-tab' + (state.tab === "heroes" ? " active" : "") + '" data-tab="heroes">英雄总览</button>' +
+        '<button type="button" class="cx-tab' + (state.tab === "talismans" ? " active" : "") + '" data-tab="talismans">锦囊图鉴</button>' +
         '<button type="button" class="cx-tab' + (state.tab === "mechanics" ? " active" : "") + '" data-tab="mechanics">机制百科</button>' +
       "</nav>" +
       '<div class="cx-top-actions"><button type="button" class="cx-reduce-btn" data-reduce title="减少动画与粒子效果">动效：' + (state.reduce ? "精简" : "标准") + "</button>" +
       '<button type="button" class="cx-close" data-close aria-label="关闭图鉴">✕</button></div></header>' +
       '<main class="cx-content" id="cx-content"></main>' +
-      '<footer class="cx-footer"><span>打开图鉴不会消耗行动、不会推进回合，也不会触发战斗事件。</span><span>ESC 关闭 · 数据来自当前英雄配置</span></footer>' +
+      '<footer class="cx-footer"><span>打开图鉴不会消耗行动、不会推进回合，也不会触发战斗事件。</span><span>ESC 关闭 · 数据来自当前英雄 / 锦囊配置</span></footer>' +
     "</div>";
   }
 
@@ -592,6 +712,18 @@
       content.innerHTML = mechanicsHTML();
       return;
     }
+    if (state.tab === "talismans") {
+      if (state.talismanId) {
+        const t = talismanById(state.talismanId);
+        if (t) {
+          content.innerHTML = talismanDetailHTML(t);
+          return;
+        }
+        state.talismanId = null;
+      }
+      content.innerHTML = talismansHTML();
+      return;
+    }
     if (state.heroId) {
       const hero = heroById(state.heroId);
       if (hero) {
@@ -614,12 +746,24 @@
     if (count) count.textContent = rows.length;
   }
 
+  function renderTalismanGridOnly() {
+    if (!content || state.tab !== "talismans" || state.talismanId) return;
+    const rows = filteredTalismans();
+    const grid = content.querySelector("#cx-talisman-grid");
+    const empty = content.querySelector("#cx-talisman-empty");
+    const count = content.querySelector("#cx-talisman-count");
+    if (grid) grid.innerHTML = rows.map(talismanCardHTML).join("");
+    if (empty) empty.hidden = rows.length > 0;
+    if (count) count.textContent = rows.length;
+  }
+
   function open(heroId) {
     ensureOverlay();
     loadReduce();
     lastFocus = document.activeElement;
     state.tab = "heroes";
     state.heroId = heroId || null;
+    state.talismanId = null;
     state.skillIndex = 0;
     overlay.classList.remove("hidden");
     document.body.classList.add("codex-open");
@@ -650,6 +794,7 @@
     if (tab) {
       state.tab = tab.getAttribute("data-tab");
       state.heroId = null;
+      state.talismanId = null;
       renderContent();
       return;
     }
@@ -669,6 +814,7 @@
     const back = e.target.closest("[data-back]");
     if (back) {
       state.heroId = null;
+      state.talismanId = null;
       renderContent();
       return;
     }
@@ -685,6 +831,17 @@
       }
       return;
     }
+    const talisman = e.target.closest("[data-talisman-id]");
+    if (talisman) {
+      const id = talisman.getAttribute("data-talisman-id");
+      if (talismanById(id)) {
+        state.tab = "talismans";
+        state.talismanId = id;
+        state.heroId = null;
+        renderContent();
+      }
+      return;
+    }
     const unit = e.target.closest("[data-hero-id]");
     if (unit) {
       const id = unit.getAttribute("data-hero-id");
@@ -692,6 +849,7 @@
         state.heroId = id;
         state.skillIndex = 0;
         state.tab = "heroes";
+        state.talismanId = null;
         renderContent();
       }
     }
@@ -701,6 +859,9 @@
     if (e.target && e.target.id === "cx-search") {
       state.search = e.target.value || "";
       renderGridOnly();
+    } else if (e.target && e.target.id === "cx-talisman-search") {
+      state.talismanSearch = e.target.value || "";
+      renderTalismanGridOnly();
     }
   }
 
@@ -738,6 +899,7 @@
     isOpen() { return !!(overlay && !overlay.classList.contains("hidden")); },
     getState() { return Object.assign({}, state); },
     getHeroes() { return HERO_LIST().slice(); },
+    getTalismans() { return TALISMAN_LIST().slice(); },
     getMechanics() { return MECHANICS.slice(); },
     skillsOf,
   };
