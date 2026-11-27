@@ -163,6 +163,9 @@ let talismanUsed = { 1: false, 2: false }; // 是否已使用
 let talismanMode = null;               // 正在选择目标的锦囊 id
 let talismanTargets = [];              // 当前锦囊的可选目标格
 let omniPendingChoice = null;          // 全能锦囊等待目标选择时，已选中的普通锦囊 id
+let onlineTalismanChoice = null;       // 联机后手开局锦囊二选一：{ player, options }
+let onlineTalismanChoicePending = false;
+let talismanChoiceModal = null;        // 二选一弹窗 DOM
 let talismanBuff = { assaultPlayer: 0, guardPlayer: 0 }; // 猛攻令 / 坚守令 生效阵营
 let extraMoves = 0;                    // （已废弃）行军令旧机制：本回合额外移动次数
 let extraTurnPending = false;          // 行军令：本回合结束后，当前玩家额外获得一个完整回合
@@ -8474,6 +8477,7 @@ function updatePanel() {
 
 /* ============================ 游戏模式 / 主菜单 ============================ */
 function showMenu(panel) {
+  closeTalismanChoiceModal();
   menuEl.classList.remove("hidden");
   menuHome.classList.toggle("hidden", !!panel);
   menuAi.classList.toggle("hidden", panel !== "ai");
@@ -10010,6 +10014,71 @@ function bfxOnlineDerive(prev, next, st, ctx) {
   }
 }
 
+/* 联机后手开局锦囊二选一：只由服务端下发候选，客户端只提交选择。 */
+function closeTalismanChoiceModal() {
+  if (talismanChoiceModal) {
+    try { talismanChoiceModal.remove(); } catch (e) { /* ignore */ }
+    talismanChoiceModal = null;
+  }
+}
+function syncOnlineTalismanChoice(state) {
+  const isMine = gameMode === "online" && window.NET && window.NET.myPlayer === 2;
+  const ch = state && state.talismanChoice;
+  if (!isMine || !ch || ch.done || !Array.isArray(ch.options) || !ch.options.length || state.phase !== "battle") {
+    closeTalismanChoiceModal();
+    return;
+  }
+  if (talismanChoiceModal) return;
+  const ov = document.createElement("div");
+  ov.className = "talisman-choice-overlay";
+  const panel = document.createElement("div");
+  panel.className = "talisman-choice-panel";
+  const title = document.createElement("div");
+  title.className = "talisman-choice-title";
+  title.textContent = "后手开局 · 锦囊二选一";
+  const hint = document.createElement("div");
+  hint.className = "talisman-choice-hint";
+  hint.textContent = "请选择一张本局携带的锦囊。选择后不可更改，对手不会看到你的选择。";
+  panel.appendChild(title);
+  panel.appendChild(hint);
+  const row = document.createElement("div");
+  row.className = "talisman-choice-row";
+  const status = document.createElement("div");
+  status.className = "talisman-choice-status";
+  for (const id of ch.options) {
+    const t = getTalismanById(id);
+    if (!t) continue;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "talisman-choice-card";
+    const nm = document.createElement("b");
+    nm.textContent = t.name || id;
+    const ds = document.createElement("span");
+    ds.textContent = t.desc || "本局携带该锦囊。";
+    btn.appendChild(nm);
+    btn.appendChild(ds);
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      for (const b of row.querySelectorAll("button")) b.disabled = true;
+      btn.classList.add("picked");
+      status.textContent = "已选择【" + (t.name || id) + "】，等待服务器确认…";
+      if (window.NET) window.NET.sendAction({ type: "talismanChoice", id });
+      setTimeout(() => {
+        if (talismanChoiceModal !== ov) return;
+        for (const b of row.querySelectorAll("button")) b.disabled = false;
+        btn.classList.remove("picked");
+        status.textContent = "服务器未确认，请重新选择。";
+      }, 3200);
+    });
+    row.appendChild(btn);
+  }
+  panel.appendChild(row);
+  panel.appendChild(status);
+  ov.appendChild(panel);
+  document.body.appendChild(ov);
+  talismanChoiceModal = ov;
+}
+
 /* 用服务器权威状态替换本地棋盘 */
 function applyRemoteState(state) {
   if (!state) return;
@@ -10060,6 +10129,8 @@ function applyRemoteState(state) {
   // 锦囊状态同步（对手的锦囊为 null=不可见）
   if (state.talisman) talisman = { 1: state.talisman[1], 2: state.talisman[2] };
   if (state.talismanUsed) talismanUsed = { 1: !!state.talismanUsed[1], 2: !!state.talismanUsed[2] };
+  onlineTalismanChoice = state.talismanChoice ? JSON.parse(JSON.stringify(state.talismanChoice)) : null;
+  onlineTalismanChoicePending = !!state.talismanChoicePending;
   if (state.graveyard) graveyard = state.graveyard.slice();
   if (state.assaultPlayer != null || state.guardPlayer != null) {
     talismanBuff = { assaultPlayer: state.assaultPlayer || 0, guardPlayer: state.guardPlayer || 0 };
@@ -10108,6 +10179,7 @@ function applyRemoteState(state) {
     }
   }
   render();
+  syncOnlineTalismanChoice(state);
   // 石柱变化（联机表现）：新增 → 升起；消失 → 碎裂
   try {
     const nowP = new Map();

@@ -17,6 +17,17 @@ const SUMMON_DEFS = {
 const heroDef = (id) => HEROES.find((h) => h.id === id) || SUMMON_DEFS[id] || null;
 const talDef = (id) => TALISMANS.find((t) => t.id === id) || null;
 const drawTalismanId = () => TALISMANS[Math.floor(Math.random() * TALISMANS.length)].id;
+/* 后手开局二选一：从全部锦囊中无重复抽两张；只在联机服务端使用。 */
+function drawTalismanChoiceS() {
+  const pool = TALISMANS.slice();
+  const out = [];
+  while (pool.length && out.length < 2) {
+    const i = Math.floor(Math.random() * pool.length);
+    const t = pool.splice(i, 1)[0];
+    if (t && t.id) out.push(t.id);
+  }
+  return out;
+}
 function ordinaryTalismansS() {
   return TALISMANS.filter((t) => t && t.id !== "omni" && t.effect !== "omni");
 }
@@ -1379,10 +1390,12 @@ function uname(s, u) {
 function createState() {
   const board = [];
   for (let r = 0; r < SIZE; r++) board.push(new Array(SIZE).fill(null));
+  const p2Options = drawTalismanChoiceS();
   return { board, phase: "placement", currentPlayer: 1, winner: 0, unitSeq: 1,
            toPlace: PER_PLAYER, placed: { 1: [], 2: [] }, pools: drawPools(), turnActionUsed: false,
            turnActionsMax: 1, turnActionsLeft: 1, turnActorUid: 0, empowerTurnActive: false,
-           talisman: { 1: drawTalismanId(), 2: drawTalismanId() }, talismanUsed: { 1: false, 2: false }, wildcards: { 1: 3, 2: 3 },
+           talisman: { 1: drawTalismanId(), 2: null }, talismanUsed: { 1: false, 2: false }, wildcards: { 1: 3, 2: 3 },
+           talismanChoice: { player: 2, options: p2Options, done: false },
            assaultPlayer: 0, guardPlayer: 0, extraMoves: 0, extraTurnPending: false, graveyard: [], mists: {}, blackFlames: {}, meteors: [], meteorSeq: 0, crosses: [], crossSeq: 0,
            timeAnchors: [], timeAnchorSeq: 0, holyDomains: [], holyDomainSeq: 0,
            stats: { damage: { 1: 0, 2: 0 }, kills: { 1: 0, 2: 0 }, startedAt: 0, endedAt: 0, lastKiller: null },
@@ -2157,6 +2170,24 @@ function applyAction(state, player, action) {
   const err = (m) => ({ ok: false, error: m, state });
 
   if (s.phase === "over") return err("对局已结束");
+
+  // 联机后手开局锦囊二选一：不占行动、不要求当前回合，但必须由后手本人选择
+  if (action.type === "talismanChoice") {
+    if (s.phase !== "battle") return err("对局尚未开始，不能选择开局锦囊");
+    const ch = s.talismanChoice;
+    if (!ch || ch.done) return err("已经没有待选择的开局锦囊");
+    if (player !== ch.player) return err("只有后手可以选择开局锦囊");
+    if (!Array.isArray(ch.options) || ch.options.indexOf(action.id) < 0) return err("该锦囊不在二选一候选中");
+    s.talisman[player] = action.id;
+    s.talismanUsed[player] = false;
+    ch.done = true;
+    s.talismanChoice = null;
+    slog(s, "🎴 玩家" + player + " 已选择开局锦囊");
+    return { ok: true, state: s };
+  }
+  if (s.talismanChoice && !s.talismanChoice.done && s.phase === "battle" && player === s.talismanChoice.player) {
+    return err("请先选择开局锦囊（二选一）");
+  }
 
   // 龙胆：额外移动（只能在自己的回合、消耗由龙魂闪避积累的次数）
   if (action.type === "dragonmove") {

@@ -59,6 +59,13 @@ function publicStateFor(state, player) {
   delete s._undo; // 悔棋快照绝不下发（可能包含隐藏信息）
   const me = player === 1 ? 1 : 2;
   const opp = me === 1 ? 2 : 1;
+  // 联机后手开局锦囊二选一：候选只下发给后手本人，对手只知道“有人在选”
+  const tc = state.talismanChoice;
+  s.talismanChoice = null;
+  s.talismanChoicePending = !!(tc && !tc.done && state.phase === "battle");
+  if (player && tc && !tc.done && tc.player === me && state.phase === "battle") {
+    s.talismanChoice = { player: tc.player, options: (tc.options || []).slice(), done: false };
+  }
   if (!player) { // 尚未入座的连接：不下发任何私密信息
     s.pools = { 1: null, 2: null };
     s.talisman = { 1: null, 2: null };
