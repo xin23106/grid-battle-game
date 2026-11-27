@@ -115,6 +115,7 @@ let onlinePool = null;             // 联机随机选将：本人的候选英雄
 let localPools = { 1: [], 2: [] };// 本地双人：每局随机抽取的候选英雄（每方 3 名）
 let wildcards = { 1: 3, 2: 3 };    // 本地双人：每方 3 张选将卡（可任选英雄）
 let onlineWildcards = 0;           // 联机：本人的选将卡剩余数量（服务端下发）
+let onlineCardSlots = [];           // 联机：开局混合卡槽（英雄卡 / 选将卡，仅本人可见）
 let onlineCanUndo = false;         // 联机：服务端是否允许本人悔棋（本回合且已有动作快照）
 let wildcardMode = false;          // 选将卡：正在从全部英雄中任选
 let pendingWildcard = false;       // 当前待放置英雄是否由选将卡指定
@@ -1730,6 +1731,7 @@ function init() {
   if (gameMode === "local") drawLocalPools();
   else { localPools = { 1: [], 2: [] }; wildcards = { 1: 0, 2: 0 }; wildcardMode = false; pendingWildcard = false; }
   onlineWildcards = 0;
+  onlineCardSlots = [];
   history = [];
   historyBase = 0;
   pendingHero = firstAvailableHero(1);
@@ -7922,6 +7924,59 @@ function updateRoster() {
   const local = gameMode === "local";
   const me = mySide();
   const used = placedIds[me] || [];
+  // 联机混合卡槽：6 个槽位随机成为英雄卡 / 选将卡，按抽到的顺序展示。
+  if (online && onlineCardSlots.length && !wildcardMode) {
+    const titleEl0 = heroRosterEl.querySelector(".roster-title");
+    if (titleEl0) titleEl0.textContent = "开局随机卡槽：英雄卡 / 选将卡（选将卡剩余 " + onlineWildcards + " 张）";
+    rosterListEl.innerHTML = "";
+    for (const slot of onlineCardSlots) {
+      if (slot.type === "hero") {
+        const h = heroDef(slot.heroId);
+        if (!h) continue;
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = "hero-option";
+        card.dataset.hero = h.id;
+        if (window.HeroVisuals) window.HeroVisuals.applyVars(card, h.id);
+        const isUsed = slot.used || used.includes(h.id);
+        if (isUsed) card.classList.add("used");
+        if (pendingHero === h.id) card.classList.add("active");
+        card.disabled = isUsed;
+        card.title = h.name + "｜" + h.tag + "\n技能【" + h.skill.name + "】：" + h.skill.desc;
+        card.innerHTML =
+          '<span class="ho-portrait">' + (window.HeroVisuals ? window.HeroVisuals.portraitHTML(h.id, "mini") : h.icon) + "</span>" +
+          '<span class="ho-name">' + h.name + "</span>" +
+          '<span class="ho-hp">♥ ' + h.hp + "</span>";
+        card.addEventListener("click", () => {
+          if (isUsed) return;
+          pendingHero = h.id;
+          pendingWildcard = false;
+          wildcardMode = false;
+          render();
+        });
+        rosterListEl.appendChild(card);
+      } else if (slot.type === "wildcard") {
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = "hero-option wildcard-card";
+        if (slot.used) card.classList.add("used");
+        card.disabled = !!slot.used;
+        card.innerHTML =
+          '<span class="ho-icon">🎟</span>' +
+          '<span class="ho-name">选将卡</span>' +
+          '<span class="ho-hp">' + (slot.used ? "已用" : "任选") + "</span>";
+        card.title = slot.used ? "该选将卡已使用" : "选将卡：从全部英雄中任选一名";
+        card.addEventListener("click", () => {
+          if (slot.used) return;
+          wildcardMode = true;
+          pendingWildcard = false;
+          render();
+        });
+        rosterListEl.appendChild(card);
+      }
+    }
+    return;
+  }
   let list;
   let wildCount = 0;
   if (online) {
@@ -10124,6 +10179,9 @@ function applyRemoteState(state) {
   // 联机随机选将：候选池与双方部署完成状态（对手候选池不会下发）
   onlinePool = state.pools && state.pools[mySide()] ? state.pools[mySide()].slice() : (gameMode === "online" ? onlinePool : null);
   if (state.wildcards) onlineWildcards = state.wildcards[mySide()] || 0;
+  onlineCardSlots = state.cardSlots && state.cardSlots[mySide()]
+    ? JSON.parse(JSON.stringify(state.cardSlots[mySide()]))
+    : [];
   onlineCanUndo = !!state.canUndo;
   if (state.placementDone) onlinePlacementDone = { 1: !!state.placementDone[1], 2: !!state.placementDone[2] };
   // 锦囊状态同步（对手的锦囊为 null=不可见）
@@ -10227,6 +10285,7 @@ window.onNetJoined = () => {
   wildcardMode = false;
   pendingWildcard = false;
   onlineWildcards = 0;
+  onlineCardSlots = [];
   onlineCanUndo = false;
   history = [];
 };

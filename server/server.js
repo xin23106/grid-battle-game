@@ -68,6 +68,9 @@ function publicStateFor(state, player) {
   }
   if (!player) { // 尚未入座的连接：不下发任何私密信息
     s.pools = { 1: null, 2: null };
+    s.cardSlots = { 1: null, 2: null };
+    s.talismanChoice = null;
+    s.talismanChoicePending = false;
     s.talisman = { 1: null, 2: null };
     s.talismanUsed = { 1: false, 2: false };
     return s;
@@ -75,6 +78,11 @@ function publicStateFor(state, player) {
   // 1) 候选英雄池：只下发本人的
   s.pools = { 1: null, 2: null };
   s.pools[me] = state.pools && state.pools[me] ? state.pools[me].slice() : null;
+  // 混合卡槽：仅下发本人的英雄卡 / 选将卡排列
+  s.cardSlots = { 1: null, 2: null };
+  s.cardSlots[me] = state.cardSlots && state.cardSlots[me]
+    ? JSON.parse(JSON.stringify(state.cardSlots[me]))
+    : null;
   // 2) 锦囊：只下发本人的（对手的既不知道名称也不知道是否已用）
   s.talisman = { 1: null, 2: null };
   s.talisman[me] = state.talisman ? state.talisman[me] : null;

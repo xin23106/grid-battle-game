@@ -1371,6 +1371,46 @@ function drawPools() {
   while (pool2.length < PER_PLAYER && shuffled.length) pool2.push(shuffled[pool2.length % shuffled.length]);
   return { 1: pool1, 2: pool2 };
 }
+/* 联机混合卡槽：每方固定 6 个卡槽，每个卡槽随机成为英雄卡或选将卡。
+ * 英雄卡给出一名不重复的候选英雄；选将卡可以任选英雄。
+ * 至少保证每方各有一张英雄卡和一张选将卡，避免抽到全同类时无法展示两种卡。 */
+const CARD_SLOTS = 6;
+function drawCardSlots() {
+  const ids = HEROES.map((h) => h.id);
+  const shuffled = ids.slice();
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const t = shuffled[i]; shuffled[i] = shuffled[j]; shuffled[j] = t;
+  }
+  let heroCursor = 0;
+  const slots = { 1: [], 2: [] };
+  for (const p of [1, 2]) {
+    for (let i = 0; i < CARD_SLOTS; i++) {
+      let isHero = Math.random() < 0.5 && heroCursor < shuffled.length;
+      if (i === CARD_SLOTS - 1) {
+        const hasWild = slots[p].some((s) => s.type === "wildcard");
+        const hasHero = slots[p].some((s) => s.type === "hero");
+        if (!hasWild) isHero = false;
+        else if (!hasHero) isHero = true;
+      }
+      if (isHero) slots[p].push({ type: "hero", heroId: shuffled[heroCursor++], used: false });
+      else slots[p].push({ type: "wildcard", used: false });
+    }
+  }
+  return slots;
+}
+function cardSlotsPools(slots) {
+  return {
+    1: slots[1].filter((x) => x.type === "hero" && !x.used).map((x) => x.heroId),
+    2: slots[2].filter((x) => x.type === "hero" && !x.used).map((x) => x.heroId),
+  };
+}
+function cardSlotsWildcards(slots) {
+  return {
+    1: slots[1].filter((x) => x.type === "wildcard" && !x.used).length,
+    2: slots[2].filter((x) => x.type === "wildcard" && !x.used).length,
+  };
+}
 /* 对战日志：由权威服务端在事件成功结算后写入；每条带唯一 id，供客户端去重 */
 function slog(s, text, opts) {
   if (!s.log) { s.log = []; s.logSeq = 0; }
@@ -1391,10 +1431,11 @@ function createState() {
   const board = [];
   for (let r = 0; r < SIZE; r++) board.push(new Array(SIZE).fill(null));
   const p2Options = drawTalismanChoiceS();
+  const cardSlots = drawCardSlots();
   return { board, phase: "placement", currentPlayer: 1, winner: 0, unitSeq: 1,
-           toPlace: PER_PLAYER, placed: { 1: [], 2: [] }, pools: drawPools(), turnActionUsed: false,
+           toPlace: PER_PLAYER, placed: { 1: [], 2: [] }, pools: cardSlotsPools(cardSlots), cardSlots, turnActionUsed: false,
            turnActionsMax: 1, turnActionsLeft: 1, turnActorUid: 0, empowerTurnActive: false,
-           talisman: { 1: drawTalismanId(), 2: null }, talismanUsed: { 1: false, 2: false }, wildcards: { 1: 3, 2: 3 },
+           talisman: { 1: drawTalismanId(), 2: null }, talismanUsed: { 1: false, 2: false }, wildcards: cardSlotsWildcards(cardSlots),
            talismanChoice: { player: 2, options: p2Options, done: false },
            assaultPlayer: 0, guardPlayer: 0, extraMoves: 0, extraTurnPending: false, graveyard: [], mists: {}, blackFlames: {}, meteors: [], meteorSeq: 0, crosses: [], crossSeq: 0,
            timeAnchors: [], timeAnchorSeq: 0, holyDomains: [], holyDomainSeq: 0,
@@ -2217,14 +2258,14 @@ function applyAction(state, player, action) {
     if (s.board[r][c]) return err("该格已被占用");
     if (s.placed[player].length >= PER_PLAYER) return err("你已经完成部署");
     let usedWildcard = false;
-    if (s.pools && s.pools[player] && s.pools[player].indexOf(heroId) < 0) {
-      // 选将卡：不在候选池时可消耗 1 张任选英雄
-      if ((s.wildcards && s.wildcards[player] || 0) > 0) {
-        s.wildcards[player] -= 1;
-        usedWildcard = true;
-      } else {
-        return err("该英雄不在你的候选池中，且选将卡已用尽");
-      }
+    let usedHeroSlot = false;
+    if (s.pools && s.pools[player] && s.pools[player].indexOf(heroId) >= 0) {
+      usedHeroSlot = true;
+    } else if ((s.wildcards && s.wildcards[player] || 0) > 0) {
+      // 选将卡：不在英雄卡池时可消耗 1 张任选英雄
+      usedWildcard = true;
+    } else {
+      return err("该英雄不在你的英雄卡中，且选将卡已用尽");
     }
     if (s.placed[player].includes(heroId)) return err("同阵营不可重复英雄");
     const def = heroDef(heroId);
@@ -2241,7 +2282,20 @@ function applyAction(state, player, action) {
                       copiedSkill: null, copiedUses: 0, copiedFrom: null,
                       usesArr: heroSkills(def).map((sk) => (sk.uses == null ? 9999 : sk.uses)) };
     s.placed[player].push(heroId);
-    if (usedWildcard) slog(s, "🎟 玩家" + player + " 使用选将卡任选了【" + (def.name || heroId) + "】（剩余 " + s.wildcards[player] + " 张）");
+    if (s.cardSlots && s.cardSlots[player]) {
+      if (usedHeroSlot) {
+        const slot = s.cardSlots[player].find((x) => x.type === "hero" && x.heroId === heroId && !x.used);
+        if (slot) slot.used = true;
+        s.pools[player] = (s.pools[player] || []).filter((id) => id !== heroId);
+      } else if (usedWildcard) {
+        const slot = s.cardSlots[player].find((x) => x.type === "wildcard" && !x.used);
+        if (slot) slot.used = true;
+      }
+    }
+    if (usedWildcard) {
+      s.wildcards[player] = Math.max(0, (s.wildcards[player] || 0) - 1);
+      slog(s, "🎟 玩家" + player + " 使用选将卡任选了【" + (def.name || heroId) + "】（剩余 " + s.wildcards[player] + " 张）");
+    }
     s.toPlace = Math.max(0, PER_PLAYER - s.placed[player].length);
     slog(s, "玩家" + player + " 完成一次部署（" + s.placed[player].length + "/" + PER_PLAYER + "）");
     // 双方都完成部署后才正式开战
