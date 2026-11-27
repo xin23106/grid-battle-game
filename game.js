@@ -2813,7 +2813,8 @@ function computeSkillTargets() {
       break;
 
     case "duanlang":
-      // 向四个方向前进一格的合法落点（只能落在空格）
+      // 原地劈砍，或向四个方向前进一格的合法空落点
+      skillTargets.push([r, c]);
       for (const [dr, dc] of DIRS) {
         const rr = r + dr;
         const cc = c + dc;
@@ -5566,8 +5567,9 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
     }
 
     case "duanlang": {
-      // 断浪：向指定方向前进一格，然后对九宫格范围内敌人各造成 1 点伤害
-      if (Math.abs(tr - r) + Math.abs(tc - c) !== 1 || board[tr][tc]) {
+      // 断浪：原地劈砍或前进一格，然后对九宫格范围内敌人各造成 1 点伤害
+      const stay = tr === r && tc === c;
+      if ((!stay && Math.abs(tr - r) + Math.abs(tc - c) !== 1) || (!stay && board[tr][tc])) {
         addLog("断浪的方向无效。");
         clearSelection();
         render();
@@ -5575,19 +5577,23 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
       }
       const ddest = { r: tr, c: tc };
       if (window.BFX) window.BFX.cast({ type: "duanlang", heroId: a.heroId, caster: { r, c }, target: ddest });
-      board[ddest.r][ddest.c] = a;
-      board[r][c] = null;
+      if (!stay) {
+        board[ddest.r][ddest.c] = a;
+        board[r][c] = null;
+      }
       let dhit = 0;
+      const dseen = new Set();
       for (let dr = -1; dr <= 1; dr++) {
         for (let dc = -1; dc <= 1; dc++) {
           const t = unitAt(ddest.r + dr, ddest.c + dc);
-          if (t && !t.sword && t.player !== a.player) {
+          if (t && !t.sword && t.player !== a.player && !dseen.has(t.uid)) {
+            dseen.add(t.uid);
             applyDamage(t, s.damage + attackerBonus(a), "skill", a);
             dhit++;
           }
         }
       }
-      addLog("🌊 " + label(a) + " 释放【" + s.name + "】，前进到 (" + (ddest.r + 1) + "," + (ddest.c + 1) + ")，九宫格命中 " + dhit + " 名敌人。");
+      addLog("🌊 " + label(a) + " 释放【" + s.name + "】，" + (stay ? "原地劈砍" : "前进到 (" + (ddest.r + 1) + "," + (ddest.c + 1) + ")") + "，九宫格命中 " + dhit + " 名敌人。");
       break;
     }
 
@@ -8390,7 +8396,7 @@ function updateSkillBar() {
         label += " 无剑可用";
       } else {
         if (s.type === "shuidiao") label += (u.sdStage || 0) === 1 ? "·第二段待释放" : "·第一段";
-        if (s.type === "duanlang") label += "·前进1格+九宫格";
+        if (s.type === "duanlang") label += "·原地/前进1格+九宫格";
         if (s.type === "wxt") {
           const wst = u.wxtStage || 0;
           label += wst === 0 ? "·第一段待执行" : wst === 1 ? "·第二段待执行" : "·第三段待执行";

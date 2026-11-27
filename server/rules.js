@@ -2918,13 +2918,20 @@ function applyAction(state, player, action) {
       }
       s.board[opt.dest.r][opt.dest.c] = u; s.board[from.r][from.c] = null;
     } else if (sk.type === "duanlang") {
-      if (dist !== 1 || !inB(r, c)) return err("断浪只能前进一格");
-      if (t) return err("目标格被占用");
-      s.board[r][c] = u; s.board[from.r][from.c] = null;
+      const stay = r === from.r && c === from.c;
+      if (!inB(r, c)) return err("断浪落点不合法");
+      if (!stay && dist !== 1) return err("断浪只能原地劈砍或前进一格");
+      if (!stay && t) return err("目标格被占用");
+      if (!stay) { s.board[r][c] = u; s.board[from.r][from.c] = null; }
+      const dseen = new Set();
       for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
-        const e = inB(r + dr, c + dc) ? s.board[r + dr][c + dc] : null;
-        if (isUnit(e) && e.player !== player) applyDamage(s, e, sk.damage + av, u);
+        const e = inB(r + dr, c + dc) ? unitAtS(s, r + dr, c + dc) : null;
+        if (e && e !== u && e.player !== player && !dseen.has(e.uid)) {
+          dseen.add(e.uid);
+          applyDamage(s, e, sk.damage + av, u);
+        }
       }
+      slog(s, "🌊 " + uname(s, u) + " 释放【断浪】，" + (stay ? "原地劈砍" : "前进到 (" + (r + 1) + "," + (c + 1) + ")") + "，九宫格横扫");
     } else if (sk.type === "shuidiao") {
       const findOpt = (steps, base) => DIRS.map(([dr, dc]) => computeDash(s, u, base.r, base.c, dr, dc, steps))
         .find((o) => (o.dest && o.dest.r === r && o.dest.c === c) || (o.hits[0] && o.hits[0].r === r && o.hits[0].c === c));

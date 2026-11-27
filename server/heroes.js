@@ -38,7 +38,7 @@ module.exports = [
     passive: { name: "孤胆" },
     skill: { name: "孤胆", type: "passive", uses: 0 } },
   { id: "cang", name: "沧", hp: 6, sfx: "fast",
-    skill: { name: "断浪", type: "duanlang", range: 1, damage: 1, uses: 1 },
+    skill: { name: "断浪", type: "duanlang", range: 1, damage: 1, uses: 1, free: true },
     extraSkills: [
       { name: "水调歌头", type: "shuidiao", range: 3, damage: 1, grabDamage: 2, uses: 1 },
     ] },
