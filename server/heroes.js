@@ -25,8 +25,10 @@ module.exports = [
   { id: "guardian", name: "守卫", hp: 8, sfx: "shield",
     skill: { name: "铁壁", type: "shield_ally", range: 0, shield: 2, uses: 1, free: true } },
   { id: "asura", name: "阿修罗", hp: 6, sfx: "blade", blades: 3,
+    passive: { name: "锻剑" },
     skill: { name: "剑圣", type: "dash", range: 3, damage: 1, uses: 2, perTurn: 2, costSwords: 1 } },
   { id: "lone", name: "孤胆侠", hp: 7, sfx: "heavy",
+    passive: { name: "孤胆" },
     skill: { name: "孤胆", type: "passive", uses: 0 } },
   { id: "cang", name: "沧", hp: 6, sfx: "fast",
     skill: { name: "断浪", type: "duanlang", range: 1, damage: 1, uses: 1 },
@@ -34,6 +36,7 @@ module.exports = [
       { name: "水调歌头", type: "shuidiao", range: 3, damage: 1, grabDamage: 2, uses: 1 },
     ] },
   { id: "longren", name: "龙人", hp: 5, sfx: "magic",
+    passives: [{ name: "龙魂" }, { name: "龙胆" }],
     skill: { name: "龙息", type: "dragonbreath", damage: 1, uses: 1, free: true } },
   { id: "thunder", name: "雷电之主", hp: 5, sfx: "ice",
     skill: { name: "雷霆万钧", type: "thunder", damage: 1, uses: 1, empowerTurns: 3, empowerShield: 2, empowerActions: 2 } },
@@ -46,6 +49,7 @@ module.exports = [
       { name: "天威", type: "tianwei", damage: 1, uses: 1 },
     ] },
   { id: "xiangyu", name: "西楚霸王", hp: 6, sfx: "heavy",
+    passive: { name: "鬼雄" },
     skill: { name: "鬼雄", type: "passive", uses: 0 } },
   { id: "tiandao", name: "天道超", hp: 6, sfx: "magic",
     skill: { name: "神罗天征", type: "shenluo", damage: 1, uses: 2 },
@@ -89,5 +93,10 @@ module.exports = [
     skill: { name: "天眼", type: "passive" },
     extraSkills: [
       { name: "逆转乾坤", type: "qiankun", uses: 1, free: true, damage: 1, shieldTurns: 2, stun: 1 },
+    ] },
+  { id: "thiefgod", name: "窃神", hp: 6, sfx: "thiefgod",
+    skill: { name: "窃取权柄", type: "steal", uses: 1, free: true },
+    extraSkills: [
+      { name: "窃魂", type: "soulsteal", uses: 1, free: true },
     ] },
 ];

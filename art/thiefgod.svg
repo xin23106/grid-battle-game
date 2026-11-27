@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="640" viewBox="0 0 480 640">
+  <defs>
+    <radialGradient id="aura" cx="50%" cy="45%" r="56%">
+      <stop offset="0" stop-color="#fbbf24" stop-opacity=".48"/>
+      <stop offset=".42" stop-color="#4c1d95" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#020617" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="robe" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f2937"/>
+      <stop offset=".45" stop-color="#0b1020"/>
+      <stop offset="1" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff7cc"/>
+      <stop offset=".35" stop-color="#fbbf24"/>
+      <stop offset=".7" stop-color="#d97706"/>
+      <stop offset="1" stop-color="#92400e"/>
+    </linearGradient>
+    <linearGradient id="purple" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#c4b5fd"/>
+      <stop offset=".5" stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#312e81"/>
+    </linearGradient>
+    <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f3d2b8"/>
+      <stop offset="1" stop-color="#b9825c"/>
+    </linearGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="12"/></filter>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="8" stdDeviation="7" flood-color="#020617" flood-opacity=".7"/></filter>
+  </defs>
+
+  <ellipse cx="240" cy="350" rx="205" ry="225" fill="url(#aura)" filter="url(#soft)"/>
+  <ellipse cx="240" cy="596" rx="138" ry="19" fill="#020617" opacity=".72" filter="url(#soft)"/>
+
+  <!-- background chains / stolen authority -->
+  <g fill="none" stroke="#fbbf24" stroke-width="2" opacity=".45">
+    <path d="M88 120 Q240 70 392 120"/>
+    <path d="M70 190 Q240 132 410 190"/>
+    <path d="M96 470 Q240 520 384 470"/>
+  </g>
+  <g fill="#fde68a" filter="url(#glow)">
+    <circle cx="88" cy="120" r="2.4"/><circle cx="392" cy="120" r="2.4"/><circle cx="70" cy="190" r="2"/><circle cx="410" cy="190" r="2"/><circle cx="240" cy="70" r="3"/>
+  </g>
+
+  <!-- robe -->
+  <path d="M158 250 C104 310 92 440 112 558 C152 574 328 574 368 558 C388 440 376 310 322 250 C286 272 194 272 158 250 Z" fill="url(#robe)" stroke="#111827" stroke-width="4"/>
+  <path d="M166 262 C126 320 118 456 132 546" stroke="#fbbf24" stroke-width="4" opacity=".8" fill="none"/>
+  <path d="M314 262 C354 320 362 456 348 546" stroke="#fbbf24" stroke-width="4" opacity=".8" fill="none"/>
+  <path d="M132 546 C160 560 320 560 348 546" stroke="#7c3aed" stroke-width="4" opacity=".9" fill="none"/>
+
+  <!-- legs / boots -->
+  <path d="M192 438 C184 486 186 534 194 578 L230 578 C226 528 224 480 232 442 Z" fill="#1e293b" stroke="#6d28d9" stroke-width="3"/>
+  <path d="M248 442 C256 486 254 532 262 578 L298 578 C304 532 304 486 288 438 Z" fill="#111827" stroke="#6d28d9" stroke-width="3"/>
+  <path d="M188 574 L232 574 L236 598 L178 598 Q174 584 188 574 Z" fill="#0b1020" stroke="#fbbf24" stroke-width="3"/>
+  <path d="M258 574 L302 574 L316 598 L254 598 Q246 584 258 574 Z" fill="#0b1020" stroke="#fbbf24" stroke-width="3"/>
+
+  <!-- robe skirt gold trim -->
+  <path d="M176 384 Q240 360 304 384 L316 456 Q240 488 164 456 Z" fill="#111827" stroke="#4c1d95" stroke-width="3"/>
+  <path d="M174 384 Q240 412 306 384" stroke="url(#gold)" stroke-width="7" fill="none"/>
+  <path d="M206 430 L240 470 L274 430" stroke="#fbbf24" stroke-width="4" fill="none" opacity=".9"/>
+  <path d="M196 510 L206 550 M240 512 L240 556 M284 510 L274 550" stroke="#7c3aed" stroke-width="3" opacity=".75"/>
+
+  <!-- torso armor -->
+  <path d="M174 270 Q204 238 240 232 Q276 238 306 270 L298 382 Q240 414 182 382 Z" fill="#1f2937" stroke="#6d28d9" stroke-width="4" filter="url(#shadow)"/>
+  <path d="M188 282 Q240 254 292 282 L287 334 Q240 354 193 334 Z" fill="#0b1020" stroke="#4c1d95" stroke-width="2"/>
+  <path d="M240 250 L240 382" stroke="#fbbf24" stroke-width="2" opacity=".55"/>
+  <path d="M192 348 Q240 374 288 348" stroke="url(#gold)" stroke-width="6" fill="none"/>
+  <path d="M206 296 Q240 322 274 296 Q268 340 240 348 Q212 340 206 296 Z" fill="#312e81" stroke="#fbbf24" stroke-width="4"/>
+  <path d="M240 292 Q249 316 270 321 Q252 338 258 362 L240 348 L222 362 L228 338 L210 321 L231 316 Z" fill="#fde68a" filter="url(#glow)"/>
+
+  <!-- shoulders / arms -->
+  <path d="M160 270 Q184 238 216 254 L208 298 Q180 304 158 292 Z" fill="#111827" stroke="#7c3aed" stroke-width="4"/>
+  <path d="M320 270 Q296 238 264 254 L272 298 Q300 304 322 292 Z" fill="#111827" stroke="#7c3aed" stroke-width="4"/>
+  <path d="M164 276 Q184 258 207 266" stroke="#fbbf24" stroke-width="5" fill="none"/>
+  <path d="M316 276 Q296 258 273 266" stroke="#fbbf24" stroke-width="5" fill="none"/>
+  <path d="M162 292 Q142 342 157 394 L188 386 Q176 342 184 302 Z" fill="#1e293b" stroke="#6d28d9" stroke-width="3"/>
+  <path d="M318 292 Q338 342 323 394 L292 386 Q304 342 296 302 Z" fill="#1e293b" stroke="#6d28d9" stroke-width="3"/>
+  <path d="M151 386 Q160 414 182 419 Q193 407 184 390 Z" fill="url(#skin)" stroke="#b9825c" stroke-width="2"/>
+  <path d="M329 386 Q320 414 298 419 Q287 407 296 390 Z" fill="url(#skin)" stroke="#b9825c" stroke-width="2"/>
+
+  <!-- scepter / stolen crown in left hand -->
+  <g filter="url(#glow)">
+    <path d="M154 188 L154 528" stroke="#fbbf24" stroke-width="7" stroke-linecap="round"/>
+    <path d="M154 188 L154 528" stroke="#fff7cc" stroke-width="2" stroke-linecap="round"/>
+    <path d="M130 146 L142 178 L154 150 L166 178 L178 146 L174 190 L134 190 Z" fill="url(#purple)" stroke="#fbbf24" stroke-width="3"/>
+    <circle cx="154" cy="170" r="8" fill="#fde68a"/>
+    <path d="M154 206 Q190 218 205 198 Q188 240 154 236 Q120 240 103 198 Q118 218 154 206 Z" fill="none" stroke="#c4b5fd" stroke-width="3" opacity=".8"/>
+  </g>
+
+  <!-- head -->
+  <path d="M196 174 Q194 120 240 112 Q286 120 284 174 L272 214 Q240 232 208 214 Z" fill="url(#skin)" stroke="#b9825c" stroke-width="3"/>
+  <path d="M192 176 Q190 104 240 98 Q294 104 289 176 Q272 148 240 146 Q213 146 192 176 Z" fill="#111827" stroke="#4c1d95" stroke-width="2"/>
+  <path d="M198 160 Q214 132 240 132 Q270 132 285 160 Q270 148 240 148 Q210 148 198 160 Z" fill="#1f2937" opacity=".95"/>
+  <path d="M202 192 Q214 202 226 194 M254 194 Q266 202 278 192" stroke="#c4b5fd" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <ellipse cx="220" cy="181" rx="4" ry="2.6" fill="#fbbf24"/>
+  <ellipse cx="260" cy="181" rx="4" ry="2.6" fill="#fbbf24"/>
+  <path d="M231 207 Q240 213 249 207" stroke="#9f1239" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M214 218 Q240 232 266 218" stroke="#fbbf24" stroke-width="3" fill="none"/>
+
+  <!-- crown -->
+  <path d="M202 140 L210 104 L226 128 L240 86 L254 128 L270 104 L278 140 L262 148 Q240 134 218 148 Z" fill="url(#gold)" stroke="#fff7cc" stroke-width="2" filter="url(#glow)"/>
+  <path d="M240 90 L246 108 L264 112 L250 126 L254 146 L240 136 L226 146 L230 126 L216 112 L234 108 Z" fill="#fde68a"/>
+  <circle cx="240" cy="120" r="4" fill="#7c3aed"/>
+
+  <!-- floating stolen skill orbs / particles -->
+  <g fill="#fde68a" filter="url(#glow)">
+    <circle cx="336" cy="308" r="3"/><circle cx="356" cy="342" r="2"/><circle cx="326" cy="370" r="2.2"/>
+    <circle cx="144" cy="330" r="2.4"/><circle cx="126" cy="366" r="1.8"/><circle cx="358" cy="268" r="1.7"/>
+  </g>
+  <g fill="none" stroke="#c4b5fd" stroke-width="1.3" opacity=".7">
+    <path d="M326 370 Q340 348 356 342 M336 308 Q348 360 326 370"/>
+  </g>
+</svg>

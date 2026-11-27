@@ -1626,6 +1626,114 @@ html, body {
 }
 
 /* =======================================================================
+   窃神：窃魂封印 / 技能复制面板
+   ======================================================================= */
+.state-soulseal {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+.soulseal-ring {
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  bottom: 2%;
+  height: 28%;
+  border-radius: 50%;
+  border: 2px solid rgba(251, 191, 36, .8);
+  box-shadow: 0 0 12px rgba(251, 191, 36, .5), inset 0 0 14px rgba(11, 16, 32, .8);
+  background: radial-gradient(ellipse, rgba(11, 16, 32, .66), transparent 68%);
+  animation: soulSealPulse 1.8s ease-in-out infinite;
+}
+.soulseal-chain {
+  position: absolute;
+  left: 50%;
+  bottom: 16%;
+  width: 2px;
+  height: 30%;
+  background: linear-gradient(#fbbf24, rgba(251, 191, 36, 0));
+  transform-origin: bottom center;
+  box-shadow: 0 0 5px #fbbf24;
+}
+.soulseal-chain.a { transform: translateX(-8px) rotate(-24deg); }
+.soulseal-chain.b { transform: translateX(8px) rotate(24deg); }
+@keyframes soulSealPulse { 0%,100% { opacity: .65; transform: scale(.96); } 50% { opacity: 1; transform: scale(1.04); } }
+.badge.rooted { background: rgba(120, 53, 15, .92); border-color: #fbbf24; color: #fef3c7; }
+.badge.silenced { background: rgba(30, 27, 75, .94); border-color: #c4b5fd; color: #ede9fe; }
+
+.steal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 8vh 16px 16px;
+  background: rgba(2, 6, 23, .72);
+  backdrop-filter: blur(3px);
+}
+.steal-panel {
+  width: min(560px, 96vw);
+  max-height: 78vh;
+  overflow: auto;
+  border-radius: 14px;
+  border: 1px solid rgba(251, 191, 36, .72);
+  background: linear-gradient(160deg, rgba(31, 23, 8, .98), rgba(8, 12, 24, .98));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .75), 0 0 32px rgba(251, 191, 36, .18);
+  color: #fef3c7;
+}
+.steal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px 8px;
+  border-bottom: 1px solid rgba(251, 191, 36, .22);
+}
+.steal-head b { display: block; font-size: 16px; letter-spacing: 1px; }
+.steal-head span { display: block; color: #c4b5fd; font-size: 12px; margin-top: 3px; }
+.steal-cancel {
+  border: 1px solid rgba(196, 181, 253, .45);
+  background: rgba(15, 23, 42, .8);
+  color: #e9d5ff;
+  border-radius: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.steal-sub { padding: 8px 16px 0; color: #fcd34d; font-size: 12px; }
+.steal-list { padding: 8px 12px 14px; display: grid; gap: 7px; }
+.steal-skill {
+  display: flex;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(251, 191, 36, .25);
+  background: linear-gradient(90deg, rgba(251, 191, 36, .1), rgba(30, 27, 75, .4));
+  color: #fef3c7;
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: border-color .16s, background .16s, transform .16s;
+}
+.steal-skill:hover { border-color: #fbbf24; background: rgba(251, 191, 36, .16); transform: translateY(-1px); }
+.steal-skill-icon { flex: 0 0 26px; width: 26px; color: #fbbf24; }
+.steal-skill-icon svg { width: 24px; height: 24px; }
+.steal-skill-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.steal-skill-main b { font-size: 13px; }
+.steal-skill-main small { color: #fcd34d; font-size: 10px; }
+.steal-skill-main em { color: #cbd5e1; font-size: 11px; font-style: normal; line-height: 1.45; opacity: .9; }
+
+.unit-pose-thiefgod-steal .hero-figure-wrap { animation: thiefStealBody .62s ease-out; }
+.unit-pose-thiefgod-steal .hf-weapon { animation: thiefStealWpn .62s ease-out; }
+.unit-pose-thiefgod-soulsteal .hero-figure-wrap { animation: thiefSoulBody .78s ease-out; }
+.unit-pose-thiefgod-soulsteal .hero-aura { animation: thiefSoulAura .78s ease-out; }
+@keyframes thiefStealBody { 0%,100% { transform: translateX(0); } 35% { transform: translateX(-3px) rotate(-2deg); } 62% { transform: translateX(2px) rotate(1deg); } }
+@keyframes thiefStealWpn { 0%,100% { transform: rotate(0); } 40% { transform: rotate(-12deg) scale(1.08); } 70% { transform: rotate(8deg); } }
+@keyframes thiefSoulBody { 0%,100% { transform: scale(1); } 45% { transform: scale(1.04) translateY(-2px); } }
+@keyframes thiefSoulAura { 0%,100% { opacity: .55; transform: scale(.94); } 45% { opacity: 1; transform: scale(1.12); } }
+
+/* =======================================================================
    视觉升级：动态英雄棋子 / 专属装饰 / 连续移动 / 棋盘质感
    ======================================================================= */
 
@@ -1855,6 +1963,30 @@ html, body {
   25% { opacity: .95; }
   65% { opacity: .65; }
   100% { opacity: 0; transform: translateY(-18px) scale(1.25) rotate(160deg); }
+}
+.aura-thief .hero-aura {
+  background:
+    radial-gradient(ellipse at 50% 66%, rgba(251, 191, 36, .36), transparent 58%),
+    radial-gradient(ellipse at 50% 48%, rgba(11, 16, 32, .92), transparent 74%);
+}
+.aura-thief::after {
+  content: "";
+  position: absolute;
+  inset: -6%;
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, transparent 0 34deg, rgba(251, 191, 36, .58) 35deg 37deg, transparent 38deg 72deg);
+  opacity: .4;
+  animation: auraSpin 8s linear infinite reverse;
+}
+.aura-thief .hero-particle-field i {
+  background: #fbbf24;
+  box-shadow: 0 0 9px #fbbf24, 0 0 18px rgba(109, 40, 217, .6);
+  animation: thiefMote 3.4s ease-in-out infinite;
+}
+@keyframes thiefMote {
+  0% { opacity: 0; transform: translate(0, 8px) scale(.5); }
+  30% { opacity: .95; }
+  100% { opacity: 0; transform: translate(8px, -20px) scale(1.2); }
 }
 .aura-blade .hero-aura { background: radial-gradient(ellipse, rgba(226, 232, 240, .26), transparent 66%); }
 .aura-shield .hero-aura { background: radial-gradient(ellipse, rgba(148, 163, 184, .33), transparent 66%); }

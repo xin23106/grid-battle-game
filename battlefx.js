@@ -45,7 +45,7 @@
     assassin: "#22d3ee", warlock: "#a5f3fc", cleric: "#86efac", guardian: "#93c5fd",
     asura: "#e2e8f0", lone: "#facc15", cang: "#38bdf8", longren: "#fbbf24",
     thunder: "#c084fc", vampire: "#e11d48", jade: "#a78bfa", xiangyu: "#f87171",
-    tiandao: "#c084fc", huamulan: "#f43f5e", hillking: "#a8a29e", raven: "#8b5cf6", metal: "#fbbf24", cicada: "#fcd34d", eagle: "#a78bfa", susanoo: "#7c3aed", yangjian: "#fbbf24",
+    tiandao: "#c084fc", huamulan: "#f43f5e", hillking: "#a8a29e", raven: "#8b5cf6", metal: "#fbbf24", cicada: "#fcd34d", eagle: "#a78bfa", susanoo: "#7c3aed", yangjian: "#fbbf24", thiefgod: "#fbbf24",
   };
   function heroColor(id) { return HERO_COLOR[id] || "#93c5fd"; }
 
@@ -1167,6 +1167,50 @@
           addMark("impact", tg.r, tg.c, "#fbbf24", 10000);
           addMark("cut", tg.r, tg.c, "#bfdbfe", 9000);
         }
+        break;
+      }
+      case "steal": {
+        // 窃取权柄：黑金能量汲取链 + 权柄法阵
+        if (tx != null) {
+          push({ kind: "beam", x, y, x2: tx, y2: ty, color: "#fbbf24", width: 4, dur: dur(360), flow: true });
+          push({ kind: "beam", x, y, x2: tx, y2: ty, color: "#111827", width: 7, dur: dur(340), flow: true });
+          push({ kind: "rune", x: tx, y: ty, r: geo.cell * 0.65, color: "#fbbf24", sides: 5, dur: dur(620) });
+          push({ kind: "ring", x: tx, y: ty, r0: 4, r1: geo.cell * 0.75, color: "#fde68a", width: 3, dur: dur(500), delay: dur(60) });
+          push({ kind: "text", x: tx, y: ty - geo.cell * 0.5, text: "权柄窃取", color: "#fde68a", size: 13, dur: dur(760), rise: 18 });
+          spawn(tx, ty, 20, { color: "#fbbf24", speed: 2.2, life: 520, size: 1.8 });
+          addMark("shadow", tg.r, tg.c, "#111827", 9000);
+        }
+        break;
+      }
+      case "soulsteal": {
+        // 窃魂：单体黑金封印法阵
+        if (tx != null) {
+          push({ kind: "rune", x: tx, y: ty, r: geo.cell * 0.72, color: "#fbbf24", sides: 8, dur: dur(720) });
+          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.75, r1: geo.cell * 0.15, color: "#fde68a", width: 3, dur: dur(680) });
+          for (let i = 0; i < 3; i++) push({ kind: "slash", x: tx, y: ty, angle: i * Math.PI / 3, len: geo.cell * 0.62, width: 2.4, color: i % 2 ? "#fbbf24" : "#6d28d9", dur: dur(520), delay: dur(i * 60) });
+          spawn(tx, ty, 22, { color: "#fbbf24", speed: 2.4, life: 620, size: 2 });
+          addMark("shadow", tg.r, tg.c, "#111827", 11000);
+          addMark("impact", tg.r, tg.c, "#fbbf24", 9000);
+        }
+        break;
+      }
+      case "soulsealBreak": {
+        push({ kind: "ring", x, y, r0: geo.cell * 0.7, r1: geo.cell * 0.12, color: "#fbbf24", width: 3, dur: dur(420) });
+        push({ kind: "ring", x, y, r0: geo.cell * 0.4, r1: geo.cell * 1.15, color: "#7c3aed", width: 2, dur: dur(500), delay: dur(60) });
+        for (let i = 0; i < 3; i++) push({ kind: "slash", x, y, angle: i * Math.PI / 3, len: geo.cell * 0.55, width: 2, color: "#c4b5fd", dur: dur(420), delay: dur(i * 50) });
+        spawn(x, y, 14, { color: "#fde68a", speed: 2.2, life: 520, size: 1.8 });
+        break;
+      }
+      case "soulstealWave": {
+        // 窃魂：黑金封印波向全棋盘扩散
+        push({ kind: "ring", x, y, r0: geo.cell * 0.35, r1: geo.cell * 4.2, color: "#fbbf24", width: 6, dur: dur(780) });
+        push({ kind: "ring", x, y, r0: geo.cell * 0.2, r1: geo.cell * 3.4, color: "#111827", width: 8, dur: dur(720), delay: dur(60) });
+        push({ kind: "wave", x, y, r1: geo.cell * 4.4, color: "#fbbf24", dur: dur(760), delay: dur(80) });
+        for (const p of (m.targets || [])) {
+          if (!p || p.r == null) continue;
+          push({ kind: "text", x: px(p.c), y: py(p.r) - geo.cell * 0.5, text: "封印", color: "#fde68a", size: 13, dur: dur(900), rise: 20 });
+        }
+        spawn(x, y, 36, { color: "#fbbf24", speed: 3, life: 760, size: 2.4 });
         break;
       }
       case "meteor": {

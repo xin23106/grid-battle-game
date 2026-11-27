@@ -85,6 +85,7 @@
     jade:      { wave: "sine",     base: 440, air: 2800, metal: 0.35, wet: 0.3, pan: 0.0 },
     xiangyu:   { wave: "sawtooth", base: 130, air: 1600, metal: 0.35, wet: 1.0, pan: -0.03 },
     tiandao:   { wave: "sine",     base: 165, air: 1200, metal: 0.30, wet: 0.8, pan: 0.05 },
+    thiefgod:  { wave: "sawtooth", base: 180, air: 3600, metal: 0.35, wet: 0.55, pan: 0.0 },
     __default: { wave: "triangle", base: 600, air: 2400, metal: 0.25, wet: 0.3, pan: 0 },
   };
   function H(id) { return HERO[id] || HERO.__default; }
@@ -564,6 +565,16 @@
         T(L, { at: 0, dur: 0.5, wave: "sine", f0: 523, f1: 523, peak: 0.06 });
         T(L, { at: 0.01, dur: 0.5, wave: "sine", f0: 784, peak: 0.035 });
         N(L, { at: 0.08, dur: 0.55, lp: 900, lpTo: 260, peak: 0.08 });
+        break;
+      case "steal": // 窃神·窃取权柄：暗金汲取链 + 权柄钟鸣
+        N(L, { at: 0, dur: 0.45, bp: 1400, q: 1.4, sweepTo: 3200, peak: 0.08 });
+        T(L, { at: 0.04, dur: 0.5, wave: "sawtooth", f0: 140, f1: 420, peak: 0.06 });
+        [0, 7, 12].forEach((q, i) => T(L, { at: 0.16 + i * 0.06, dur: 0.32, wave: "sine", f0: 523 * Math.pow(2, q / 12), peak: 0.045 }));
+        break;
+      case "soulsteal": // 窃神·窃魂：低频封印 + 黑金扩散
+        HP(L, { at: 0, dur: 0.6, f0: 95, f1: 35, peak: 0.35 });
+        N(L, { at: 0.03, dur: 0.55, lp: 700, lpTo: 180, peak: 0.14 });
+        [0, 3, 7, 12].forEach((q, i) => T(L, { at: 0.15 + i * 0.08, dur: 0.42, wave: "sine", f0: 262 * Math.pow(2, q / 12), peak: 0.055 }));
         break;
 
       case "shield_self":

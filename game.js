@@ -221,16 +221,19 @@ function isPillar(cell) {
 function isUnit(cell) {
   return !!cell && !cell.sword && !cell.pillar;
 }
+function hasSwordPassive(u) {
+  return !!(u && !u.sword && hasPassiveEffect(u, "asura", "锻剑"));
+}
 function hasAsuraAlive() {
   for (let r = 0; r < SIZE; r++)
     for (let c = 0; c < SIZE; c++) {
       const u = board[r][c];
-      if (u && !u.sword && u.heroId === "asura") return true;
+      if (hasSwordPassive(u)) return true;
     }
   return false;
 }
 function spawnSword(r, c) {
-  // 阿修罗存活时才生成；同一格只能有一个物体；同一场阵亡只生成一把
+  // 拥有【锻剑】被动的英雄存活时才生成；同一格只能有一个物体
   if (!hasAsuraAlive()) return false;
   if (!inBounds(r, c) || board[r][c]) return false;
   board[r][c] = { sword: true, uid: unitSeq++ };
@@ -238,7 +241,7 @@ function spawnSword(r, c) {
   return true;
 }
 function collectSwordAt(r, c, unit) {
-  if (unit && unit.heroId === "asura" && isSword(board[r][c])) {
+  if (hasSwordPassive(unit) && isSword(board[r][c])) {
     unit.swords = (unit.swords || 0) + 1;
     return true;
   }
@@ -255,7 +258,7 @@ function isFreeSkill(s) {
 function heroHasFreeUses(u) {
   // 仅“每回合型”（剑圣）会让回合在行动后继续保持开放
   if (!u || u.sword) return false;
-  const skills = heroSkills(heroDef(u.heroId));
+  const skills = unitSkills(u);
   return skills.some((s, i) => s.perTurn && skillUsesLeft(u, i) > 0);
 }
 /* 技能是否消耗“剑”，以及是否支付得起 */
@@ -276,17 +279,80 @@ function heroSkills(def) {
   if (!def) return [];
   return [def.skill, ...(def.extraSkills || [])].filter(Boolean);
 }
+/* 单位实际拥有的技能：英雄原始技能 + 窃神复制技能（追加在末尾，索引稳定） */
+function unitSkills(u) {
+  const def = u ? heroDef(u.heroId) : null;
+  const base = heroSkills(def);
+  if (!u || !u.copiedSkill) return base;
+  return base.concat([u.copiedSkill]);
+}
 /* 当前正在操作的技能（默认为第 0 个） */
 function activeSkillOf(u) {
   if (!u) return null;
-  const skills = heroSkills(heroDef(u.heroId));
+  const skills = unitSkills(u);
   return skills[activeSkillIdx] || skills[0] || null;
 }
-/* 英雄的被动技能列表（支持多个） */
+/* 英雄原始被动技能列表（支持多个） */
 function heroPassives(def) {
   if (!def) return [];
   if (def.passives && def.passives.length) return def.passives;
   return def.passive ? [def.passive] : [];
+}
+function normalizePassiveSkill(p) {
+  if (!p) return null;
+  return Object.assign({ uses: 0 }, p, { type: "passive", passive: true });
+}
+/* 单位实际拥有的被动：原始被动 + 复制到的被动 */
+function heroPassivesForUnit(u) {
+  if (!u) return [];
+  const out = heroPassives(heroDef(u.heroId)).slice();
+  const cp = u.copiedSkill;
+  if (cp && isPassiveSkill(cp)) {
+    if (!out.some((p) => p && p.name === cp.name)) out.push(cp);
+  }
+  return out;
+}
+/* 窃取权柄的可复制列表：主动/额外技能 + 被动；去重并保持稳定顺序 */
+function copyableSkills(u) {
+  if (!u) return [];
+  const out = unitSkills(u).slice();
+  for (const p of heroPassivesForUnit(u)) {
+    const np = normalizePassiveSkill(p);
+    if (!np) continue;
+    if (!out.some((sk) => sk && sk.type === "passive" && sk.name === np.name)) out.push(np);
+  }
+  return out;
+}
+/* 联机复制的技能只携带服务端精简数据：从本地英雄定义补齐描述/条件，不改次数 */
+function hydrateCopiedSkill(u) {
+  if (!u || !u.copiedSkill || !u.copiedFrom) return;
+  if (u.copiedSkill.desc && u.copiedSkill.condition) return;
+  const src = heroDef(u.copiedFrom.heroId);
+  if (!src) return;
+  const pool = [src.skill].concat(src.extraSkills || []);
+  for (const p of (src.passives && src.passives.length ? src.passives : (src.passive ? [src.passive] : []))) pool.push(normalizePassiveSkill(p));
+  const found = pool.find((sk) => sk && sk.name === u.copiedSkill.name);
+  if (!found) return;
+  if (!u.copiedSkill.desc && found.desc) u.copiedSkill.desc = found.desc;
+  if (!u.copiedSkill.condition && found.condition) u.copiedSkill.condition = found.condition;
+  if (!u.copiedSkill.type && found.type) u.copiedSkill.type = found.type;
+}
+/* 是否拥有某个来源的被动效果（支持窃取；被沉默时失效） */
+function hasPassiveEffect(u, heroId, passiveName) {
+  if (!u || u.sword || isSilenced(u)) return false;
+  if (u.heroId === heroId) {
+    const ps = heroPassives(heroDef(u.heroId));
+    const known = {
+      lone: ["孤胆"], xiangyu: ["鬼雄"], assassin: ["暗杀"], asura: ["锻剑"],
+      longren: ["龙魂", "龙胆"], yangjian: ["天眼"],
+    }[heroId] || [];
+    return ps.some((p) => !passiveName || (p && p.name === passiveName)) ||
+      (!passiveName ? known.length > 0 : known.indexOf(passiveName) >= 0);
+  }
+  const cp = u.copiedSkill;
+  if (!cp || !isPassiveSkill(cp)) return false;
+  if (u.copiedFrom && u.copiedFrom.heroId === heroId && (!passiveName || cp.name === passiveName)) return true;
+  return false;
 }
 /* 龙魂闪避概率（1/2），可注入用于测试 */
 let dodgeRoller = Math.random;
@@ -295,6 +361,7 @@ function dragonDodged() {
 }
 /* 龙胆：每次成功闪避获得 1 次额外移动机会 */
 function grantDragonMove(u) {
+  if (!hasPassiveEffect(u, "longren", "龙魂")) return;
   u.dragonMoves = (u.dragonMoves || 0) + 1;
   addLog("🐉 龙胆触发：" + label(u) + " 获得 1 次额外移动机会（当前 " + u.dragonMoves + " 次）。");
 }
@@ -312,15 +379,22 @@ function dragonBreathArea(u, r, c, dr, dc) {
 }
 /* 该英雄第 idx 个技能的剩余次数（uses==null 视为无限） */
 function skillUsesLeft(u, idx) {
-  const skills = heroSkills(heroDef(u.heroId));
+  const skills = unitSkills(u);
   const s = skills[idx];
   if (!s) return 0;
   if (s.uses == null) return Infinity;
+  if (u && u.copiedSkill && idx === skills.length - 1) {
+    return u.copiedUses != null ? u.copiedUses : s.uses;
+  }
   if (skills.length === 1) return u.usesLeft;
   return u.usesArr && u.usesArr[idx] != null ? u.usesArr[idx] : s.uses;
 }
 function setSkillUsesLeft(u, idx, v) {
-  const skills = heroSkills(heroDef(u.heroId));
+  const skills = unitSkills(u);
+  if (u && u.copiedSkill && idx === skills.length - 1) {
+    u.copiedUses = v;
+    return;
+  }
   if (skills.length === 1) {
     u.usesLeft = v;
     return;
@@ -397,7 +471,7 @@ function endChase(a) {
  * 同一次击杀只刷新一次（技能次数已满时不再重复触发）。返回是否真的刷新。 */
 function refreshSkillOnKill(a) {
   if (!a || a.sword) return false;
-  const skills = heroSkills(heroDef(a.heroId));
+  const skills = unitSkills(a);
   let refreshed = false;
   let name = "";
   for (let i = 0; i < skills.length; i++) {
@@ -423,7 +497,7 @@ function refreshSkillOnKill(a) {
  * 仅当该技能真的把敌人打死时调用；返回是否真的刷新。 */
 function refreshSkillOnSkillKill(a, idx) {
   if (!a || a.sword) return false;
-  const skills = heroSkills(heroDef(a.heroId));
+  const skills = unitSkills(a);
   const sk = skills[idx];
   if (!sk || !sk.refreshOnlyOnSkillKill) return false;
   const max = sk.uses == null ? Infinity : sk.uses;
@@ -613,7 +687,7 @@ function alliesIn3x3(u) {
 }
 /* 孤胆：九宫格内没有友军 → 生效（实时判定） */
 function isLoneActive(u) {
-  return !!(u && !u.sword && u.heroId === "lone" && alliesIn3x3(u).length === 0);
+  return !!(u && !u.sword && hasPassiveEffect(u, "lone", "孤胆") && alliesIn3x3(u).length === 0);
 }
 /* 霸体：规则层统一判定（当前由“孤胆侠·孤胆生效”提供） */
 function hasSuperArmor(u) {
@@ -630,7 +704,7 @@ function attackerBonus(u) {
 }
 /* 技能是否被负面状态禁止（抓取 / 眩晕；定身只禁止位移类技能） */
 function skillBlockedByStatus(u) {
-  return !!(u && u.statuses && ((u.statuses.grab && u.statuses.grab.turns > 0) || (u.statuses.stun && u.statuses.stun.turns > 0)));
+  return !!(u && u.statuses && ((u.statuses.grab && u.statuses.grab.turns > 0) || (u.statuses.stun && u.statuses.stun.turns > 0) || (u.statuses.silence && u.statuses.silence.turns > 0)));
 }
 /* 被抓取：该单位在其回合内不能做任何动作（移动 / 普攻 / 技能） */
 function isGrabbed(u) {
@@ -640,15 +714,19 @@ function isGrabbed(u) {
 function isStunned(u) {
   return !!(u && u.statuses && u.statuses.stun && u.statuses.stun.turns > 0);
 }
-/* 被定身：不能移动 / 普攻 / 使用主动技能；按目标自身行动回合计时 */
+/* 被定身：不能移动 / 位移技能；仍可普通攻击 / 非位移技能；按目标自身行动回合计时 */
 function isRooted(u) {
   return !!(u && u.statuses && u.statuses.root && u.statuses.root.turns > 0);
+}
+/* 被沉默：主动/被动技能全部失效；仍可移动（除非同时定身）与普通攻击 */
+function isSilenced(u) {
+  return !!(u && u.statuses && u.statuses.silence && u.statuses.silence.turns > 0);
 }
 function isDisabled(u) {
   return isGrabbed(u) || isStunned(u);
 }
 /* 定身：不能移动 / 主动位移，但仍可普通攻击与非位移技能 */
-const SELF_MOVE_SKILLS = ["dash", "blink", "ziwei", "tianwei", "shuidiao", "duanlang", "thunder", "mistdash", "stealth", "thunderblade", "susano_dash"];
+const SELF_MOVE_SKILLS = ["dash", "blink", "ziwei", "tianwei", "shuidiao", "duanlang", "thunder", "mistdash", "stealth", "thunderblade", "susano_dash", "push"];
 function isSelfMoveSkill(u, s) {
   if (!s) return false;
   if (SELF_MOVE_SKILLS.indexOf(s.type) >= 0) return true;
@@ -658,6 +736,7 @@ function isSelfMoveSkill(u, s) {
 function actionBlockReason(u) {
   if (isGrabbed(u)) return "抓取";
   if (isStunned(u)) return "眩晕";
+  if (isSilenced(u)) return "沉默";
   if (isRooted(u)) return "定身";
   return "";
 }
@@ -689,7 +768,7 @@ function applyNegativeStatus(target, kind, opts) {
     if (p && window.BFX) window.BFX.cast({ type: crow ? "crowGuard" : "meditateGuard", heroId: target.heroId, caster: p });
     return { applied: false, immune: true, damage: dmg };
   }
-  if (hasSuperArmor(target)) {
+  if (!opts.ignoreSuperArmor && hasSuperArmor(target)) {
     addLog("🛡 霸体：抵抗了【" + (opts.label || kind) + "】的负面效果（伤害仍已结算）。");
     const p = findPos(target);
     if (p) fx.push({ r: p.r, c: p.c, text: "霸体", kind: "shield" });
@@ -697,7 +776,10 @@ function applyNegativeStatus(target, kind, opts) {
     return { applied: false, immune: true, damage: dmg };
   }
   target.statuses = target.statuses || {};
-  target.statuses[kind] = Object.assign({ kind, label: opts.label || kind }, opts);
+  const prev = target.statuses[kind];
+  const next = Object.assign({ kind, label: opts.label || kind }, opts);
+  if (prev && prev.turns != null && next.turns != null) next.turns = Math.max(prev.turns, next.turns);
+  target.statuses[kind] = next;
   if (!opts.silent) addLog(label(target) + " 被施加【" + (opts.label || kind) + "】（持续 " + (opts.turns != null ? opts.turns : 1) + " 个其回合）。");
   {
     const p = findPos(target);
@@ -720,6 +802,12 @@ function tickStatuses(player) {
         if (st.endDamage) {
           addLog("⛓ 【" + (st.label || k) + "】结束，" + label(u) + " 受到 " + st.endDamage + " 点伤害。");
           applyDamage(u, st.endDamage, "skill");
+        }
+        if (k === "silence" || k === "root") {
+          const p = findPos(u);
+          if (p && window.BFX) {
+            try { window.BFX.cast({ type: "soulsealBreak", heroId: "thiefgod", caster: p }); } catch (e) { /* ignore */ }
+          }
         }
         delete u.statuses[k];
       }
@@ -788,18 +876,19 @@ function hasAnyAction(player) {
     const pos = findPos(u);
     if (!pos) continue;
     const s = heroDef(u.heroId).skill;
+    const silenced = isSilenced(u);
     const canMove = !isRooted(u); // 定身：不能移动，但仍可攻击 / 非位移技能
-    if (!turnActionUsed && s && u.usesLeft > 0 && !(isRooted(u) && isSelfMoveSkill(u, s))) return true; // 仍可用普通技能
+    if (!silenced && !turnActionUsed && s && u.usesLeft > 0 && !(isRooted(u) && isSelfMoveSkill(u, s))) return true; // 仍可用普通技能
     // 鹰佐：雷鸣刀第三段不耗行动；第二段仍需行动
-    if (!isRooted(u) && (u.rbStage || 0) === 2) return true;
-    if (!turnActionUsed && !isRooted(u) && (u.rbStage || 0) === 1) return true;
+    if (!silenced && !isRooted(u) && (u.rbStage || 0) === 2) return true;
+    if (!silenced && !turnActionUsed && !isRooted(u) && (u.rbStage || 0) === 1) return true;
     for (const [dr, dc] of DIRS) {
       const nr = pos.r + dr;
       const nc = pos.c + dc;
       if (!inBounds(nr, nc)) continue;
       const t = board[nr][nc];
       if (!t) { if (canMove && !turnActionUsed) return true; continue; }
-      if (t.sword) { if (u.heroId === "asura" && canMove && !turnActionUsed) return true; continue; }
+      if (t.sword) { if (hasSwordPassive(u) && canMove && !turnActionUsed) return true; continue; }
       if (isPillar(t)) continue; // 石柱不可攻击、不可进入
       if (t.player !== player && !turnActionUsed) return true;
     }
@@ -811,10 +900,10 @@ function hasAnyAction(player) {
         if (t && t.player !== player) return true;
       }
     }
-    if (heroHasFreeUses(u)) return true; // 剑圣仍可使用
+    if (!silenced && heroHasFreeUses(u)) return true; // 剑圣仍可使用
     // 不耗行动步数的主动技能（金元素等）：即使本回合已行动也可用
-    {
-      const skills = heroSkills(heroDef(u.heroId));
+    if (!silenced) {
+      const skills = unitSkills(u);
       for (let i = 0; i < skills.length; i++) {
         const sk = skills[i];
         if (!sk || isPassiveSkill(sk)) continue;
@@ -836,7 +925,7 @@ function hasAnyMove(player) {
       if (!inBounds(nr, nc)) continue;
       const t = board[nr][nc];
       if (!t) return true;
-      if (t.sword && u.heroId === "asura") return true;
+      if (t.sword && hasSwordPassive(u)) return true;
     }
   }
   return false;
@@ -944,12 +1033,12 @@ function computeFlankInfo() {
 /* 刺客·暗杀：刺客是否参与了针对 target 的夹击。
  * 包含两种情况：攻击者本身是刺客；或目标相邻存在「与攻击者同阵营」的刺客（协助夹击）。 */
 function assassinInFlank(attacker, target) {
-  if (!attacker || attacker.sword) return false;
+  if (!attacker || attacker.sword || isSilenced(attacker)) return false;
   const p = findPos(target);
   if (!p) return false;
   for (const [dr, dc] of DIRS) {
     const v = unitAt(p.r + dr, p.c + dc);
-    if (v && !v.sword && v.player === attacker.player && v.heroId === "assassin") return true;
+    if (v && !v.sword && v.player === attacker.player && hasPassiveEffect(v, "assassin", "暗杀")) return true;
   }
   return false;
 }
@@ -957,7 +1046,7 @@ function assassinInFlank(attacker, target) {
 /* ---------------- 西楚霸王·鬼雄 ---------------- */
 /* 鬼雄是否已触发（触发后进入「绝境」：普通攻击伤害永久 +1） */
 function isGuixiongActive(u) {
-  return !!(u && !u.sword && u.heroId === "xiangyu" && u.guixiongUsed);
+  return !!(u && !u.sword && hasPassiveEffect(u, "xiangyu", "鬼雄") && u.guixiongUsed);
 }
 /* 鬼雄触发时的九宫格反击：对周围 8 格内所有敌方英雄各造成 2 点伤害（走统一伤害结算） */
 function guixiongCounter(u) {
@@ -1242,6 +1331,9 @@ function handlePlacement(r, c) {
     rbBlade: null,              // 鹰佐·雷鸣刀：雷刀位置 { r, c }（不占格）
     rbDir: null,                // 鹰佐·雷鸣刀：第一段选择的突进方向 [dr,dc]
     crowForm: null,             // 须佐·鸦天狗：{ turns, dir:[dr,dc], castTurn }
+    copiedSkill: null,          // 窃神·窃取权柄：复制的技能对象
+    copiedUses: 0,              // 复制技能独立次数
+    copiedFrom: null,           // 复制来源 { uid, player, heroId, name, skillName }
   };
   initUnitUses(unit, def);
   board[r][c] = unit;
@@ -1305,7 +1397,7 @@ function beginTurn() {
   // 杨戬等临时护盾：按自身真实行动回合倒计时，额外回合不推进
   if (!isExtraTurn) tickShieldLayers(currentPlayer);
   for (const u of unitsOf(currentPlayer)) {
-    const skills = heroSkills(heroDef(u.heroId));
+    const skills = unitSkills(u);
     skills.forEach((s, i) => {
       if (s && s.perTurn) setSkillUsesLeft(u, i, s.perTurn);
     });
@@ -1582,7 +1674,7 @@ function computeTargets() {
     const t = board[nr][nc];
     if (!t) { if (canMove) moveTargets.push([nr, nc]); }
     else if (t.sword) {
-      if (u.heroId === "asura" && canMove) moveTargets.push([nr, nc]); // 阿修罗可进入并回收剑
+      if (hasSwordPassive(u) && canMove) moveTargets.push([nr, nc]); // 锻剑被动可进入并回收剑
     } else if (isPillar(t)) {
       // 石柱：阻挡移动，也不能被普通攻击
     } else if (t.player !== u.player) {
@@ -1784,6 +1876,22 @@ function computeSkillTargets() {
       // 天罚：全棋盘任意合法落点（含石柱 / 地形所在格；爆炸按九宫格结算）
       for (let rr = 0; rr < SIZE; rr++) for (let cc = 0; cc < SIZE; cc++) skillTargets.push([rr, cc]);
       break;
+
+    case "steal": {
+      // 窃取权柄：指定一名可见敌方英雄，再选择其一个主动/被动技能
+      for (let rr = 0; rr < SIZE; rr++) for (let cc = 0; cc < SIZE; cc++) {
+        const v = unitAt(rr, cc);
+        if (v && !v.sword && v.player !== u.player && !hiddenFrom(v, u.player)) skillTargets.push([rr, cc]);
+      }
+      break;
+    }
+
+    case "soulsteal": {
+      // 窃魂：全体敌人；技能按钮以自身格作为可点击入口
+      const enemies = unitsOf(u.player === 1 ? 2 : 1).filter((v) => v && !v.sword);
+      if (enemies.length) skillTargets.push([r, c]);
+      break;
+    }
 
     case "shield_self":
       skillTargets.push([r, c]);
@@ -2274,7 +2382,7 @@ function moveHero(r, c) {
     window.BFX.move({
       from: { r: fr, c: fc }, to: { r, c },
       color: window.BFX.heroColor(u.heroId),
-      dash: u.heroId === "asura",
+      dash: hasSwordPassive(u),
     });
   }
   board[r][c] = u;
@@ -2455,7 +2563,7 @@ function applyDamage(target, amount, kind, source) {
     if (absorbed > 0) addLog(label(target) + " 的护盾抵挡了 " + absorbed + " 点伤害。");
   }
   // 孤胆侠·霸体：首次致命伤害 → 锁血到 1（每局一次，规则层判定，非致命伤害不消耗）
-  if (dmg > 0 && target.hp - dmg <= 0 && target.heroId === "lone" && hasSuperArmor(target) && !target.lockUsed) {
+  if (dmg > 0 && target.hp - dmg <= 0 && hasPassiveEffect(target, "lone", "孤胆") && hasSuperArmor(target) && !target.lockUsed) {
     target.lockUsed = true;
     dmg = Math.max(0, target.hp - 1);
     addLog("🛡 孤胆侠·霸体：抵挡本次致命伤害，生命锁定为 1 点（本局一次）。");
@@ -2465,7 +2573,7 @@ function applyDamage(target, amount, kind, source) {
   // 龙魂：龙人受到实际伤害前有 1/2（50%）概率闪避（护盾等前置减伤处理之后；完全抵消则不触发）
   // 每次伤害事件只判定一次；闪避成功则获得 1 次龙胆额外移动次数
   let dodged = false;
-  if (dmg > 0 && target.heroId === "longren" && dragonDodged()) {
+  if (dmg > 0 && hasPassiveEffect(target, "longren", "龙魂") && dragonDodged()) {
     dodged = true;
     dmg = 0;
     addLog("🐉 龙魂：龙人闪避了本次伤害（0 点）。");
@@ -2473,7 +2581,7 @@ function applyDamage(target, amount, kind, source) {
   }
   // 西楚霸王·鬼雄：首次致命伤害 → 锁血到 1（每局一次），随后反击九宫格内敌人并进入绝境强化
   let guixiongTriggered = false;
-  if (dmg > 0 && target.hp - dmg <= 0 && target.heroId === "xiangyu" && !target.guixiongUsed) {
+  if (dmg > 0 && target.hp - dmg <= 0 && hasPassiveEffect(target, "xiangyu", "鬼雄") && !target.guixiongUsed) {
     target.guixiongUsed = true;
     guixiongTriggered = true;
     dmg = Math.max(0, target.hp - 1);
@@ -2608,8 +2716,8 @@ function normalAttack(attacker, target) {
     }
   }
   applyDamage(target, total, res.flank ? "flank" : "normal", attacker);
-  // 杨戬·天眼（被动）：仅普通攻击触发，按原始目标位置 3×3 金色溅射
-  if (attacker.heroId === "yangjian" && tgtBefore) {
+  // 杨戬·天眼（被动，可被窃取）：仅普通攻击触发，按原始目标位置 3×3 金色溅射
+  if (hasPassiveEffect(attacker, "yangjian", "天眼") && tgtBefore) {
     const splashCells = [];
     const splashTargets = [];
     for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
@@ -2694,6 +2802,8 @@ function screenTierFor(a, s) {
   if (s.type === "thunderblade") return (a.rbStage || 0) >= 2 ? 3 : 2;
   if (s.type === "susano_arrow" || s.type === "susano_crow" || s.type === "meditate" || s.type === "qiankun") return 3;
   if (s.type === "meteor") return 1; // 预警阶段不闪光；真正坠落时由 BFX.meteorImpact 播放 3 级
+  if (s.type === "soulsteal") return 3;
+  if (s.type === "steal") return 2;
   if (s.type === "wxt") return (a.wxtStage || 0) >= 2 ? 3 : 2;
   if (/^(thunder|shenluo|bloodburst|charge|tianwei|raikiri|dragonbreath|metaltide)$/.test(s.type)) return 3;
   if (/^(heal|shield_self|shield_ally|metalarmor|stealth|blink|ziwei|duanlang|exile)$/.test(s.type)) return 1;
@@ -3333,7 +3443,46 @@ function qiankunPullDest(u, from, occupied, reserved) {
   return { r: cand[0].r, c: cand[0].c };
 }
 
-function useSkill(tr, tc) {
+/* 窃取权柄：选择目标后弹出其全部可复制技能 */
+function closeStealPanel() {
+  const el = document.querySelector(".steal-overlay");
+  if (el) el.remove();
+}
+function openStealPanel(tgt) {
+  closeStealPanel();
+  if (!tgt) return;
+  const list = copyableSkills(tgt);
+  const ov = document.createElement("div");
+  ov.className = "steal-overlay";
+  const source = heroDef(tgt.heroId);
+  const rows = list.map((sk, i) => {
+    const passive = isPassiveSkill(sk);
+    const uses = passive ? "被动" : (skillUsesLeft(tgt, i) === Infinity ? "∞" : "剩 " + skillUsesLeft(tgt, i));
+    const icon = window.HeroVisuals ? window.HeroVisuals.skillIcon(sk.type) : "";
+    return '<button class="steal-skill" data-idx="' + i + '">' +
+      '<span class="steal-skill-icon">' + icon + "</span>" +
+      '<span class="steal-skill-main"><b>【' + sk.name + "】</b><small>" + (passive ? "被动" : "主动") + " · " + uses + "</small>" +
+      '<em>' + (sk.desc || "") + "</em></span></button>";
+  }).join("");
+  ov.innerHTML = '<div class="steal-panel" role="dialog" aria-modal="true">' +
+    '<div class="steal-head"><div><b>窃取权柄</b><span>目标：' + (source ? source.name : "敌方英雄") + '</span></div>' +
+    '<button class="steal-cancel" type="button">取消</button></div>' +
+    '<div class="steal-sub">选择一个技能完整复制（主动 / 被动均可）</div>' +
+    '<div class="steal-list">' + (rows || '<div class="muted">目标没有可复制技能</div>') + "</div></div>";
+  document.body.appendChild(ov);
+  ov.querySelector(".steal-cancel").addEventListener("click", () => { closeStealPanel(); render(); });
+  ov.addEventListener("click", (ev) => { if (ev.target === ov) { closeStealPanel(); render(); } });
+  ov.querySelectorAll(".steal-skill").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.getAttribute("data-idx"), 10);
+      const p = findPos(tgt);
+      closeStealPanel();
+      if (p) useSkill(p.r, p.c, idx);
+    });
+  });
+}
+
+function useSkill(tr, tc, copyIdx) {
   const { r, c } = selected;
   const a = board[r][c];
   if (!a) { clearSelection(); render(); return; }
@@ -3342,6 +3491,17 @@ function useSkill(tr, tc) {
   if (isCrowForm(a)) {
     addLog(label(a) + " 处于【鸦天狗】形态，无法使用其它技能。");
     render();
+    return;
+  }
+  // 窃取权柄：先选目标，再在面板中选择具体复制技能
+  if (s.type === "steal" && copyIdx == null) {
+    const tgt = unitAt(tr, tc);
+    if (!tgt || tgt.sword || tgt.player === a.player || hiddenFrom(tgt, a.player)) {
+      addLog("窃取权柄：请选择一名可见的敌方英雄。");
+      render();
+      return;
+    }
+    openStealPanel(tgt);
     return;
   }
 
@@ -3528,6 +3688,7 @@ function useSkill(tr, tc) {
       chaseTarget: s.type === "chase" && skillSub && skillSub.kind === "chase-blink" ? { r: skillSub.tR, c: skillSub.tC } : undefined,
       exileTarget: s.type === "exile" && skillSub && skillSub.kind === "exile-target" ? { r: skillSub.tR, c: skillSub.tC } : undefined,
       wxtDir: s.type === "wxt" && skillSub && skillSub.kind === "wxt-dir-set" ? { dr: skillSub.dir[0], dc: skillSub.dir[1] } : undefined,
+      copyIdx: s.type === "steal" ? copyIdx : undefined,
     });
     return;
   }
@@ -3703,6 +3864,71 @@ function useSkill(tr, tc) {
       break;
     }
 
+    case "steal": {
+      const tgt = unitAt(tr, tc);
+      if (!tgt || tgt.sword || tgt.player === a.player || hiddenFrom(tgt, a.player)) {
+        addLog("窃取权柄：请选择一名可见的敌方英雄（不消耗次数）。");
+        render();
+        return;
+      }
+      const choices = copyableSkills(tgt);
+      const ci = copyIdx == null ? -1 : (copyIdx | 0);
+      if (ci < 0 || ci >= choices.length) {
+        addLog("窃取权柄：请选择一个可复制的技能。");
+        openStealPanel(tgt);
+        return;
+      }
+      const chosen = JSON.parse(JSON.stringify(choices[ci]));
+      if (!chosen.type) chosen.type = "passive";
+      if (chosen.type === "passive") chosen.isPassiveCopied = true;
+      a.copiedSkill = chosen;
+      a.copiedUses = chosen.uses == null ? Infinity : chosen.uses;
+      a.copiedFrom = {
+        uid: tgt.uid, player: tgt.player, heroId: tgt.heroId,
+        name: (heroDef(tgt.heroId) || {}).name || tgt.heroId,
+        skillName: chosen.name,
+        passive: chosen.type === "passive",
+      };
+      addLog("👑 " + label(a) + " 释放【窃取权柄】，从 " + label(tgt) + " 复制了【" + chosen.name + "】" +
+        (chosen.type === "passive" ? "（被动）" : "（主动）") + "；双方次数独立，原英雄不受影响。");
+      if (window.BFX) window.BFX.cast({ type: "steal", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc } });
+      fx.push({ r, c, text: "窃取", kind: "skill" });
+      break;
+    }
+
+    case "soulsteal": {
+      const foes = unitsOf(a.player === 1 ? 2 : 1).filter((v) => v && !v.sword);
+      if (!foes.length) {
+        addLog("窃魂：场上没有敌方英雄（不消耗次数）。");
+        render();
+        return;
+      }
+      addLog("👑 " + label(a) + " 释放【窃魂】：黑金封印扩散，对全体敌人施加定身与沉默，持续 1 个完整敌方回合。");
+      let rootCount = 0, silenceCount = 0;
+      const targets = [];
+      for (const v of foes) {
+        if (!findPos(v)) continue;
+        const p = findPos(v);
+        targets.push(p);
+        const r1 = applyNegativeStatus(v, "root", { turns: 1, label: "窃魂·定身", ignoreSuperArmor: true, silent: true });
+        const r2 = applyNegativeStatus(v, "silence", { turns: 1, label: "窃魂·沉默", ignoreSuperArmor: true, silent: true });
+        if (r1.applied) rootCount++;
+        if (r2.applied) silenceCount++;
+        if (p) {
+          fx.push({ r: p.r, c: p.c, text: "封印", kind: "skill" });
+          if (window.BFX) {
+            try {
+              window.BFX.cast({ type: "soulsteal", heroId: a.heroId, caster: { r, c }, target: p });
+              window.BFX.mark("impact", p.r, p.c, "#fbbf24", 10000);
+            } catch (e) { /* ignore */ }
+          }
+        }
+      }
+      addLog("🔒 窃魂结算：定身 " + rootCount + " 名、沉默 " + silenceCount + " 名敌人。");
+      if (window.BFX) window.BFX.cast({ type: "soulstealWave", heroId: a.heroId, caster: { r, c }, targets });
+      break;
+    }
+
     case "shield_self":
       a.shield += s.shield;
       addLog("🛡 " + label(a) + " 释放【" + s.name + "】，获得 " + s.shield + " 点护盾。");
@@ -3747,7 +3973,7 @@ function useSkill(tr, tc) {
         for (let k = 1; k <= moved; k++) {
           const rr = r + ddr * k;
           const cc = c + ddc * k;
-          if (isSword(board[rr][cc]) && a.heroId === "asura") {
+          if (isSword(board[rr][cc]) && hasSwordPassive(a)) {
             a.swords = (a.swords || 0) + 1;
             board[rr][cc] = null;
             pickedCount++;
@@ -4936,7 +5162,7 @@ function useSkill(tr, tc) {
   // 全屏电影反馈：等技能真实结算完成后再播放（不修改伤害/位置）
   if (window.BFX && window.BFX.screenFX) {
     try {
-      const _fxColor = a.heroId === "yangjian" ? "#fbbf24" : /^(thunder|eagle|susanoo|tiandao)$/.test(a.heroId) ? "#dbeafe" : window.BFX.heroColor(a.heroId);
+      const _fxColor = a.heroId === "yangjian" || a.heroId === "thiefgod" ? "#fbbf24" : /^(thunder|eagle|susanoo|tiandao)$/.test(a.heroId) ? "#dbeafe" : window.BFX.heroColor(a.heroId);
       window.BFX.screenFX({ tier: screenTierFor(a, s), color: _fxColor, r: tr, c: tc });
     } catch (e) { /* 表现层失败不影响规则 */ }
   }
@@ -4965,7 +5191,7 @@ function activateSkill(idx) {
   if (phase !== "battle" || !selected) return;
   const u = board[selected.r][selected.c];
   if (!u || u.player !== currentPlayer) return;
-  const skills = heroSkills(heroDef(u.heroId));
+  const skills = unitSkills(u);
   const s = skills[idx] || skills[0];
   if (!s) return;
 
@@ -5145,7 +5371,7 @@ function useTalismanEffect(id, tr, tc) {
         break;
       }
       let n = 0;
-      heroSkills(heroDef(u.heroId)).forEach((sk, i) => {
+      unitSkills(u).forEach((sk, i) => {
         if (isPassiveSkill(sk) || sk.uses == null) return; // 不处理被动 / 无限次技能
         const max = sk.perTurn ? sk.perTurn : sk.uses;
         if (skillUsesLeft(u, i) !== max) {
@@ -5233,6 +5459,9 @@ function useTalismanEffect(id, tr, tc) {
         rbBlade: null,
         rbDir: null,
         crowForm: null,
+        copiedSkill: rec.copiedSkill ? JSON.parse(JSON.stringify(rec.copiedSkill)) : null,
+        copiedUses: rec.copiedUses != null ? rec.copiedUses : 0,
+        copiedFrom: rec.copiedFrom ? JSON.parse(JSON.stringify(rec.copiedFrom)) : null,
       };
       if (!revived.statuses) revived.statuses = {};
       // 鹰佐：阵亡时连招与雷刀已清空；复活后不恢复未完成连招
@@ -5347,6 +5576,8 @@ function canUseDragonMoveNow(u) {
   if (!u || u.sword) return false;
   if (phase !== "battle") return false;
   if (u.player !== currentPlayer) return false; // 只能自己回合
+  if (!hasPassiveEffect(u, "longren", "龙胆")) return false; // 被动被沉默/未复制时不可用
+  if (isRooted(u) || isSilenced(u)) return false;
   return canControlForDragonMove(u);            // 只能控制自己的单位
 }
 function selectDragonMove(u, r, c) {
@@ -5394,6 +5625,7 @@ function activateDragonMove(u) {
 function performDragonMove(r, c) {
   const u = dragonMoveUnit;
   if (!u || !findPos(u)) { dragonMoveUnit = null; dragonMoveTargets = []; render(); return; }
+  if (isSilenced(u) || isRooted(u)) { addLog("当前状态无法使用龙胆额外移动。"); dragonMoveUnit = null; dragonMoveTargets = []; render(); return; }
   if (!isTarget(dragonMoveTargets, r, c)) { addLog("该方向不能额外移动。"); render(); return; }
   const from = findPos(u);
   if (gameMode === "online") {
@@ -5485,6 +5717,7 @@ function buildUnit(u) {
   if (isStealthed(u)) { overlays.push('<span class="state-layer state-stealth"></span>'); el.classList.add("state-stealth"); }
   if (u.metalBuff || u.metalTide > 0) overlays.push('<span class="state-layer state-metal"><span class="metal-plate a"></span><span class="metal-plate b"></span><span class="metal-plate c"></span></span>');
   if (u.shield > 0) overlays.push('<span class="state-layer state-shield"></span>');
+  if (isRooted(u) || isSilenced(u)) overlays.push('<span class="state-layer state-soulseal"><span class="soulseal-ring"></span><span class="soulseal-chain a"></span><span class="soulseal-chain b"></span></span>');
   if (overlays.length) el.insertAdjacentHTML("afterbegin", overlays.join(""));
 
   // 角色主体 + 专属光环 / 环绕粒子（装饰层不接收点击）
@@ -5527,6 +5760,20 @@ function buildUnit(u) {
     const b = document.createElement("span");
     b.className = "badge frozen";
     b.textContent = "❄";
+    el.appendChild(b);
+  }
+  if (isRooted(u)) {
+    const b = document.createElement("span");
+    b.className = "badge rooted";
+    b.title = "定身：不能移动 / 位移技能（剩余 " + (u.statuses.root.turns || 1) + " 个其回合）";
+    b.textContent = "🔒";
+    el.appendChild(b);
+  }
+  if (isSilenced(u)) {
+    const b = document.createElement("span");
+    b.className = "badge silenced";
+    b.title = "沉默：所有主动 / 被动技能失效（剩余 " + (u.statuses.silence.turns || 1) + " 个其回合）";
+    b.textContent = "🤐";
     el.appendChild(b);
   }
   if (u.hp > u.maxHp) {
@@ -6140,15 +6387,18 @@ function updateHeroCard() {
   }
   const def = heroDef(u.heroId);
   heroCardEl.className = "hero-card p" + u.player;
-  const skillHtml = heroSkills(def).map((sk, i) => {
+  const skillHtml = unitSkills(u).map((sk, i) => {
     const isP = isPassiveSkill(sk);
+    const isCopied = u.copiedSkill && sk === u.copiedSkill;
     const sl = skillUsesLeft(u, i);
     const cd = isP ? "被动" : (sl === Infinity ? "∞" : (sl > 0 ? "剩 " + sl : "已用尽"));
-    const meta = isP
+    const meta = (isCopied && u.copiedFrom
+      ? "窃取来源：" + u.copiedFrom.name + " · 独立次数 · "
+      : "") + (isP
       ? "被动（常驻）"
       : (sk.perTurn
           ? "每回合 " + sk.perTurn + " 次（本回合剩 " + (sl === Infinity ? "∞" : sl) + "）"
-          : "本局剩余 " + (sl === Infinity ? "∞" : sl + " / " + sk.uses) + " 次") +
+          : "本局剩余 " + (sl === Infinity ? "∞" : sl + " / " + sk.uses) + " 次")) +
         (sk.free ? " · 不消耗行动" : "") +
         (sk.costSwords ? " · 消耗剑 " + sk.costSwords : "") + " · 释放条件：" + (sk.condition || "无");
     return '<div class="hc-skill">' +
@@ -6188,7 +6438,7 @@ function updateHeroCard() {
   }
   if (u.shield > 0) chips.push('<span class="chip shield">🛡 护盾 ' + u.shield + "</span>");
   if (u.frozen > 0) chips.push('<span class="chip frozen">❄ 冰封 ' + u.frozen + "</span>");
-  const passiveHtml = heroPassives(def).map((p) =>
+  const passiveHtml = heroPassivesForUnit(u).filter((p) => !unitSkills(u).some((sk) => isPassiveSkill(sk) && sk.name === p.name)).map((p) =>
     '<div class="hc-skill hc-passive">' +
       '<div class="hc-skill-name">【' + p.name + '】 <span class="hc-cd ready">被动</span></div>' +
       '<div class="hc-skill-desc">' + p.desc + "</div>" +
@@ -6222,18 +6472,20 @@ function updateSkillBar() {
     skillBarEl.appendChild(b);
     return;
   }
-  const skills = heroSkills(heroDef(u.heroId));
+  const skills = unitSkills(u);
   skills.forEach((s, i) => {
     const b = document.createElement("button");
     b.className = "skill-btn";
-    let label = "【" + s.name + "】";
+    const isCopied = u.copiedSkill && s === u.copiedSkill;
+    let label = "【" + s.name + "】" + (isCopied ? "·窃取" : "");
     let disabled = false;
+    if (isCopied) b.title = "复制自 " + ((u.copiedFrom && u.copiedFrom.name) || "敌方") + "；使用次数独立计算";
     if (isPassiveSkill(s)) {
       disabled = true;
       label = "被动：" + s.name;
     } else if (skillBlockedByStatus(u)) {
       disabled = true;
-      label += " 被【抓取】";
+      label += " 被【" + (actionBlockReason(u) || "控制") + "】";
     } else if (isCrowForm(u)) {
       disabled = true;
       label += " 鸦天狗形态";
@@ -6285,7 +6537,7 @@ function updateSkillBar() {
   });
 
   // 龙人·龙胆：主动「额外移动」按钮（仅在“自己的回合”可用）
-  if (u.heroId === "longren") {
+  if (hasPassiveEffect(u, "longren", "龙胆")) {
     const b = document.createElement("button");
     b.className = "skill-btn dragon-btn";
     const dm = u.dragonMoves || 0;
@@ -6326,7 +6578,7 @@ function renderDetailCard() {
   dcHpEl.textContent = "生命 " + u.hp + "/" + u.maxHp + (u.shield ? " · 护盾 " + u.shield : "") +
     (u.heroId === "asura" ? " · 携带剑 " + (u.swords || 0) : "");
   let html = "";
-  heroSkills(def).forEach((sk, i) => {
+  unitSkills(u).forEach((sk, i) => {
     const isP = isPassiveSkill(sk);
     const sl = skillUsesLeft(u, i);
     html += '<div class="dc-skill"><b>' + (isP ? "被动 · " : "主动 · ") + sk.name + "</b><div>" + sk.desc + "</div>" +
@@ -6334,7 +6586,7 @@ function renderDetailCard() {
         (sk.costSwords ? " · 每次消耗剑 " + sk.costSwords : "") + " · 释放条件：" + (sk.condition || "无") + "</div>") +
       "</div>";
   });
-  heroPassives(def).forEach((p) => {
+  heroPassivesForUnit(u).filter((p) => !unitSkills(u).some((sk) => isPassiveSkill(sk) && sk.name === p.name)).forEach((p) => {
     html += '<div class="dc-skill"><b>被动 · ' + p.name + "</b><div>" + p.desc + "</div></div>";
   });
   if (u.heroId === "cang") {
@@ -6814,6 +7066,13 @@ function aiSkillScore(u, s, pos, rr, cc, w) {
       if (!hits) return null;
       return sc * 0.7 + hits * 4;
     }
+    case "soulsteal": {
+      const foes = unitsOf(u.player === 1 ? 2 : 1).filter((v) => v && !v.sword && !hiddenFrom(v, u.player));
+      if (!foes.length) return null;
+      return 24 + foes.length * 9; // 全体控制：即使无伤害也高价值
+    }
+    case "steal":
+      return null; // 窃取权柄由专门的目标 × 技能枚举处理
     case "freeze": {
       if (!t || t.sword) return null;
       const kill = t.hp <= s.damage;
@@ -6955,10 +7214,30 @@ function aiSkillScore(u, s, pos, rr, cc, w) {
       return null;
   }
 }
+/* 窃取权柄的 AI 估值：优先复制高价值被动/终结技，避免复制空技能 */
+function aiCopiedSkillValue(sk) {
+  if (!sk) return 0;
+  if (isPassiveSkill(sk)) {
+    const n = sk.name || "";
+    if (/暗杀|孤胆|鬼雄|天眼|锻剑|龙魂|龙胆/.test(n)) return 34;
+    return 10;
+  }
+  let sc = 12;
+  if (sk.damage) sc += Number(sk.damage) * 10;
+  if (sk.heal) sc += Number(sk.heal) * 5;
+  if (sk.shield) sc += Number(sk.shield) * 4;
+  if (sk.type === "soulsteal") sc += 30;
+  if (sk.type === "steal") sc += 8;
+  if (/thunder|shenluo|wxt|qiankun|meteor|charge|dragonbreath|dash|susano_arrow/.test(sk.type || "")) sc += 10;
+  if (sk.free) sc += 3;
+  return sc;
+}
+
 /* AI 消耗龙人的额外移动机会（龙胆） */
 function aiUseDragonMoves() {
   for (const u of unitsOf(aiPlayer)) {
-    if (u.heroId !== "longren") continue;
+    if (!hasPassiveEffect(u, "longren", "龙胆")) continue;
+    if (isSilenced(u) || isRooted(u)) continue;
     let guard = 0;
     while ((u.dragonMoves || 0) > 0 && guard++ < 8) {
       const pos = findPos(u);
@@ -7082,7 +7361,8 @@ function aiEnumerate() {
     }
 
     // 技能（支持多技能；“不耗步”技能本回合已行动也能用；消耗剑的技能需有剑）
-    const skills = heroSkills(heroDef(u.heroId));
+    if (!isSilenced(u)) { // 沉默：主动/被动技能全部失效，但仍可普攻/移动（定身另算）
+    const skills = unitSkills(u);
     skills.forEach((s, si) => {
       if (isPassiveSkill(s)) return;
       const isSd2 = s.type === "shuidiao" && (u.sdStage || 0) === 1;
@@ -7094,6 +7374,23 @@ function aiEnumerate() {
       if (!canPaySwords(u, s)) return;
       if (turnActionUsed && !skillFreeFor(u, s)) return;
       if (rooted && isSelfMoveSkill(u, s)) return; // 定身：不能用主动位移技能
+
+      // 窃神·窃取权柄：目标 × 复制技能联合枚举
+      if (s.type === "steal") {
+        for (const e of unitsOf(u.player === 1 ? 2 : 1)) {
+          if (!e || e.sword || hiddenFrom(e, u.player)) continue;
+          const ep = findPos(e);
+          if (!ep) continue;
+          copyableSkills(e).forEach((ck, ci) => {
+            const val = aiCopiedSkillValue(ck);
+            acts.push({
+              type: "skill", u, pos, target: { r: ep.r, c: ep.c }, skillIdx: si, copyIdx: ci,
+              score: (val + 10) * w.skillW,
+            });
+          });
+        }
+        return;
+      }
 
       // 刺客·追猎：两段式，需特殊枚举（第二段还要再选一个闪身落点）
       if (s.type === "chase") {
@@ -7537,6 +7834,7 @@ function aiEnumerate() {
         if (sc != null) acts.push({ type: "skill", u, pos, target: { r: rr, c: cc }, skillIdx: si, score: sc * w.skillW });
       }
     });
+    }
 
     // 移动（本回合若已行动则不可；行军令的额外移动次数可用；定身不能移动）
     if (!rooted && (!turnActionUsed || extraMoves > 0)) {
@@ -7545,13 +7843,13 @@ function aiEnumerate() {
         const nc = pos.c + dc;
         if (!inBounds(nr, nc)) continue;
         const t = board[nr][nc];
-        const canEnter = !t || (t.sword && u.heroId === "asura");
+        const canEnter = !t || (t.sword && hasSwordPassive(u));
         if (!canEnter) continue;
         const before = nearestEnemyDist(pos.r, pos.c, u.player);
         const after = nearestEnemyDist(nr, nc, u.player);
         let sc = (before - after) * w.distW - dangerAt(nr, nc, u) * (w.riskW / 10);
         const collect = !!t && t.sword;
-        if (collect && u.heroId === "asura") sc += w.swordW;
+        if (collect && hasSwordPassive(u)) sc += w.swordW;
         if (u.hp <= 2) sc -= dangerAt(nr, nc, u) * (w.riskW / 10);
         if (u._lastKey === nr + "_" + nc) sc -= 18; // 反来回踱步
         acts.push({ type: "move", u, pos, target: { r: nr, c: nc }, collect, score: sc });
@@ -7586,7 +7884,7 @@ function aiApplyAction(act) {
       useSkill(mv.r, mv.c);
       useSkill(act.target.r, act.target.c);
     } else {
-      useSkill(act.target.r, act.target.c);
+      useSkill(act.target.r, act.target.c, act.copyIdx);
     }
     // 刺客·追猎第二段：第 2 步选择闪身落点
     if (act.landing) useSkill(act.landing.r, act.landing.c);
@@ -7846,6 +8144,7 @@ function applyRemoteState(state) {
   const prevPhase = phase;
   const prevMeteors = meteors.slice();
   board = state.board.map((row) => row.map((cell) => (cell ? Object.assign({}, cell) : null)));
+  for (const row of board) for (const cell of row) if (isUnit(cell)) hydrateCopiedSkill(cell);
   mists = state.mists ? JSON.parse(JSON.stringify(state.mists)) : {};
   blackFlames = state.blackFlames ? JSON.parse(JSON.stringify(state.blackFlames)) : {};
   meteors = Array.isArray(state.meteors) ? JSON.parse(JSON.stringify(state.meteors)) : [];
@@ -8503,8 +8802,12 @@ window.GameAPI = {
         rbBlade: spec.rbBlade ? { r: spec.rbBlade.r, c: spec.rbBlade.c } : null,
         rbDir: Array.isArray(spec.rbDir) ? spec.rbDir.slice() : null,
         crowForm: spec.crowForm ? JSON.parse(JSON.stringify(spec.crowForm)) : null,
+        copiedSkill: spec.copiedSkill ? JSON.parse(JSON.stringify(spec.copiedSkill)) : null,
+        copiedUses: spec.copiedUses != null ? spec.copiedUses : (spec.copiedSkill && spec.copiedSkill.uses != null ? spec.copiedSkill.uses : 0),
+        copiedFrom: spec.copiedFrom ? JSON.parse(JSON.stringify(spec.copiedFrom)) : null,
       };
       initUnitUses(unit, def);
+      hydrateCopiedSkill(unit);
       if (spec.uses != null) unit.usesLeft = spec.uses;
       if (spec.usesArr) unit.usesArr = spec.usesArr.slice();
       board[spec.r][spec.c] = unit;

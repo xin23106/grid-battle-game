@@ -30,6 +30,7 @@
     eagle:     { c1:"#a78bfa", c2:"#4c1d95", c3:"#c4b5fd", weapon:"blade", aura:"storm", build:"lean", head:"mask", acc:"scarf", sigil:"bolt", dur:220, tilt:7 },
     susanoo:   { c1:"#7c3aed", c2:"#312e81", c3:"#c4b5fd", weapon:"bow", aura:"chakra", build:"armored", head:"helm", acc:"cape", sigil:"eye", dur:380, tilt:3 },
     yangjian:  { c1:"#fbbf24", c2:"#92400e", c3:"#fef3c7", weapon:"trident", aura:"royal", build:"armored", head:"halo", acc:"cape", sigil:"eye", thirdEye:true, dur:360, tilt:4 },
+    thiefgod: { c1:"#fbbf24", c2:"#0b1020", c3:"#f5d0fe", weapon:"scepter", aura:"thief", build:"robed", head:"crown", acc:"cape", sigil:"eye", dur:330, tilt:3 },
   };
   const DEFAULT = { c1:"#93c5fd", c2:"#334155", c3:"#e2e8f0", weapon:"sword", aura:"default", build:"lean", head:"hood", acc:"none", sigil:"diamond", dur:340, tilt:4 };
 
@@ -207,7 +208,7 @@
 
   /* 技能身体姿态分类：同一技能类型在不同英雄身上仍有专属配色/武器 */
   const POSE_BY_TYPE = {
-    damage_single:"channel", freeze:"channel", damage_line:"ranged", skyarrow:"ranged", meteor:"channel", damage_adjacent_all:"area",
+    damage_single:"channel", freeze:"channel", damage_line:"ranged", skyarrow:"ranged", meteor:"channel", steal:"pull", soulsteal:"area", damage_adjacent_all:"area",
     heal:"heal", shield_self:"defense", shield_ally:"defense", blink:"teleport", dash:"dash",
     duanlang:"dash", shuidiao:"dash", dragonbreath:"area", thunder:"area", chase:"dash",
     bloodburst:"area", ziwei:"teleport", exile:"channel", tianwei:"area", shenluo:"area",
@@ -252,6 +253,8 @@
       "longren:dragonbreath": "longren-breath",
       "vampire:bloodburst": "vampire-burst",
       "yangjian:qiankun": "yangjian-qiankun",
+      "thiefgod:steal": "thiefgod-steal",
+      "thiefgod:soulsteal": "thiefgod-soulsteal",
     };
     const key = heroId + ":" + type + (type === "thunderblade" ? ":" + (stage || 0) : "");
     if (special[key]) return special[key];
@@ -276,7 +279,11 @@
   function skillIcon(type) {
     const t = type || "";
     let inner = "";
-    if (/skyarrow/.test(t)) {
+    if (/soulsteal/.test(t)) {
+      inner = '<path d="M12 2 L15 9 L22 12 L15 15 L12 22 L9 15 L2 12 L9 9 Z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2"/><path d="M4 20 L8 16 M20 20 L16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>';
+    } else if (/steal/.test(t)) {
+      inner = '<path d="M4 19 Q9 13 11 8 L13 4 L16 7 L12 10 Q9 15 8 21 Z"/><path d="M15 14 Q19 12 21 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="18" cy="18" r="2.2"/>';
+    } else if (/skyarrow/.test(t)) {
       inner = '<path d="M4 20 L18 6 M13 5 L19 5 L19 11 M7 21 L3 21 L3 17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 17 L18 14 L20 17 L23 18 L20 19 L18 22 L16 19 L13 18 Z" fill="currentColor"/>';
     } else if (/meteor/.test(t)) {
       inner = '<path d="M15 2 Q9 7 9 14 Q9 19 13 21 Q11 16 14 12 Q16 17 20 18 Q21 11 15 2 Z"/><path d="M3 6 L7 10 M2 13 L5 15 M4 20 L7 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>';
@@ -311,6 +318,7 @@
     eagle: { portrait: "art/eagle-portrait.webp", board: "art/eagle-board.webp", avatar: "art/eagle-avatar.webp", icon: "art/eagle-icon.webp", silhouette: "art/eagle-silhouette.webp" },
     susanoo: { portrait: "art/susanoo-portrait.webp", board: "art/susanoo-board.webp", avatar: "art/susanoo-avatar.webp", icon: "art/susanoo-icon.webp", silhouette: "art/susanoo-silhouette.webp" },
     ranger: { portrait: "art/ranger-portrait.webp?v=2", board: "art/ranger-board.webp?v=2", avatar: "art/ranger-avatar.webp?v=2", icon: "art/ranger-icon.webp?v=2", silhouette: "art/ranger-silhouette.webp?v=2" },
+    thiefgod: { portrait: "art/thiefgod-portrait.webp", board: "art/thiefgod-board.webp", avatar: "art/thiefgod-avatar.webp", icon: "art/thiefgod-icon.webp", silhouette: "art/thiefgod-silhouette.webp" },
   };
   function portraitHTML(id, extraClass) {
     const art = HERO_ART[id];
