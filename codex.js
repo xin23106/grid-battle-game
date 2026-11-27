@@ -27,6 +27,7 @@
     bloodburst: "自身九宫格（周围 8 格）",
     charge: "相邻目标；沿远离自身方向击退",
     chase: "第一段：整行 / 整列直线贯穿；第二段：带标记敌人的相邻空格",
+    crosstep: "上 / 下 / 左 / 右相邻 1 格（不能斜向）",
     damage_adjacent_all: "所有相邻敌人",
     damage_single: "按技能射程内的单个敌人",
     dash: "直线方向最多 3 格",
@@ -94,7 +95,7 @@
     shenluo: "范围 / 击退", wxt: "三段连招", metalpierce: "直线穿刺",
     metalarmor: "强化 / 定身", metaltide: "减伤", meditate: "形态 / 无敌",
     divinepalm: "伤害 / 击退", stealth: "隐身 / 位移", mistdash: "突进 / 地形",
-    shadowfang: "单体攻击", push: "推击 / 地形", charge: "冲锋 / 击退",
+    shadowfang: "单体攻击", push: "推击 / 地形", charge: "冲锋 / 击退", crosstep: "十字位移",
     raikiri: "直线二段", thunderblade: "三段连招", susano_dash: "斜线位移",
     susano_pull: "拉拽", susano_arrow: "范围 / 地形", susano_crow: "变身 / 范围",
   };

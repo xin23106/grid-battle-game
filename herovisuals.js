@@ -217,7 +217,7 @@
     bloodburst:"area", ziwei:"teleport", exile:"channel", tianwei:"area", shenluo:"area",
     wxt:"pull", metalpierce:"ranged", metalarmor:"defense", metaltide:"buff", meditate:"lotus",
     divinepalm:"thrust", stealth:"stealth", mistdash:"dash", shadowfang:"slash",
-    push:"thrust", charge:"dash", raikiri:"ranged", thunderblade:"dash",
+    push:"thrust", charge:"dash", raikiri:"ranged", thunderblade:"dash", crosstep:"dash",
     susano_dash:"dash", susano_pull:"pull", susano_arrow:"ranged", susano_crow:"summon",
   };
   function poseFor(heroId, skill, stage) {
@@ -304,7 +304,7 @@
       inner = '<path d="M15 2 Q9 7 9 14 Q9 19 13 21 Q11 16 14 12 Q16 17 20 18 Q21 11 15 2 Z"/><path d="M3 6 L7 10 M2 13 L5 15 M4 20 L7 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>';
     } else if (/thunder|raikiri|bolt|discharge|susano_arrow|damage_line|ranged/.test(t)) {
       inner = '<path d="M13 2 L6 13 H11 L9 22 L19 10 H14 Z"/>';
-    } else if (/thunderblade|slash|charge|dash|duanlang|shuidiao|metalpierce|shadowfang|divinepalm|push/.test(t)) {
+    } else if (/thunderblade|slash|charge|dash|duanlang|shuidiao|metalpierce|shadowfang|divinepalm|push|crosstep/.test(t)) {
       inner = '<path d="M4 20 L18 6 L21 3 L20 7 L7 21 Z"/><path d="M4 20 L9 15"/>';
     } else if (/pull|wxt|grab|exile|tianwei|qiankun/.test(t)) {
       inner = '<path d="M4 12 Q8 4 12 12 Q16 20 20 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>';

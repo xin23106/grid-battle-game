@@ -698,15 +698,36 @@ function alliesIn3x3(u) {
 function isLoneActive(u) {
   return !!(u && !u.sword && hasPassiveEffect(u, "lone", "孤胆") && alliesIn3x3(u).length === 0);
 }
-/* 霸体：规则层统一判定（当前由“孤胆侠·孤胆生效”提供） */
-function hasSuperArmor(u) {
-  return isLoneActive(u);
+/* 狂战士·狂化：按当前实际生命值动态计算阶段（护盾不参与）。
+ * 0 = 未强化，1 = ≤4 普攻+1，2 = ≤3 霸体，3 = ≤2 格挡，4 = ≤1 普攻再+1。 */
+function berserkerStage(u) {
+  if (!u || u.sword) return 0;
+  if (!hasPassiveEffect(u, "berserker", "狂化")) return 0;
+  const hp = Number(u.hp);
+  if (!Number.isFinite(hp)) return 0;
+  if (hp <= 1) return 4;
+  if (hp <= 2) return 3;
+  if (hp <= 3) return 2;
+  if (hp <= 4) return 1;
+  return 0;
 }
-/* 夹击免疫：孤胆侠在“孤胆”被动激活时免疫夹击加成 */
+function berserkerNormalBonus(u) {
+  const stage = berserkerStage(u);
+  if (stage <= 0) return 0;
+  return (stage >= 1 ? 1 : 0) + (stage >= 4 ? 1 : 0);
+}
+function berserkerBlock(u) {
+  return berserkerStage(u) >= 3;
+}
+/* 霸体：孤胆侠·孤胆；或狂战士·狂化生命≤3。 */
+function hasSuperArmor(u) {
+  return isLoneActive(u) || berserkerStage(u) >= 2;
+}
+/* 夹击免疫：只有孤胆侠在“孤胆”被动激活时免疫夹击加成。狂化不提供夹击免疫。 */
 function flankImmune(u) {
   return isLoneActive(u);
 }
-/* 攻击方伤害加成：猛攻令 +1 / 孤胆（无友军）+1 */
+/* 攻击方伤害加成：猛攻令 +1 / 孤胆（无友军）+1；狂化只加普通攻击，故不放在这里。 */
 function attackerBonus(u) {
   if (!u || u.sword) return 0;
   return assaultBonus(u.player) + (isLoneActive(u) ? 1 : 0);
@@ -735,7 +756,7 @@ function isDisabled(u) {
   return isGrabbed(u) || isStunned(u);
 }
 /* 定身：不能移动 / 主动位移，但仍可普通攻击与非位移技能 */
-const SELF_MOVE_SKILLS = ["dash", "blink", "ziwei", "tianwei", "shuidiao", "duanlang", "thunder", "mistdash", "stealth", "thunderblade", "susano_dash", "push"];
+const SELF_MOVE_SKILLS = ["dash", "blink", "ziwei", "tianwei", "shuidiao", "duanlang", "thunder", "mistdash", "stealth", "thunderblade", "susano_dash", "push", "crosstep"];
 function isSelfMoveSkill(u, s) {
   if (!s) return false;
   if (SELF_MOVE_SKILLS.indexOf(s.type) >= 0) return true;
@@ -1115,6 +1136,7 @@ function resolveNormalAttack(attacker, target) {
   const d = info.get(target.uid) || { base: false, protected: false, flanked: false, count: 0, bonus: 0 };
   const assassin = d.flanked && assassinInFlank(attacker, target) ? 1 : 0;
   const guixiong = isGuixiongActive(attacker) ? 1 : 0;
+  const berserker = berserkerNormalBonus(attacker);
   return {
     base: d.base,
     protected: d.protected,
@@ -1123,7 +1145,8 @@ function resolveNormalAttack(attacker, target) {
     bonus: d.bonus,
     assassin,
     guixiong,
-    damage: BASE_ATTACK + d.bonus + assassin + guixiong,
+    berserker,
+    damage: BASE_ATTACK + d.bonus + assassin + guixiong + berserker,
   };
 }
 
@@ -2090,6 +2113,15 @@ function computeSkillTargets() {
       }
       break;
 
+    case "crosstep":
+      // 狂战士·狂徒：只能沿上下左右位移 1 格，落点必须为空。
+      for (const [dr, dc] of DIRS) {
+        const rr = r + dr, cc = c + dc;
+        if (!inBounds(rr, cc)) continue;
+        if (!board[rr][cc]) skillTargets.push([rr, cc]);
+      }
+      break;
+
     case "dash":
       for (const [dr, dc] of DIRS) {
         const opt = computeDash(u, r, c, dr, dc);
@@ -2776,6 +2808,20 @@ function applyDamage(target, amount, kind, source) {
     if (window.SFX) window.SFX.play("metalGuard", { hero: "metal" });
   }
 
+  // 狂战士·狂化（生命≤2）：每次独立伤害事件格挡 0.5 点，最低为 0。
+  if (dmg > 0 && berserkerBlock(target)) {
+    const beforeBlock = dmg;
+    dmg = Math.max(0, dmg - 0.5);
+    addLog("🛡 狂化·格挡：" + label(target) + " 抵消 0.5 点伤害（" + beforeBlock + " → " + dmg + "）。");
+    if (pos) {
+      fx.push({ r: pos.r, c: pos.c, text: "格挡 -0.5", kind: "shield" });
+      if (window.BFX && window.BFX.shieldAbsorb) {
+        try { window.BFX.shieldAbsorb({ r: pos.r, c: pos.c, amount: beforeBlock - dmg, uid: target.uid }); } catch (e) { /* ignore */ }
+      }
+    }
+    if (window.SFX) window.SFX.play("shieldHit", { hero: "berserker" });
+  }
+
   const shieldBefore = target.shield;
   let absorbedTotal = 0;
   if (target.shield > 0) {
@@ -2924,14 +2970,15 @@ function normalAttack(attacker, target) {
   const metalBuff = attacker.metalBuff ? 1 : 0; // 金元素·金属强化 +1
   const total = res.damage + aBonus + ravenBuff + metalBuff;
 
+  const furyTxt = res.berserker ? (res.berserker >= 2 ? "狂化 +2" : "狂化 +1") : "";
   if (res.flank) {
     addLog("【夹击×" + res.count + "】" + label(attacker) + " 攻击 " + label(target) + "，额外伤害 +" + res.bonus +
-      (res.assassin ? "，刺客·暗杀 +1" : "") + (res.guixiong ? "，鬼雄·绝境 +1" : "") + (aBonus ? "，猛攻令 +1" : "") + (ravenBuff ? "，影袭 +1" : "") + (metalBuff ? "，金属强化 +1" : "") + "（共 " + total + " 点）。");
+      (res.assassin ? "，刺客·暗杀 +1" : "") + (res.guixiong ? "，鬼雄·绝境 +1" : "") + (furyTxt ? "，" + furyTxt : "") + (aBonus ? "，猛攻令 +1" : "") + (ravenBuff ? "，影袭 +1" : "") + (metalBuff ? "，金属强化 +1" : "") + "（共 " + total + " 点）。");
     if (res.assassin) addLog("🗡 刺客·暗杀触发：本次夹击额外 +1 点伤害。");
   } else if (res.base && res.protected) {
-    addLog("【队友保护，夹击无效】" + label(attacker) + " 攻击 " + label(target) + "，造成 " + total + " 点伤害" + (res.guixiong ? "（鬼雄·绝境 +1）" : "") + (aBonus ? "（猛攻令 +1）" : "") + (ravenBuff ? "（影袭 +1）" : "") + (metalBuff ? "（金属强化 +1）" : "") + "。");
+    addLog("【队友保护，夹击无效】" + label(attacker) + " 攻击 " + label(target) + "，造成 " + total + " 点伤害" + (res.guixiong ? "（鬼雄·绝境 +1）" : "") + (furyTxt ? "（" + furyTxt + "）" : "") + (aBonus ? "（猛攻令 +1）" : "") + (ravenBuff ? "（影袭 +1）" : "") + (metalBuff ? "（金属强化 +1）" : "") + "。");
   } else {
-    addLog(label(attacker) + " 攻击 " + label(target) + "，造成 " + total + " 点伤害" + (res.guixiong ? "（鬼雄·绝境 +1）" : "") + (aBonus ? "（猛攻令 +1）" : "") + (ravenBuff ? "（影袭 +1）" : "") + (metalBuff ? "（金属强化 +1）" : "") + "。");
+    addLog(label(attacker) + " 攻击 " + label(target) + "，造成 " + total + " 点伤害" + (res.guixiong ? "（鬼雄·绝境 +1）" : "") + (furyTxt ? "（" + furyTxt + "）" : "") + (aBonus ? "（猛攻令 +1）" : "") + (ravenBuff ? "（影袭 +1）" : "") + (metalBuff ? "（金属强化 +1）" : "") + "。");
   }
 
   if (window.SFX) {
@@ -3030,6 +3077,7 @@ function skillStageLabel(a, s) {
   if (s.type === "thunderblade") return ["第一段·雷斩", "第二段·火遁反斩", "第三段·雷遁终结"][a.rbStage || 0] || "";
   if (s.type === "raikiri") return "选择朝向";
   if (s.type === "skyarrow") return "选择直线方向";
+  if (s.type === "crosstep") return "选择十字方向";
   if (s.type === "meteor") return "选择陨星落点";
   return "";
 }
@@ -3045,7 +3093,7 @@ function screenTierFor(a, s) {
   if (s.type === "steal") return 2;
   if (s.type === "wxt") return (a.wxtStage || 0) >= 2 ? 3 : 2;
   if (/^(thunder|shenluo|bloodburst|charge|tianwei|raikiri|dragonbreath|metaltide)$/.test(s.type)) return 3;
-  if (/^(heal|shield_self|shield_ally|metalarmor|stealth|blink|ziwei|duanlang|exile)$/.test(s.type)) return 1;
+  if (/^(heal|shield_self|shield_ally|metalarmor|stealth|blink|ziwei|duanlang|exile|crosstep)$/.test(s.type)) return 1;
   return 2;
 }
 
@@ -4321,6 +4369,21 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
       board[r][c] = null;
       addLog(label(a) + " 释放【" + s.name + "】，瞬移到 (" + (tr + 1) + "," + (tc + 1) + ")。");
       break;
+
+    case "crosstep": {
+      if (!inBounds(tr, tc) || Math.abs(tr - r) + Math.abs(tc - c) !== 1 || board[tr][tc]) {
+        addLog("狂徒：只能沿上 / 下 / 左 / 右位移到相邻空格。");
+        render();
+        return;
+      }
+      const [ddr, ddc] = [tr - r, tc - c];
+      if (window.BFX) window.BFX.cast({ type: "crosstep", heroId: a.heroId, caster: { r, c }, from: { r, c }, to: { r: tr, c: tc } });
+      setFace(a, ddr, ddc);
+      board[tr][tc] = a;
+      board[r][c] = null;
+      addLog("🪓 " + label(a) + " 释放【" + s.name + "】，向" + dirName([ddr, ddc]) + "位移到 (" + (tr + 1) + "," + (tc + 1) + ")。");
+      break;
+    }
 
     case "dash": {
       const opt = dashOptions.find((o) => o.target && o.target.r === tr && o.target.c === tc);
@@ -6697,6 +6760,8 @@ function render() {
         if (d && d.flanked) cell.classList.add("flanked");
         else if (d && d.base && d.protected) cell.classList.add("protected-unit");
         if (hasSuperArmor(u)) cell.classList.add("superarmor");
+        const bzStage = berserkerStage(u);
+        if (bzStage > 0) cell.classList.add("berserk-stage-" + bzStage);
         if (u.chaseMark) cell.classList.add("chase-marked");
         if (isStealthed(u)) cell.classList.add("stealth-unit");
         if (u.ravenBuff) cell.classList.add("raven-buffed");
@@ -6914,6 +6979,17 @@ function updateHeroCard() {
       : '<span class="chip">🐺 孤胆未生效（九宫格内有友军）</span>');
     chips.push('<span class="chip ' + (u.lockUsed ? "" : "lone") + '">' + (u.lockUsed ? "锁血：已使用" : "锁血：可用") + "</span>");
   }
+  const bStage = berserkerStage(u);
+  if (bStage > 0) {
+    const fx = [];
+    if (bStage >= 1) fx.push("普攻 +1");
+    if (bStage >= 2) fx.push("霸体");
+    if (bStage >= 3) fx.push("格挡 0.5");
+    if (bStage >= 4) fx.push("普攻再 +1");
+    chips.push('<span class="chip berserk">🪓 狂化：' + fx.join(" · ") + "</span>");
+  } else if (u.heroId === "berserker") {
+    chips.push('<span class="chip">🪓 狂化未触发（生命 > 4）</span>');
+  }
   if (u.heroId === "xiangyu") {
     chips.push(u.guixiongUsed
       ? '<span class="chip guixiong">👹 鬼雄已触发：生命锁定 1 · 普通攻击伤害 +1（绝境）</span>'
@@ -7098,6 +7174,15 @@ function renderDetailCard() {
   if (u.heroId === "lone") {
     st.push(isLoneActive(u) ? "孤胆生效（伤害 +1、霸体、免疫夹击）" : "孤胆未生效（九宫格内有友军）");
     st.push(u.lockUsed ? "锁血：已使用" : "锁血：可用");
+  }
+  const bStage = berserkerStage(u);
+  if (bStage > 0) {
+    const bfx = [];
+    if (bStage >= 1) bfx.push("普通攻击 +1");
+    if (bStage >= 2) bfx.push("霸体（免疫控制）");
+    if (bStage >= 3) bfx.push("每次受伤格挡 0.5");
+    if (bStage >= 4) bfx.push("普通攻击再 +1");
+    st.push("狂化阶段 " + bStage + "：" + bfx.join("、"));
   }
   if (hasSuperArmor(u)) st.push("霸体：免疫抓取等负面效果");
   if (u.heroId === "xiangyu") {
@@ -7659,6 +7744,16 @@ function aiSkillScore(u, s, pos, rr, cc, w) {
       if (u.hp <= 2) sc += (after - before) * w.distW;
       return sc;
     }
+    case "crosstep": {
+      // 狂徒：可用它贴近目标或脱离包围；残血时更重视安全落点。
+      const beforeDist = nearestEnemyDist(pos.r, pos.c, u.player);
+      const afterDist = nearestEnemyDist(rr, cc, u.player);
+      const beforeDanger = dangerAt(pos.r, pos.c, u);
+      const afterDanger = dangerAt(rr, cc, u);
+      let sc = (beforeDist - afterDist) * (w.distW / 2) - afterDanger * (w.riskW / 10);
+      if (u.hp <= 3) sc += (beforeDanger - afterDanger) * (w.riskW / 8) + 3;
+      return sc;
+    }
     case "dash": {
       const opt = dashOptions.find((o) => o.dest && o.dest.r === rr && o.dest.c === cc);
       if (!opt) return null;
@@ -7902,9 +7997,10 @@ function aiEnumerate() {
               }
             }
           }
+          const furyAggro = berserkerStage(u) > 0 ? (u.hp <= 2 ? 10 : 4) : 0;
           acts.push({
             type: "attack", u, pos, target: { r: pos.r + dr, c: pos.c + dc },
-            score: w.dmgW * dmg + (kill ? w.killW : 0) + (res.flank ? w.flankW : 0) + 6 + splashScore,
+            score: w.dmgW * dmg + (kill ? w.killW : 0) + (res.flank ? w.flankW : 0) + 6 + splashScore + furyAggro,
           });
         }
       }

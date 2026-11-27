@@ -4,8 +4,9 @@
  *       若后续做统一规则模块，可把这份数据与前端合并为共享 JSON。
  * ========================================================================= */
 module.exports = [
-  { id: "berserker", name: "狂战士", hp: 5, sfx: "heavy",
-    skill: { name: "狂暴突袭", type: "damage_single", range: 1, damage: 3, uses: 2 } },
+  { id: "berserker", name: "狂战士", hp: 6, sfx: "heavy",
+    passive: { name: "狂化" },
+    skill: { name: "狂徒", type: "crosstep", uses: 1, free: true } },
   { id: "mage", name: "法师", hp: 5, sfx: "magic",
     skill: { name: "火球术", type: "damage_single", range: 3, damage: 2, uses: 3 } },
   { id: "knight", name: "骑士", hp: 6, sfx: "sword",

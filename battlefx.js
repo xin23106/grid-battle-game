@@ -1292,6 +1292,19 @@
           addMark("space", tg.r, tg.c, col, 10000);
         }
         break;
+      case "crosstep":
+        // 狂战士·狂徒：脚下红色十字法阵 → 残影横移 → 落点红色冲击波
+        if (tx != null) {
+          const x0 = m.from ? px(m.from.c) : x, y0 = m.from ? py(m.from.r) : y;
+          push({ kind: "line", x: x0 - geo.cell * 0.32, y: y0, x2: x0 + geo.cell * 0.32, y2: y0, color: "#f87171", width: 2.5, dur: 220, alpha: 0.9 });
+          push({ kind: "line", x: x0, y: y0 - geo.cell * 0.32, x2: x0, y2: y0 + geo.cell * 0.32, color: "#f87171", width: 2.5, dur: 220, alpha: 0.9 });
+          push({ kind: "ghost", x, y, r: geo.cell * 0.28, color: "#ef4444", dur: 260 });
+          push({ kind: "ghost", x: (x + tx) / 2, y: (y + ty) / 2, r: geo.cell * 0.22, color: "#fca5a5", dur: 220, delay: 45 });
+          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.12, r1: geo.cell * 0.72, color: "#ef4444", width: 2.8, dur: 360, delay: 60 });
+          spawn(tx, ty, 16, { color: "#f87171", speed: 2.8, life: 420, size: 2 });
+          addMark("impact", tg.r, tg.c, "#ef4444");
+        }
+        break;
       case "dash":
         // 阿修罗：三剑环绕 → 直线突进 → 落点剑痕（锐利、无光环）
         push({ kind: "swords", x, y, count: 3, r: geo.cell * 0.52, color: "#e2e8f0", dur: 460 });

@@ -207,7 +207,7 @@ function isDisabled(u) {
   return isGrabbed(u) || isStunned(u);
 }
 /* 定身：不能移动 / 主动位移，但仍可普通攻击与非位移技能 */
-const SELF_MOVE_SKILLS = ["dash", "blink", "ziwei", "tianwei", "shuidiao", "duanlang", "thunder", "mistdash", "stealth", "thunderblade", "susano_dash", "push"];
+const SELF_MOVE_SKILLS = ["dash", "blink", "ziwei", "tianwei", "shuidiao", "duanlang", "thunder", "mistdash", "stealth", "thunderblade", "susano_dash", "push", "crosstep"];
 function isSelfMoveSkillS(u, sk) {
   if (!sk) return false;
   if (SELF_MOVE_SKILLS.indexOf(sk.type) >= 0) return true;
@@ -298,7 +298,26 @@ function alliesIn3x3(s, u) {
   return n;
 }
 const isLoneActive = (s, u) => !!(u && !u.sword && hasPassiveEffectS(u, "lone", "孤胆") && alliesIn3x3(s, u) === 0);
-const hasSuperArmor = (s, u) => isLoneActive(s, u);
+/* 狂战士·狂化：按当前实际生命值动态计算阶段。 */
+function berserkerStage(u) {
+  if (!u || u.sword) return 0;
+  if (!hasPassiveEffectS(u, "berserker", "狂化")) return 0;
+  const hp = Number(u.hp);
+  if (!Number.isFinite(hp)) return 0;
+  if (hp <= 1) return 4;
+  if (hp <= 2) return 3;
+  if (hp <= 3) return 2;
+  if (hp <= 4) return 1;
+  return 0;
+}
+function berserkerNormalBonus(u) {
+  const stage = berserkerStage(u);
+  return stage > 0 ? 1 + (stage >= 4 ? 1 : 0) : 0;
+}
+function berserkerBlock(u) {
+  return berserkerStage(u) >= 3;
+}
+const hasSuperArmor = (s, u) => isLoneActive(s, u) || berserkerStage(u) >= 2;
 const attackerBonus = (s, u) => (s.assaultPlayer === u.player ? 1 : 0) + (isLoneActive(s, u) ? 1 : 0);
 /* 负面状态：伤害先结算，负面效果受霸体免疫 */
 function applyNegativeStatus(s, target, kind, opts) {
@@ -1025,7 +1044,8 @@ function normalDamage(s, attacker, target) {
   const d = flankInfo(s).get(target.uid);
   const assassin = d && d.flanked && assassinInFlank(s, attacker, target) ? 1 : 0;
   const guixiong = isGuixiongActive(s, attacker) ? 1 : 0; // 绝境：普攻 +1
-  return BASE_ATTACK + (d ? d.bonus : 0) + assassin + guixiong + attackerBonus(s, attacker);
+  const berserker = berserkerNormalBonus(attacker); // 狂化：仅普通攻击
+  return BASE_ATTACK + (d ? d.bonus : 0) + assassin + guixiong + berserker + attackerBonus(s, attacker);
 }
 /* 鬼雄触发时的九宫格反击：对周围 8 格内敌人各 2 点（走统一结算） */
 function guixiongCounter(s, u) {
@@ -1204,6 +1224,12 @@ function applyDamage(s, target, amount, source) {
     const beforeHalf = dmg;
     dmg = dmg * 0.5;
     slog(s, "🛡 金属狂潮：" + uname(s, target) + " 受到的伤害减半（" + beforeHalf + " → " + dmg + "）");
+  }
+  // 狂战士·狂化（生命≤2）：每次独立伤害事件格挡 0.5 点，最低为 0。
+  if (berserkerBlock(target) && dmg > 0) {
+    const beforeBlock = dmg;
+    dmg = Math.max(0, dmg - 0.5);
+    slog(s, "🛡 狂化·格挡：" + uname(s, target) + " 抵消 0.5 点伤害（" + beforeBlock + " → " + dmg + "）");
   }
   if (target.shield > 0) { const a = Math.min(target.shield, dmg); target.shield -= a; dmg -= a; consumeShieldLayersS(target, a); if (a > 0) slog(s, uname(s, target) + " 的护盾抵挡了 " + a + " 点伤害"); }
   // 龙魂：龙人 1/2 概率闪避（护盾等前置处理之后、完全抵消则不触发）
@@ -2103,6 +2129,12 @@ function applyAction(state, player, action) {
     } else if (sk.type === "blink") {
       if (!inB(r, c) || s.board[r][c] || dist > sk.range || dist === 0) return err("瞬移目标不合法");
       s.board[r][c] = u; s.board[from.r][from.c] = null;
+    } else if (sk.type === "crosstep") {
+      if (!inB(r, c) || dist !== 1 || s.board[r][c]) return err("狂徒：只能沿上下左右位移到相邻空格");
+      s.board[r][c] = u;
+      s.board[from.r][from.c] = null;
+      setFaceS(u, r - from.r, c - from.c);
+      slog(s, "🪓 " + uname(s, u) + " 发动【狂徒】，十字位移到 (" + (r + 1) + "," + (c + 1) + ")");
     } else if (sk.type === "dash") {
       const opt = DIRS.map(([dr, dc]) => computeDash(s, u, from.r, from.c, dr, dc))
                       .find((o) => o.dest && o.dest.r === r && o.dest.c === c);

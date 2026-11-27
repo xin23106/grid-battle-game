@@ -1040,6 +1040,12 @@
         N(L, { at: 0, dur: 0.28, bp: h.air, q: 1.0, sweepTo: h.air * 0.35, peak: 0.14 });
         T(L, { at: 0, dur: 0.22, wave: h.wave, f0: h.base * 0.8, f1: h.base * 1.6, peak: 0.05 });
         break;
+      case "crosstep":
+        // 狂徒：十字破空 + 红色残影
+        N(L, { at: 0, dur: 0.24, bp: 900, q: 1.2, sweepTo: 320, peak: 0.15 });
+        T(L, { at: 0, dur: 0.26, wave: "sawtooth", f0: 120, f1: 55, peak: 0.07 });
+        M(L, { at: 0.04, base: 620, dur: 0.18, peak: 0.05, partials: [1, 2.4, 4.6] });
+        break;
       case "dashHit":
         M(L, { at: 0, base: h.base * 2.4, dur: 0.22, peak: 0.10, partials: [1, 2.7, 5.2] });
         N(L, { at: 0, dur: 0.12, bp: 3400, q: 1.4, peak: 0.10 });
