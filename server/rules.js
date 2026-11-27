@@ -72,6 +72,29 @@ function hasPassiveEffectS(u, heroId, passiveName) {
   if (u.copiedFrom && u.copiedFrom.heroId === heroId && (!passiveName || cp.name === passiveName)) return true;
   return false;
 }
+/* 镜影·镜像分身范围（与雷电之主·雷霆万钧一致） */
+function mirrorSummonCellsS(s, u, r, c) {
+  const cand = [];
+  for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+    if (dr === 0 && dc === 0) continue;
+    cand.push([r + dr, c + dc]);
+  }
+  for (const [dr, dc] of DIRS) cand.push([r + dr * 2, c + dc * 2]);
+  const seen = new Set();
+  const out = [];
+  for (const [rr, cc] of cand) {
+    if (!inB(rr, cc)) continue;
+    const key = rr + "_" + cc;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (s.board[rr][cc]) continue;
+    out.push([rr, cc]);
+  }
+  return out;
+}
+function isMirrorS(cell) {
+  return !!(cell && cell.mirror === true);
+}
 /* 多技能：每个技能各自的剩余次数（uses==null 用 9999 表示无限） */
 function skillUsesLeft(s, u, idx) {
   const skills = unitSkills(u);
@@ -195,7 +218,7 @@ function alliesIn3x3(s, u) {
   for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
     if (!dr && !dc) continue;
     const v = inB(p.r + dr, p.c + dc) ? s.board[p.r + dr][p.c + dc] : null;
-    if (v && !v.sword && v.player === u.player) n++;
+    if (v && !v.sword && !isMirrorS(v) && v.player === u.player) n++;
   }
   return n;
 }
@@ -828,6 +851,7 @@ function slog(s, text, opts) {
 }
 function uname(s, u) {
   if (!u) return "？";
+  if (isMirrorS(u)) return "玩家" + u.player + "·镜像";
   const d = heroDef(u.heroId);
   return "玩家" + u.player + "·" + ((d && d.name) || u.heroId);
 }
@@ -851,7 +875,7 @@ const unitsOf = (s, p) => {
   const list = [];
   for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
     const u = s.board[r][c];
-    if (u && !u.sword && u.player === p) list.push(u);
+    if (u && !u.sword && !isMirrorS(u) && u.player === p) list.push(u);
   }
   return list;
 };
@@ -867,13 +891,13 @@ function hasAsuraAlive(s) {
 }
 function flankCountAt(s, r, c) {
   const u = s.board[r][c];
-  if (!u || u.sword) return { enemy: 0, wall: 0, total: 0 };
+  if (!u || u.sword || isMirrorS(u)) return { enemy: 0, wall: 0, total: 0 };
   let enemy = 0, wall = 0;
   for (const [dr, dc] of DIRS) {
     const nr = r + dr, nc = c + dc;
     if (!inB(nr, nc)) { wall++; continue; }
     const t = s.board[nr][nc];
-    if (t && !t.sword && t.player !== u.player) enemy++;
+    if (t && !t.sword && !isMirrorS(t) && t.player !== u.player) enemy++;
   }
   return { enemy, wall, total: enemy + wall };
 }
@@ -882,23 +906,23 @@ function flankInfo(s) {
   const info = new Map();
   for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
     const u = s.board[r][c];
-    if (!u || u.sword) continue;
+    if (!u || u.sword || isMirrorS(u)) continue;
     const fc = flankCountAt(s, r, c);
     info.set(u.uid, { count: fc.total, base: fc.enemy >= 1 && fc.total >= 2, protected: false, flanked: false, bonus: 0 });
   }
   for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
     const u = s.board[r][c];
-    if (!u || u.sword) continue;
+    if (!u || u.sword || isMirrorS(u)) continue;
     const d = info.get(u.uid);
-    if (!d.base) continue;
+    if (!d || !d.base) continue;
     for (const [dr, dc] of DIRS) {
       const v = inB(r + dr, c + dc) ? s.board[r + dr][c + dc] : null;
-      if (v && !v.sword && v.player === u.player && !info.get(v.uid).base) { d.protected = true; break; }
+      if (v && !v.sword && !isMirrorS(v) && v.player === u.player && info.get(v.uid) && !info.get(v.uid).base) { d.protected = true; break; }
     }
   }
   for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
     const u = s.board[r][c];
-    if (!u || u.sword) continue;
+    if (!u || u.sword || isMirrorS(u)) continue;
     const d = info.get(u.uid);
     if (!d) continue;
     d.immune = isLoneActive(s, u);                       // 孤胆侠·孤胆激活 → 免疫夹击加成
@@ -1084,6 +1108,16 @@ function tickShieldLayersS(s, player) {
 
 function applyDamage(s, target, amount, source) {
   const pos = findPos(s, target);
+  if (isMirrorS(target)) {
+    if (!pos || amount <= 0) return 0;
+    s.board[pos.r][pos.c] = null;
+    slog(s, "🪞 " + uname(s, target) + " 破碎（受到任意伤害立即消失）");
+    if (source && !source.sword && !isMirrorS(source) && source.player !== target.player && findPos(s, source)) {
+      slog(s, "🪞 镜像反射：" + uname(s, source) + " 击败镜像，受到 0.5 点反伤");
+      applyDamage(s, source, 0.5, null);
+    }
+    return 1;
+  }
   if (isFormImmuneS(target)) {
     slog(s, (isCrowFormS(target) ? "🪶 鸦天狗·无敌：" : "🛡 禅坐·无敌：") + uname(s, target) + " 免疫了本次伤害");
     return 0;
@@ -1479,7 +1513,7 @@ function checkVictory(s) {
   if (p1 === 0 || p2 === 0) {
     s.phase = "over"; s.winner = p1 === 0 ? 2 : 1;
     // 对局结束：清理临时石柱 / 毒雾 / 潜行状态
-    for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (isPillar(s.board[r][c])) s.board[r][c] = null;
+    for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (isPillar(s.board[r][c]) || isMirrorS(s.board[r][c])) s.board[r][c] = null;
     s.mists = {};
     s.blackFlames = {};
     s.meteors = [];
@@ -1692,6 +1726,7 @@ function applyAction(state, player, action) {
   const from = action.from || {};
   const u = inB(from.r, from.c) ? s.board[from.r][from.c] : null;
   if (!isUnit(u) || u.player !== player) return err("无效的单位");
+  if (isMirrorS(u)) return err("镜像不能移动、攻击或释放技能");
   if (u.frozen > 0) return err("该英雄被冰封");
   if (isDisabled(u)) return err("该英雄处于【" + actionBlockReason(u) + "】状态，无法行动");
   if (isMeditatingS(u)) return err("该英雄正在禅坐，无法行动");
@@ -1867,6 +1902,25 @@ function applyAction(state, player, action) {
       if (!inB(r, c)) return err("天罚：请选择棋盘内的合法落点");
       const m = addMeteorS(s, u, r, c, sk);
       slog(s, "☄ " + uname(s, u) + " 发动【天罚】，在 (" + (r + 1) + "," + (c + 1) + ") 标记 3×3 陨星区域；" + m.turns + " 个完整对手回合后坠落");
+    } else if (sk.type === "mirrorclone") {
+      // 镜影·镜像分身：雷霆万钧同范围空格召唤永久镜像，可选与镜像换位
+      const valid = mirrorSummonCellsS(s, u, from.r, from.c).some(([rr, cc]) => rr === r && cc === c);
+      if (!valid) return err("镜像分身：请选择雷霆万钧同范围内的合法空格");
+      const m = { mirror: true, uid: s.unitSeq++, player, heroId: "mirror", hp: 1, maxHp: 1 };
+      if (action.swap) {
+        s.board[r][c] = u;
+        s.board[from.r][from.c] = m;
+        slog(s, "🪞 " + uname(s, u) + " 在 (" + (r + 1) + "," + (c + 1) + ") 召唤镜像并交换位置");
+      } else {
+        s.board[r][c] = m;
+        slog(s, "🪞 " + uname(s, u) + " 在 (" + (r + 1) + "," + (c + 1) + ") 召唤镜像");
+      }
+    } else if (sk.type === "mirrorshift") {
+      // 镜影·镜面折射：与任意己方镜像交换位置
+      if (!isMirrorS(t) || t.player !== player) return err("镜面折射：请选择一个己方镜像");
+      s.board[from.r][from.c] = t;
+      s.board[r][c] = u;
+      slog(s, "🪞 " + uname(s, u) + " 与镜像交换位置：(" + (from.r + 1) + "," + (from.c + 1) + ") ↔ (" + (r + 1) + "," + (c + 1) + ")");
     } else if (sk.type === "steal") {
       // 窃神·窃取权柄：复制目标一个主动/被动技能，独立次数
       if (!isUnit(t) || t.player === player || hiddenFromS(t, player)) return err("窃取权柄：请选择一名可见的敌方英雄");

@@ -86,6 +86,7 @@
     xiangyu:   { wave: "sawtooth", base: 130, air: 1600, metal: 0.35, wet: 1.0, pan: -0.03 },
     tiandao:   { wave: "sine",     base: 165, air: 1200, metal: 0.30, wet: 0.8, pan: 0.05 },
     thiefgod:  { wave: "sawtooth", base: 180, air: 3600, metal: 0.35, wet: 0.55, pan: 0.0 },
+    mirror:    { wave: "sine",     base: 980, air: 6200, metal: 0.10, wet: 0.2, pan: 0.04 },
     __default: { wave: "triangle", base: 600, air: 2400, metal: 0.25, wet: 0.3, pan: 0 },
   };
   function H(id) { return HERO[id] || HERO.__default; }
@@ -566,6 +567,15 @@
         T(L, { at: 0.01, dur: 0.5, wave: "sine", f0: 784, peak: 0.035 });
         N(L, { at: 0.08, dur: 0.55, lp: 900, lpTo: 260, peak: 0.08 });
         break;
+      case "mirrorclone": // 镜影·镜像分身：玻璃成形 + 分身钟音
+        S(L, { at: 0, f0: 620, f1: 1800, dur: 0.35, peak: 0.055, wave: "sine" });
+        M(L, { at: 0.04, base: 2600, dur: 0.35, peak: 0.06, partials: [1, 2.2, 3.8] });
+        N(L, { at: 0.08, dur: 0.3, bp: 5200, q: 1.4, sweepTo: 1800, peak: 0.06 });
+        break;
+      case "mirrorshift": // 镜影·镜面折射：短促玻璃瞬移
+        N(L, { at: 0, dur: 0.22, bp: 6200, q: 1.5, sweepTo: 900, peak: 0.10 });
+        T(L, { at: 0.02, dur: 0.2, wave: "sine", f0: 1400, f1: 420, peak: 0.055 });
+        break;
       case "steal": // 窃神·窃取权柄：暗金汲取链 + 权柄钟鸣
         N(L, { at: 0, dur: 0.45, bp: 1400, q: 1.4, sweepTo: 3200, peak: 0.08 });
         T(L, { at: 0.04, dur: 0.5, wave: "sawtooth", f0: 140, f1: 420, peak: 0.06 });
@@ -875,6 +885,19 @@
       case "buffUp": recipeBuffUp(h, o, L); break;
       case "buffDown": recipeBuffDown(h, o, L); break;
       case "grab": recipeGrab(h, o, L); break;
+      case "mirrorSummon": // 镜像成形
+        M(L, { at: 0, base: 2400, dur: 0.4, peak: 0.07, partials: [1, 2.4, 4.1] });
+        N(L, { at: 0.03, dur: 0.32, bp: 6400, q: 1.5, sweepTo: 1600, peak: 0.06 });
+        break;
+      case "mirrorShift": // 镜面交换
+        N(L, { at: 0, dur: 0.2, bp: 3000, q: 1.2, sweepTo: 7000, peak: 0.08 });
+        T(L, { at: 0.03, dur: 0.2, wave: "sine", f0: 900, f1: 2400, peak: 0.05 });
+        break;
+      case "mirrorBreak": // 镜像破碎 + 反伤尖鸣
+        N(L, { at: 0, dur: 0.25, bp: 7200, q: 1.0, sweepTo: 2200, peak: 0.14 });
+        M(L, { at: 0.01, base: 4200, dur: 0.28, peak: 0.06, partials: [1, 2.7, 5.3] });
+        T(L, { at: 0.05, dur: 0.14, wave: "triangle", f0: 1800, f1: 520, peak: 0.05 });
+        break;
       case "meteorFall": // 天罚落地：高频坠落 → 低频爆轰 → 星火余响
         N(L, { at: 0, dur: 0.45, bp: 4000, sweepTo: 700, q: 1.2, peak: 0.20 });
         HP(L, { at: 0.18, dur: 0.75, f0: 120, f1: 28, peak: 0.45 });

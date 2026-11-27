@@ -181,7 +181,9 @@ function heroDef(id) {
 }
 function label(u) {
   if (!u) return "空格";
-  return "玩家" + u.player + "·" + heroDef(u.heroId).name;
+  if (isMirror(u)) return "玩家" + u.player + "·镜像";
+  const d = heroDef(u.heroId);
+  return "玩家" + u.player + "·" + ((d && d.name) || u.heroId || "单位");
 }
 function findPos(u) {
   for (let r = 0; r < SIZE; r++)
@@ -193,7 +195,7 @@ function unitsOf(player) {
   for (let r = 0; r < SIZE; r++)
     for (let c = 0; c < SIZE; c++) {
       const u = board[r][c];
-      if (u && u.player === player) list.push(u);
+      if (u && u.player === player && !isMirror(u)) list.push(u);
     }
   return list;
 }
@@ -680,7 +682,7 @@ function alliesIn3x3(u) {
     for (let dc = -1; dc <= 1; dc++) {
       if (dr === 0 && dc === 0) continue;
       const v = unitAt(p.r + dr, p.c + dc);
-      if (v && !v.sword && v.player === u.player) res.push(v);
+      if (v && !v.sword && !isMirror(v) && v.player === u.player) res.push(v);
     }
   }
   return res;
@@ -953,7 +955,7 @@ function dirName(dir) {
  * 返回 { enemy, wall, total }。 */
 function flankCountAt(r, c) {
   const u = board[r][c];
-  if (!u || u.sword) return { enemy: 0, wall: 0, total: 0 };
+  if (!u || u.sword || isMirror(u)) return { enemy: 0, wall: 0, total: 0 };
   const f = u.player;
   let enemy = 0;
   let wall = 0;
@@ -965,7 +967,7 @@ function flankCountAt(r, c) {
       continue;
     }
     const t = board[nr][nc];
-    if (t && !t.sword && t.player !== f) enemy++; // 相邻敌人算 1 个夹击方向（剑刃不算）
+    if (t && !t.sword && !isMirror(t) && t.player !== f) enemy++; // 相邻敌人算 1 个夹击方向（剑刃/镜像不算）
   }
   return { enemy, wall, total: enemy + wall };
 }
@@ -986,7 +988,7 @@ function computeFlankInfo() {
   for (let r = 0; r < SIZE; r++)
     for (let c = 0; c < SIZE; c++) {
       const u = board[r][c];
-      if (!u || u.sword) continue;
+      if (!u || u.sword || isMirror(u)) continue;
       const fc = flankCountAt(r, c);
       info.set(u.uid, {
         enemy: fc.enemy,
@@ -1003,12 +1005,12 @@ function computeFlankInfo() {
   for (let r = 0; r < SIZE; r++)
     for (let c = 0; c < SIZE; c++) {
       const u = board[r][c];
-      if (!u || u.sword) continue;
+      if (!u || u.sword || isMirror(u)) continue;
       const d = info.get(u.uid);
-      if (!d.base) continue;
+      if (!d || !d.base) continue;
       for (const [dr, dc] of DIRS) {
         const v = unitAt(r + dr, c + dc);
-        if (v && v.player === u.player && !info.get(v.uid).base) {
+        if (v && !isMirror(v) && v.player === u.player && info.get(v.uid) && !info.get(v.uid).base) {
           d.protected = true;
           break;
         }
@@ -1019,7 +1021,7 @@ function computeFlankInfo() {
   for (let r = 0; r < SIZE; r++)
     for (let c = 0; c < SIZE; c++) {
       const u = board[r][c];
-      if (!u || u.sword) continue;
+      if (!u || u.sword || isMirror(u)) continue;
       const d = info.get(u.uid);
       if (!d) continue;
       d.immune = flankImmune(u);                       // 免疫夹击（孤胆侠·孤胆生效）
@@ -1552,7 +1554,7 @@ function checkVictory() {
     meteors = [];
     for (const u of unitsOf(1).concat(unitsOf(2))) { clearRavenStealth(u); resetThunderblade(u); resetCrowForm(u); }
     // 对局结束：清理临时石柱及其计时状态
-    for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (isPillar(board[r][c])) board[r][c] = null;
+    for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (isPillar(board[r][c]) || isMirror(board[r][c])) board[r][c] = null;
     if (!matchStats.endedAt) matchStats.endedAt = Date.now();
     if (!matchStats.startedAt) matchStats.startedAt = matchStats.endedAt;
     addLog("玩家" + winner + " 获胜！");
@@ -1792,6 +1794,37 @@ function resolveMeteor(m) {
   checkVictory();
 }
 
+/* 镜影·镜像分身：与雷电之主·雷霆万钧完全相同的范围（九宫格 8 格 + 四方向第 2 格） */
+function mirrorSummonCells(u, r, c) {
+  const cand = [];
+  for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+    if (dr === 0 && dc === 0) continue;
+    cand.push([r + dr, c + dc]);
+  }
+  for (const [dr, dc] of DIRS) cand.push([r + dr * 2, c + dc * 2]);
+  const seen = new Set();
+  const out = [];
+  for (const [rr, cc] of cand) {
+    if (!inBounds(rr, cc)) continue;
+    const key = rr + "_" + cc;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (board[rr][cc]) continue;
+    out.push([rr, cc]);
+  }
+  return out;
+}
+function isMirror(cell) {
+  return !!(cell && cell.mirror === true);
+}
+function mirrorsOf(player) {
+  const out = [];
+  for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+    const v = board[r][c];
+    if (isMirror(v) && v.player === player) out.push(v);
+  }
+  return out;
+}
 /* 曼哈顿距离内的所有格子（includeSelf 决定是否含自身格） */
 function cellsWithin(r, c, range, includeSelf) {
   const res = [];
@@ -1877,11 +1910,24 @@ function computeSkillTargets() {
       for (let rr = 0; rr < SIZE; rr++) for (let cc = 0; cc < SIZE; cc++) skillTargets.push([rr, cc]);
       break;
 
+    case "mirrorclone": {
+      for (const [rr, cc] of mirrorSummonCells(u, r, c)) skillTargets.push([rr, cc]);
+      break;
+    }
+
+    case "mirrorshift": {
+      for (const m of mirrorsOf(u.player)) {
+        const p = findPos(m);
+        if (p) skillTargets.push([p.r, p.c]);
+      }
+      break;
+    }
+
     case "steal": {
       // 窃取权柄：指定一名可见敌方英雄，再选择其一个主动/被动技能
       for (let rr = 0; rr < SIZE; rr++) for (let cc = 0; cc < SIZE; cc++) {
         const v = unitAt(rr, cc);
-        if (v && !v.sword && v.player !== u.player && !hiddenFrom(v, u.player)) skillTargets.push([rr, cc]);
+        if (v && !v.sword && !isMirror(v) && v.player !== u.player && !hiddenFrom(v, u.player)) skillTargets.push([rr, cc]);
       }
       break;
     }
@@ -2527,6 +2573,23 @@ function tickShieldLayers(player) {
 
 function applyDamage(target, amount, kind, source) {
   const pos = findPos(target);
+  // 镜影·镜像：1 点生命，受到任意正伤害立即破碎；破碎反伤由独立被动结算
+  if (isMirror(target)) {
+    if (!pos || amount <= 0) return 0;
+    board[pos.r][pos.c] = null;
+    addLog("🪞 " + label(target) + " 破碎（受到任意伤害立即消失）。");
+    fx.push({ r: pos.r, c: pos.c, text: "破碎", kind: "skill" });
+    if (window.BFX) {
+      try { window.BFX.cast({ type: "mirrorBreak", heroId: "mirror", caster: pos }); } catch (e) { /* ignore */ }
+    }
+    if (window.SFX) window.SFX.play("mirrorBreak", { hero: "mirror" });
+    if (source && !source.sword && !isMirror(source) && source.player !== target.player && findPos(source)) {
+      addLog("🪞 镜像反射：" + label(source) + " 击败镜像，受到 0.5 点反伤。");
+      const dealt = applyDamage(source, 0.5, "passive", null); // 不把反伤再作为镜像击杀源，避免连锁
+      addLog("🪞 镜像反射结算：" + label(source) + (dealt > 0 ? " 实际扣血 " + dealt : " 未造成生命伤害") + "。");
+    }
+    return 1;
+  }
   // 禅坐 / 鸦天狗：完全免疫伤害（含黑炎、毒雾等持续伤害）
   if (isFormImmune(target)) {
     const crow = isCrowForm(target);
@@ -3482,7 +3545,37 @@ function openStealPanel(tgt) {
   });
 }
 
-function useSkill(tr, tc, copyIdx) {
+function closeMirrorSwapPanel() {
+  const el = document.querySelector(".mirror-swap-overlay");
+  if (el) el.remove();
+}
+function openMirrorSwapPanel(tgt) {
+  closeMirrorSwapPanel();
+  if (!tgt) return;
+  const ov = document.createElement("div");
+  ov.className = "steal-overlay mirror-swap-overlay";
+  ov.innerHTML = '<div class="steal-panel mirror-swap-panel" role="dialog" aria-modal="true">' +
+    '<div class="steal-head"><div><b>镜像分身</b><span>落点：(' + (tgt.r + 1) + "," + (tgt.c + 1) + ")</span></div>" +
+    '<button class="steal-cancel" type="button">取消</button></div>' +
+    '<div class="steal-sub">是否与新镜像交换位置？</div>' +
+    '<div class="mirror-swap-actions">' +
+    '<button class="steal-skill mirror-stay" type="button">留在原地召唤</button>' +
+    '<button class="steal-skill mirror-change" type="button">与镜像交换位置</button>' +
+    "</div></div>";
+  document.body.appendChild(ov);
+  ov.querySelector(".steal-cancel").addEventListener("click", () => { closeMirrorSwapPanel(); render(); });
+  ov.addEventListener("click", (e) => { if (e.target === ov) { closeMirrorSwapPanel(); render(); } });
+  ov.querySelector(".mirror-stay").addEventListener("click", () => {
+    closeMirrorSwapPanel();
+    useSkill(tgt.r, tgt.c, undefined, false);
+  });
+  ov.querySelector(".mirror-change").addEventListener("click", () => {
+    closeMirrorSwapPanel();
+    useSkill(tgt.r, tgt.c, undefined, true);
+  });
+}
+
+function useSkill(tr, tc, copyIdx, mirrorSwap) {
   const { r, c } = selected;
   const a = board[r][c];
   if (!a) { clearSelection(); render(); return; }
@@ -3496,12 +3589,23 @@ function useSkill(tr, tc, copyIdx) {
   // 窃取权柄：先选目标，再在面板中选择具体复制技能
   if (s.type === "steal" && copyIdx == null) {
     const tgt = unitAt(tr, tc);
-    if (!tgt || tgt.sword || tgt.player === a.player || hiddenFrom(tgt, a.player)) {
+    if (!tgt || tgt.sword || isMirror(tgt) || tgt.player === a.player || hiddenFrom(tgt, a.player)) {
       addLog("窃取权柄：请选择一名可见的敌方英雄。");
       render();
       return;
     }
     openStealPanel(tgt);
+    return;
+  }
+  // 镜像分身：选空位后询问是否与镜像交换位置
+  if (s.type === "mirrorclone" && mirrorSwap == null) {
+    const valid = mirrorSummonCells(a, r, c).some(([rr, cc]) => rr === tr && cc === tc);
+    if (!valid) {
+      addLog("镜像分身：请选择雷霆万钧同范围内的合法空格。");
+      render();
+      return;
+    }
+    openMirrorSwapPanel({ r: tr, c: tc });
     return;
   }
 
@@ -3689,6 +3793,7 @@ function useSkill(tr, tc, copyIdx) {
       exileTarget: s.type === "exile" && skillSub && skillSub.kind === "exile-target" ? { r: skillSub.tR, c: skillSub.tC } : undefined,
       wxtDir: s.type === "wxt" && skillSub && skillSub.kind === "wxt-dir-set" ? { dr: skillSub.dir[0], dc: skillSub.dir[1] } : undefined,
       copyIdx: s.type === "steal" ? copyIdx : undefined,
+      swap: s.type === "mirrorclone" ? !!mirrorSwap : undefined,
     });
     return;
   }
@@ -3861,6 +3966,52 @@ function useSkill(tr, tc, copyIdx) {
         try { window.BFX.cast({ type: "meteor", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc }, cells }); } catch (e) { /* 表现层失败不影响规则 */ }
       }
       fx.push({ r: tr, c: tc, text: "天罚", kind: "skill" });
+      break;
+    }
+
+    case "mirrorclone": {
+      const valid = mirrorSummonCells(a, r, c).some(([rr, cc]) => rr === tr && cc === tc);
+      if (!valid) {
+        addLog("镜像分身：该位置不是合法空格（不消耗次数）。");
+        render();
+        return;
+      }
+      const m = { mirror: true, uid: unitSeq++, player: a.player, heroId: "mirror", hp: 1, maxHp: 1 };
+      if (mirrorSwap) {
+        board[tr][tc] = a;
+        board[r][c] = m;
+        addLog("🪞 " + label(a) + " 在 (" + (tr + 1) + "," + (tc + 1) + ") 召唤镜像并交换位置。");
+        if (window.BFX) {
+          window.BFX.cast({ type: "mirrorSummon", heroId: "mirror", caster: { r: tr, c: tc } });
+          window.BFX.move({ from: { r, c }, to: { r: tr, c: tc }, color: window.BFX.heroColor("mirror"), dash: true });
+          window.BFX.move({ from: { r: tr, c: tc }, to: { r, c }, color: "#c4b5fd", blink: true });
+        }
+      } else {
+        board[tr][tc] = m;
+        addLog("🪞 " + label(a) + " 在 (" + (tr + 1) + "," + (tc + 1) + ") 召唤镜像。");
+        if (window.BFX) window.BFX.cast({ type: "mirrorSummon", heroId: "mirror", caster: { r: tr, c: tc } });
+      }
+      if (window.SFX) window.SFX.play("mirrorSummon", { hero: "mirror" });
+      fx.push({ r: tr, c: tc, text: "镜像", kind: "skill" });
+      break;
+    }
+
+    case "mirrorshift": {
+      const m = unitAt(tr, tc);
+      if (!isMirror(m) || m.player !== a.player) {
+        addLog("镜面折射：请选择一个己方镜像。");
+        render();
+        return;
+      }
+      board[r][c] = m;
+      board[tr][tc] = a;
+      addLog("🪞 " + label(a) + " 与镜像交换位置：(" + (r + 1) + "," + (c + 1) + ") ↔ (" + (tr + 1) + "," + (tc + 1) + ")。");
+      if (window.BFX) {
+        window.BFX.move({ from: { r, c }, to: { r: tr, c: tc }, color: window.BFX.heroColor("mirror"), blink: true });
+        window.BFX.move({ from: { r: tr, c: tc }, to: { r, c }, color: "#c4b5fd", blink: true });
+        window.BFX.cast({ type: "mirrorShift", heroId: "mirror", caster: { r: tr, c: tc } });
+      }
+      if (window.SFX) window.SFX.play("mirrorShift", { hero: "mirror" });
       break;
     }
 
@@ -5524,8 +5675,22 @@ function handleBattle(r, c) {
 
   const clicked = board[r][c];
 
+  // 镜影·镜像不是英雄：不能选中/控制；敌方镜像作为普通攻击目标由下方 selected 分支处理
+  if (isMirror(clicked)) {
+    if (clicked.player === currentPlayer) {
+      addLog("🪞 镜像不能移动、攻击或释放技能。");
+      render();
+      return;
+    }
+    if (!selected || !isTarget(attackTargets, r, c)) {
+      clearSelection();
+      render();
+      return;
+    }
+  }
+
   // 点击己方英雄 → 选中 / 取消选中（判断是否被冰封）
-  if (clicked && clicked.player === currentPlayer) {
+  if (clicked && !isMirror(clicked) && clicked.player === currentPlayer) {
     if (clicked.frozen > 0) {
       addLog(label(clicked) + " 处于冰封状态，无法行动。");
       render();
@@ -5687,13 +5852,21 @@ function onCellClick(r, c) {
   }
   // 点击英雄 → 显示技能详情（不影响选中/移动/攻击/回合流程）
   const clickedUnit = isUnit(board[r][c]) ? board[r][c] : null;
-  if (clickedUnit) showUnitDetail(clickedUnit);
+  if (clickedUnit && !isMirror(clickedUnit)) showUnitDetail(clickedUnit);
   if (phase === "placement") handlePlacement(r, c);
   else if (phase === "battle") handleBattle(r, c);
   aiKick();
 }
 
 /* ============================ 渲染 ============================ */
+function buildMirrorObj(u) {
+  const el = document.createElement("div");
+  el.className = "mirror-token p" + u.player;
+  el.title = label(u) + " · 1 点生命 · 占据格子、阻挡移动；不能移动/攻击/使用技能；被任意伤害击中立即破碎";
+  el.innerHTML = '<span class="mirror-glass">🪞</span><span class="mirror-hp">1</span>';
+  return el;
+}
+
 function buildUnit(u) {
   const def = heroDef(u.heroId);
   const el = document.createElement("div");
@@ -6188,6 +6361,9 @@ function render() {
       } else if (isPillar(u)) {
         cell.classList.add("pillar-cell");
         cell.appendChild(buildPillarObj(u));
+      } else if (isMirror(u)) {
+        cell.classList.add("mirror-cell");
+        cell.appendChild(buildMirrorObj(u));
       } else if (u) {
         if (phase === "battle" && u.player === currentPlayer && u.frozen <= 0) {
           cell.classList.add("selectable");
@@ -7375,6 +7551,34 @@ function aiEnumerate() {
       if (turnActionUsed && !skillFreeFor(u, s)) return;
       if (rooted && isSelfMoveSkill(u, s)) return; // 定身：不能用主动位移技能
 
+      // 镜影·镜像分身：空位 × 是否换位
+      if (s.type === "mirrorclone") {
+        for (const [rr, cc] of mirrorSummonCells(u, pos.r, pos.c)) {
+          for (const swap of [false, true]) {
+            let sc = 10;
+            const before = nearestEnemyDist(pos.r, pos.c, u.player);
+            const after = nearestEnemyDist(rr, cc, u.player);
+            sc += (before - after) * (w.distW / 2);
+            sc += dangerAt(rr, cc, u) * (w.riskW / 30);
+            if (swap) sc += 3;
+            acts.push({ type: "skill", u, pos, target: { r: rr, c: cc }, skillIdx: si, mirrorSwap: swap, score: sc * w.skillW });
+          }
+        }
+        return;
+      }
+      // 镜影·镜面折射：与己方镜像换位
+      if (s.type === "mirrorshift") {
+        for (const m of mirrorsOf(u.player)) {
+          const mp = findPos(m);
+          if (!mp) continue;
+          const before = nearestEnemyDist(pos.r, pos.c, u.player);
+          const after = nearestEnemyDist(mp.r, mp.c, u.player);
+          const sc = 12 + (before - after) * w.distW - dangerAt(mp.r, mp.c, u) * (w.riskW / 20);
+          acts.push({ type: "skill", u, pos, target: { r: mp.r, c: mp.c }, skillIdx: si, score: sc * w.skillW });
+        }
+        return;
+      }
+
       // 窃神·窃取权柄：目标 × 复制技能联合枚举
       if (s.type === "steal") {
         for (const e of unitsOf(u.player === 1 ? 2 : 1)) {
@@ -7884,7 +8088,7 @@ function aiApplyAction(act) {
       useSkill(mv.r, mv.c);
       useSkill(act.target.r, act.target.c);
     } else {
-      useSkill(act.target.r, act.target.c, act.copyIdx);
+      useSkill(act.target.r, act.target.c, act.copyIdx, act.mirrorSwap);
     }
     // 刺客·追猎第二段：第 2 步选择闪身落点
     if (act.landing) useSkill(act.landing.r, act.landing.c);

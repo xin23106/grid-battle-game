@@ -31,6 +31,7 @@
     susanoo:   { c1:"#7c3aed", c2:"#312e81", c3:"#c4b5fd", weapon:"bow", aura:"chakra", build:"armored", head:"helm", acc:"cape", sigil:"eye", dur:380, tilt:3 },
     yangjian:  { c1:"#fbbf24", c2:"#92400e", c3:"#fef3c7", weapon:"trident", aura:"royal", build:"armored", head:"halo", acc:"cape", sigil:"eye", thirdEye:true, dur:360, tilt:4 },
     thiefgod: { c1:"#fbbf24", c2:"#0b1020", c3:"#f5d0fe", weapon:"scepter", aura:"thief", build:"robed", head:"crown", acc:"cape", sigil:"eye", dur:330, tilt:3 },
+    mirror:    { c1:"#c4b5fd", c2:"#312e81", c3:"#f5f3ff", weapon:"orb", aura:"void", build:"robed", head:"mask", acc:"cape", sigil:"diamond", dur:300, tilt:3 },
   };
   const DEFAULT = { c1:"#93c5fd", c2:"#334155", c3:"#e2e8f0", weapon:"sword", aura:"default", build:"lean", head:"hood", acc:"none", sigil:"diamond", dur:340, tilt:4 };
 
@@ -208,7 +209,7 @@
 
   /* 技能身体姿态分类：同一技能类型在不同英雄身上仍有专属配色/武器 */
   const POSE_BY_TYPE = {
-    damage_single:"channel", freeze:"channel", damage_line:"ranged", skyarrow:"ranged", meteor:"channel", steal:"pull", soulsteal:"area", damage_adjacent_all:"area",
+    damage_single:"channel", freeze:"channel", damage_line:"ranged", skyarrow:"ranged", meteor:"channel", steal:"pull", soulsteal:"area", mirrorclone:"summon", mirrorshift:"teleport", damage_adjacent_all:"area",
     heal:"heal", shield_self:"defense", shield_ally:"defense", blink:"teleport", dash:"dash",
     duanlang:"dash", shuidiao:"dash", dragonbreath:"area", thunder:"area", chase:"dash",
     bloodburst:"area", ziwei:"teleport", exile:"channel", tianwei:"area", shenluo:"area",
@@ -255,6 +256,8 @@
       "yangjian:qiankun": "yangjian-qiankun",
       "thiefgod:steal": "thiefgod-steal",
       "thiefgod:soulsteal": "thiefgod-soulsteal",
+      "mirror:mirrorclone": "mirror-clone",
+      "mirror:mirrorshift": "mirror-shift",
     };
     const key = heroId + ":" + type + (type === "thunderblade" ? ":" + (stage || 0) : "");
     if (special[key]) return special[key];
@@ -279,7 +282,11 @@
   function skillIcon(type) {
     const t = type || "";
     let inner = "";
-    if (/soulsteal/.test(t)) {
+    if (/mirrorclone/.test(t)) {
+      inner = '<rect x="7" y="4" width="10" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9 7 L14 7 L14 15 L9 15 Z" fill="currentColor" opacity=".8"/><path d="M4 20 L20 20 M6 18 L18 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>';
+    } else if (/mirrorshift/.test(t)) {
+      inner = '<path d="M4 12 H20 M12 4 V20" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M7 7 L17 17 M17 7 L7 17" stroke="currentColor" stroke-width="1.2" opacity=".8"/><rect x="7" y="7" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>';
+    } else if (/soulsteal/.test(t)) {
       inner = '<path d="M12 2 L15 9 L22 12 L15 15 L12 22 L9 15 L2 12 L9 9 Z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2"/><path d="M4 20 L8 16 M20 20 L16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>';
     } else if (/steal/.test(t)) {
       inner = '<path d="M4 19 Q9 13 11 8 L13 4 L16 7 L12 10 Q9 15 8 21 Z"/><path d="M15 14 Q19 12 21 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="18" cy="18" r="2.2"/>';
@@ -319,6 +326,7 @@
     susanoo: { portrait: "art/susanoo-portrait.webp", board: "art/susanoo-board.webp", avatar: "art/susanoo-avatar.webp", icon: "art/susanoo-icon.webp", silhouette: "art/susanoo-silhouette.webp" },
     ranger: { portrait: "art/ranger-portrait.webp?v=2", board: "art/ranger-board.webp?v=2", avatar: "art/ranger-avatar.webp?v=2", icon: "art/ranger-icon.webp?v=2", silhouette: "art/ranger-silhouette.webp?v=2" },
     thiefgod: { portrait: "art/thiefgod-portrait.webp", board: "art/thiefgod-board.webp", avatar: "art/thiefgod-avatar.webp", icon: "art/thiefgod-icon.webp", silhouette: "art/thiefgod-silhouette.webp" },
+    mirror: { portrait: "art/mirror-portrait.webp?v=2", board: "art/mirror-board.webp?v=2", avatar: "art/mirror-avatar.webp?v=2", icon: "art/mirror-icon.webp?v=2", silhouette: "art/mirror-silhouette.webp?v=2" },
   };
   function portraitHTML(id, extraClass) {
     const art = HERO_ART[id];

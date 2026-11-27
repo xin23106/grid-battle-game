@@ -1724,6 +1724,56 @@ html, body {
 .steal-skill-main small { color: #fcd34d; font-size: 10px; }
 .steal-skill-main em { color: #cbd5e1; font-size: 11px; font-style: normal; line-height: 1.45; opacity: .9; }
 
+/* 镜影：镜像占位体 / 换位面板 / 姿态 */
+.cell.mirror-cell { overflow: visible; }
+.mirror-token {
+  position: absolute;
+  inset: 4px;
+  z-index: 4;
+  border-radius: 8px;
+  border: 1px solid rgba(196, 181, 253, .85);
+  background:
+    radial-gradient(circle at 42% 34%, rgba(245, 243, 255, .42), transparent 42%),
+    linear-gradient(135deg, rgba(124, 58, 237, .45), rgba(15, 23, 42, .86));
+  box-shadow: inset 0 0 12px rgba(196, 181, 253, .45), 0 0 10px rgba(139, 92, 246, .35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: mirrorPulse 2.2s ease-in-out infinite;
+}
+.mirror-token.p2 {
+  border-color: rgba(147, 197, 253, .9);
+  background: radial-gradient(circle at 42% 34%, rgba(219, 234, 254, .4), transparent 42%), linear-gradient(135deg, rgba(30, 58, 138, .55), rgba(15, 23, 42, .86));
+}
+.mirror-glass {
+  font-size: 24px;
+  filter: drop-shadow(0 0 7px #c4b5fd);
+  opacity: .95;
+}
+.mirror-hp {
+  position: absolute;
+  right: 3px;
+  bottom: 1px;
+  font-size: 11px;
+  font-weight: 900;
+  color: #f5f3ff;
+  text-shadow: 0 0 5px #7c3aed;
+}
+@keyframes mirrorPulse { 0%,100% { opacity: .76; transform: scale(.98); } 50% { opacity: 1; transform: scale(1.02); } }
+.mirror-swap-panel { max-width: 430px; }
+.mirror-swap-actions { display: flex; gap: 8px; padding: 12px 14px 16px; }
+.mirror-swap-actions .steal-skill { justify-content: center; padding: 12px 10px; }
+.mirror-stay { border-color: rgba(196, 181, 253, .5); }
+.mirror-change { border-color: #c4b5fd; background: rgba(124, 58, 237, .26); }
+.unit-pose-mirror-clone .hero-figure-wrap { animation: mirrorCloneBody .6s ease-out; }
+.unit-pose-mirror-clone .hero-aura { animation: mirrorCloneAura .6s ease-out; }
+.unit-pose-mirror-shift .hero-figure-wrap { animation: mirrorShiftBody .5s ease-out; }
+.unit-pose-mirror-shift .hero-aura { animation: mirrorShiftAura .5s ease-out; }
+@keyframes mirrorCloneBody { 0%,100% { transform: scale(1) rotate(0); } 42% { transform: scale(1.08) rotate(2deg); } }
+@keyframes mirrorCloneAura { 0%,100% { opacity: .55; } 50% { opacity: 1; transform: scale(1.12); } }
+@keyframes mirrorShiftBody { 0%,100% { transform: translateX(0); filter: blur(0); } 45% { transform: translateX(4px) scale(.94); filter: blur(1px); } }
+@keyframes mirrorShiftAura { 0%,100% { opacity: .6; } 45% { opacity: .25; transform: scale(.78); } }
+
 .unit-pose-thiefgod-steal .hero-figure-wrap { animation: thiefStealBody .62s ease-out; }
 .unit-pose-thiefgod-steal .hf-weapon { animation: thiefStealWpn .62s ease-out; }
 .unit-pose-thiefgod-soulsteal .hero-figure-wrap { animation: thiefSoulBody .78s ease-out; }

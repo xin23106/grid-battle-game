@@ -45,7 +45,7 @@
     assassin: "#22d3ee", warlock: "#a5f3fc", cleric: "#86efac", guardian: "#93c5fd",
     asura: "#e2e8f0", lone: "#facc15", cang: "#38bdf8", longren: "#fbbf24",
     thunder: "#c084fc", vampire: "#e11d48", jade: "#a78bfa", xiangyu: "#f87171",
-    tiandao: "#c084fc", huamulan: "#f43f5e", hillking: "#a8a29e", raven: "#8b5cf6", metal: "#fbbf24", cicada: "#fcd34d", eagle: "#a78bfa", susanoo: "#7c3aed", yangjian: "#fbbf24", thiefgod: "#fbbf24",
+    tiandao: "#c084fc", huamulan: "#f43f5e", hillking: "#a8a29e", raven: "#8b5cf6", metal: "#fbbf24", cicada: "#fcd34d", eagle: "#a78bfa", susanoo: "#7c3aed", yangjian: "#fbbf24", thiefgod: "#fbbf24", mirror: "#c4b5fd",
   };
   function heroColor(id) { return HERO_COLOR[id] || "#93c5fd"; }
 
@@ -1167,6 +1167,30 @@
           addMark("impact", tg.r, tg.c, "#fbbf24", 10000);
           addMark("cut", tg.r, tg.c, "#bfdbfe", 9000);
         }
+        break;
+      }
+      case "mirrorSummon": {
+        push({ kind: "rune", x, y, r: geo.cell * 0.55, color: "#c4b5fd", sides: 4, dur: dur(520) });
+        push({ kind: "ring", x, y, r0: geo.cell * 0.15, r1: geo.cell * 0.9, color: "#f5f3ff", width: 2.5, dur: dur(480) });
+        for (let i = 0; i < 6; i++) {
+          push({ kind: "slash", x, y, angle: i * Math.PI / 3, len: geo.cell * (0.25 + (i % 2) * 0.16), width: 1.8, color: i % 2 ? "#8b5cf6" : "#f5f3ff", dur: dur(420), delay: dur(i * 25) });
+        }
+        spawn(x, y, 22, { color: "#c4b5fd", speed: 2.3, life: 520, size: 1.8 });
+        break;
+      }
+      case "mirrorShift": {
+        push({ kind: "portal", x, y, r: geo.cell * 0.35, color: "#c4b5fd", dur: dur(420) });
+        push({ kind: "ring", x, y, r0: geo.cell * 0.65, r1: geo.cell * 0.16, color: "#f5f3ff", width: 3, dur: dur(450) });
+        spawn(x, y, 18, { color: "#e0e7ff", speed: 2.6, life: 460, size: 2 });
+        break;
+      }
+      case "mirrorBreak": {
+        push({ kind: "ring", x, y, r0: geo.cell * 0.55, r1: geo.cell * 0.1, color: "#c4b5fd", width: 2.4, dur: dur(420) });
+        for (let i = 0; i < 8; i++) {
+          const ang = i * Math.PI / 4;
+          push({ kind: "slash", x, y, angle: ang, len: geo.cell * 0.55, width: 1.6, color: i % 2 ? "#f5f3ff" : "#8b5cf6", dur: dur(380), delay: dur(i * 18) });
+        }
+        spawn(x, y, 18, { color: "#c4b5fd", speed: 2.5, life: 440, size: 1.7 });
         break;
       }
       case "steal": {

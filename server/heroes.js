@@ -99,4 +99,10 @@ module.exports = [
     extraSkills: [
       { name: "窃魂", type: "soulsteal", uses: 1, free: true },
     ] },
+  { id: "mirror", name: "镜影", hp: 5, sfx: "mirror",
+    passive: { name: "镜像反射" },
+    skill: { name: "镜像分身", type: "mirrorclone", uses: 2, free: true },
+    extraSkills: [
+      { name: "镜面折射", type: "mirrorshift", uses: 1, free: true },
+    ] },
 ];
