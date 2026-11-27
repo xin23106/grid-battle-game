@@ -116,7 +116,7 @@
     metalarmor: "强化 / 定身", metaltide: "减伤", meditate: "形态 / 无敌",
     divinepalm: "伤害 / 击退", stealth: "隐身 / 位移", mistdash: "突进 / 地形",
     shadowfang: "单体攻击", push: "推击 / 地形", charge: "冲锋 / 击退", crosstep: "十字位移",
-    riftslash: "位移 / 斩击 / 时停", voidstep: "全图传送 / 延迟爆发",
+    riftslash: "位移 / 斩击 / 时停", voidstep: "全图传送 / 延迟爆发", holyguard: "领域防御",
     raikiri: "直线二段", thunderblade: "三段连招", susano_dash: "斜线位移",
     susano_pull: "拉拽", susano_arrow: "范围 / 地形", susano_crow: "变身 / 范围",
   };
@@ -261,6 +261,7 @@
 
   function rangeText(sk) {
     if (!sk) return "—";
+    if (sk.range === "thunder") return "雷电之主同范围（3×3 + 四方向第 2 格）";
     // 有明确范围字段时优先展示字段，保证修改配置后图鉴立即同步。
     if (sk.range != null) {
       if (sk.range === 0) return RANGE_BY_TYPE[sk.type] || "全地图 / 自身";
@@ -280,6 +281,7 @@
     if (sk.shieldTurns != null) return "护盾持续 " + sk.shieldTurns + " 个自身行动回合";
     if (sk.freeze != null) return "冰封 " + sk.freeze + " 回合";
     if (sk.stun != null) return "眩晕 " + sk.stun + " 回合";
+    if (sk.duration != null) return "持续 " + sk.duration + " 回合";
     if (DURATION_BY_TYPE[sk.type]) return DURATION_BY_TYPE[sk.type];
     return "即时 / 见完整效果";
   }
@@ -289,6 +291,7 @@
     if (sk._kind === "passive") return "被动 · 常驻";
     const out = [];
     if (sk.perTurn != null) out.push("每回合 " + sk.perTurn + " 次");
+    else if (sk.oncePerTurn) out.push("每回合 1 次");
     if (sk.uses != null && sk.uses > 0) out.push("整局 " + sk.uses + " 次");
     if (sk.refreshOnKill) out.push("击杀刷新");
     if (sk.refreshOnSkillKill) out.push("技能击杀刷新");
@@ -308,6 +311,7 @@
     if (sk.damage1 != null || sk.damage2 != null) parts.push("第一格 " + (sk.damage1 == null ? "—" : sk.damage1) + " / 第二格 " + (sk.damage2 == null ? "—" : sk.damage2));
     if (sk.heal != null) parts.push("治疗 " + sk.heal);
     if (sk.shield != null) parts.push("护盾 " + sk.shield);
+    if (sk.block != null) parts.push("格挡 " + sk.block);
     if (sk.empowerShield != null) parts.push("强化护盾 " + sk.empowerShield);
     if (sk.grabDamage != null) parts.push("擒拿结束伤害 " + sk.grabDamage);
     if (sk.push != null) parts.push("击退 " + sk.push + " 格");

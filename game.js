@@ -93,6 +93,8 @@ let crosses = [];                  // 亡灵之主·死亡十字架 [{id,r,c,pla
 let crossSeq = 0;
 let timeAnchors = [];               // 时间行者·时空锚点 [{id,uid,owner,kind,r,c,castTurn,blastDone}]
 let timeAnchorSeq = 0;
+let holyDomains = [];                // 牧师·神圣加护领域 [{id,uid,owner,center,cells,turns}]
+let holyDomainSeq = 0;
 const SUMMON_DEFS = {
   minion: { id: "minion", name: "小亡灵", icon: "💀", hp: 2, tag: "亡灵召唤物", sfx: "undead",
     desc: "亡灵军团召唤物：2 点生命，普通攻击 1 点；可以移动、攻击、参与夹击，不能使用技能，死亡后直接移除且不再留下十字架。", skill: null },
@@ -401,6 +403,9 @@ function skillUsesLeft(u, idx) {
   }
   if (skills.length === 1) return u.usesLeft;
   return u.usesArr && u.usesArr[idx] != null ? u.usesArr[idx] : s.uses;
+}
+function skillUsedThisTurn(u, idx) {
+  return !!(u && u.skillTurnUsed && u.skillTurnUsed[idx] === turnSerial);
 }
 function setSkillUsesLeft(u, idx, v) {
   const skills = unitSkills(u);
@@ -909,6 +914,68 @@ function nearestTimeReturnCell(r, c) {
   }
   return best ? { r: best.r, c: best.c } : null;
 }
+function thunderRangeCells(r, c, includeCenter) {
+  const out = [];
+  const seen = new Set();
+  const add = (rr, cc) => {
+    if (!inBounds(rr, cc)) return;
+    if (!includeCenter && rr === r && cc === c) return;
+    const k = rr + "_" + cc;
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push([rr, cc]);
+  };
+  for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) add(r + dr, c + dc);
+  for (const [dr, dc] of DIRS) add(r + dr * 2, c + dc * 2);
+  return out;
+}
+function inThunderRange(r, c, tr, tc) {
+  const dr = r - tr, dc = c - tc;
+  if (Math.abs(dr) <= 1 && Math.abs(dc) <= 1) return true;
+  return (dr === 0 || dc === 0) && Math.abs(dr) + Math.abs(dc) <= 2;
+}
+function addHolyDomain(u, center) {
+  if (!u || !center || holyDomains.some((d) => d.owner === u.player)) return null;
+  const cells = thunderRangeCells(center.r, center.c, true);
+  const d = {
+    id: ++holyDomainSeq,
+    uid: u.uid,
+    owner: u.player,
+    center: { r: center.r, c: center.c },
+    cells,
+    turns: 3,
+    castTurn: turnSerial,
+  };
+  holyDomains.push(d);
+  addLog("✨ " + label(u) + " 在 (" + (center.r + 1) + "," + (center.c + 1) + ") 展开【神圣加护】，持续 3 回合。");
+  if (window.BFX) {
+    try { window.BFX.cast({ type: "holyDomain", heroId: "cleric", caster: center, cells }); } catch (e) { /* ignore */ }
+  }
+  return d;
+}
+function holyDomainAt(u) {
+  if (!u) return null;
+  const p = findPos(u);
+  if (!p) return null;
+  return holyDomains.find((d) => d.owner === u.player && d.cells.some(([r, c]) => r === p.r && c === p.c)) || null;
+}
+function unitBlockSource(u) {
+  if (berserkerBlock(u)) return "狂化";
+  if (holyDomainAt(u)) return "神圣加护";
+  return "";
+}
+function tickHolyDomains() {
+  for (const d of holyDomains.slice()) {
+    d.turns -= 1;
+    if (d.turns <= 0) {
+      holyDomains = holyDomains.filter((x) => x.id !== d.id);
+      addLog("✨ 神圣加护领域消散。");
+      if (window.BFX) {
+        try { window.BFX.cast({ type: "holyDomainFade", heroId: "cleric", caster: d.center, cells: d.cells }); } catch (e) { /* ignore */ }
+      }
+    }
+  }
+}
 function addTimeAnchor(u, kind, r, c) {
   if (!u || timeAnchorFor(u)) return null;
   const a = {
@@ -1373,7 +1440,7 @@ function pushHistory() {
       talisman, talismanUsed, talismanBuff, extraMoves, graveyard, reviveOptions,
       logs, turnActionUsed, turnActionsLeft, turnActionsMax, turnActorUid,
       empowerTurnActive, mists, blackFlames, meteors, meteorSeq, crosses, crossSeq,
-      timeAnchors, timeAnchorSeq, pendingHero, wildcards, localPools,
+      timeAnchors, timeAnchorSeq, holyDomains, holyDomainSeq, pendingHero, wildcards, localPools,
       wildcardMode, pendingWildcard, onlineWildcards, turnSerial, matchStats,
     }));
     if (history.length > 40) history.shift();
@@ -1407,6 +1474,8 @@ function applyHistorySnapshot(s) {
   crossSeq = s.crossSeq || crosses.reduce((mx, x) => Math.max(mx, x.id || 0), 0);
   timeAnchors = Array.isArray(s.timeAnchors) ? JSON.parse(JSON.stringify(s.timeAnchors)) : [];
   timeAnchorSeq = s.timeAnchorSeq || timeAnchors.reduce((mx, a) => Math.max(mx, a.id || 0), 0);
+  holyDomains = Array.isArray(s.holyDomains) ? JSON.parse(JSON.stringify(s.holyDomains)) : [];
+  holyDomainSeq = s.holyDomainSeq || holyDomains.reduce((mx, d) => Math.max(mx, d.id || 0), 0);
   pendingHero = s.pendingHero || null;
   wildcards = s.wildcards || { 1: 0, 2: 0 };
   localPools = s.localPools || { 1: [], 2: [] };
@@ -1500,6 +1569,8 @@ function init() {
   crossSeq = 0;
   timeAnchors = [];
   timeAnchorSeq = 0;
+  holyDomains = [];
+  holyDomainSeq = 0;
   // 对局统计 & 结算演出：重置
   matchStats = { damage: { 1: 0, 2: 0 }, kills: { 1: 0, 2: 0 }, startedAt: Date.now(), endedAt: 0, lastKiller: null };
   clearVictoryTimers();
@@ -1582,6 +1653,7 @@ function handlePlacement(r, c) {
     meditate: null,             // 金蝉·禅坐：{ turns, dealt, healed, castTurn }
     timeStop: null,             // 时间行者：时间停止 { turns, sourceUid, ... }
     timeStopPending: [],        // 时停结束时才结算的延迟效果
+    skillTurnUsed: {},          // 本回合已使用的 oncePerTurn 技能索引
     facing: currentPlayer === 1 ? [0, 1] : [0, -1], // 鹰佐等：当前朝向 [dr,dc]
     rbStage: 0,                 // 鹰佐·雷鸣刀：0=未开始 / 1=第二段待执行 / 2=第三段待执行
     rbBlade: null,              // 鹰佐·雷鸣刀：雷刀位置 { r, c }（不占格）
@@ -1660,6 +1732,7 @@ function beginTurn() {
   // 杨戬等临时护盾：按自身真实行动回合倒计时，额外回合不推进
   if (!isExtraTurn) tickShieldLayers(currentPlayer);
   for (const u of unitsOf(currentPlayer)) {
+    u.skillTurnUsed = {};
     const skills = unitSkills(u);
     skills.forEach((s, i) => {
       if (s && s.perTurn) setSkillUsesLeft(u, i, s.perTurn);
@@ -1718,6 +1791,8 @@ function endTurnOnce() {
   if (checkVictory()) return;
   // 临时石柱：每完成一个完整回合结束衰减一次（生成当回合不扣）
   tickPillars();
+  // 神圣加护：释放回合计为第 1 回合，此后每个回合结束递减。
+  tickHolyDomains();
   for (const u of unitsOf(currentPlayer)) {
     if (!isTimeStopped(u) && u.frozen > 0) u.frozen -= 1;
   }
@@ -2219,12 +2294,20 @@ function computeSkillTargets() {
       }
       break;
 
-    case "heal":
-      for (const [rr, cc] of cellsWithin(r, c, s.range, true)) {
+    case "heal": {
+      const cells = s.range === "thunder" ? thunderRangeCells(r, c, true) : cellsWithin(r, c, s.range, true);
+      for (const [rr, cc] of cells) {
         const t = unitAt(rr, cc);
         if (t && !t.sword && t.player === u.player && t.hp < t.maxHp) skillTargets.push([rr, cc]);
       }
       break;
+    }
+
+    case "holyguard": {
+      if (holyDomains.some((d) => d.owner === u.player)) break;
+      for (const [rr, cc] of thunderRangeCells(r, c, true)) skillTargets.push([rr, cc]);
+      break;
+    }
 
     case "damage_adjacent_all":
       for (const [dr, dc] of DIRS) {
@@ -3053,18 +3136,19 @@ function applyDamage(target, amount, kind, source) {
     if (window.SFX) window.SFX.play("metalGuard", { hero: "metal" });
   }
 
-  // 狂战士·狂化（生命≤2）：每次独立伤害事件格挡 0.5 点，最低为 0。
-  if (dmg > 0 && berserkerBlock(target)) {
+  // 统一格挡：狂化 / 神圣加护等来源只取一次 0.5，避免重复叠加。
+  const blockSource = unitBlockSource(target);
+  if (dmg > 0 && blockSource) {
     const beforeBlock = dmg;
     dmg = Math.max(0, dmg - 0.5);
-    addLog("🛡 狂化·格挡：" + label(target) + " 抵消 0.5 点伤害（" + beforeBlock + " → " + dmg + "）。");
+    addLog("🛡 " + blockSource + "·格挡：" + label(target) + " 抵消 0.5 点伤害（" + beforeBlock + " → " + dmg + "）。");
     if (pos) {
       fx.push({ r: pos.r, c: pos.c, text: "格挡 -0.5", kind: "shield" });
       if (window.BFX && window.BFX.shieldAbsorb) {
         try { window.BFX.shieldAbsorb({ r: pos.r, c: pos.c, amount: beforeBlock - dmg, uid: target.uid }); } catch (e) { /* ignore */ }
       }
     }
-    if (window.SFX) window.SFX.play("shieldHit", { hero: "berserker" });
+    if (window.SFX) window.SFX.play("shieldHit", { hero: target.heroId });
   }
 
   const shieldBefore = target.shield;
@@ -3336,6 +3420,8 @@ function skillStageLabel(a, s) {
   if (s.type === "crosstep") return "选择十字方向";
   if (s.type === "riftslash") return skillSub && skillSub.kind === "rift-landing" ? "选择斩击目标" : "选择九宫格落点";
   if (s.type === "voidstep") return "选择穿梭落点";
+  if (s.type === "heal" && s.range === "thunder") return "选择范围内友军";
+  if (s.type === "holyguard") return "选择领域中心";
   if (s.type === "meteor") return "选择陨星落点";
   return "";
 }
@@ -4299,6 +4385,12 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
     render();
     return;
   }
+  if (s.oncePerTurn && skillUsedThisTurn(a, activeSkillIdx)) {
+    addLog("【" + s.name + "】每个回合最多使用 1 次。");
+    clearSelection();
+    render();
+    return;
+  }
   if (!skillFreeFor(a, s) && !canActNow(a)) {
     addLog("本回合已经行动过了（不耗步技能除外）。");
     clearSelection();
@@ -4362,11 +4454,39 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
     }
 
     case "heal": {
+      const inRange = s.range === "thunder"
+        ? inThunderRange(tr, tc, r, c)
+        : Math.abs(tr - r) + Math.abs(tc - c) <= s.range;
+      if (!target || !inRange || target.player !== a.player || target.hp >= target.maxHp) {
+        addLog("圣光：请选择范围内的己方受伤英雄（可以选择自己）。");
+        render();
+        return;
+      }
       const healed = Math.max(0, Math.min(s.heal, target.maxHp - target.hp));
       target.hp += healed;
       addLog("✨ " + label(a) + " 释放【" + s.name + "】，为 " + label(target) + " 恢复 " + healed + " 点生命（" + target.hp + "/" + target.maxHp + "）。");
       if (window.BFX) window.BFX.cast({ type: "heal", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc }, amount: healed });
       fx.push({ r: tr, c: tc, text: "+" + healed, kind: "heal" });
+      break;
+    }
+
+    case "holyguard": {
+      if (!inThunderRange(tr, tc, r, c)) {
+        addLog("神圣加护：请选择雷电之主范围内的一个位置。");
+        render();
+        return;
+      }
+      if (holyDomains.some((d) => d.owner === a.player)) {
+        addLog("神圣加护：当前领域尚未结束，不能叠加新的领域。");
+        render();
+        return;
+      }
+      const d = addHolyDomain(a, { r: tr, c: tc });
+      if (!d) {
+        addLog("神圣加护：无法展开领域。");
+        render();
+        return;
+      }
       break;
     }
 
@@ -5966,6 +6086,10 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
     const curUses = skillUsesLeft(a, activeSkillIdx);
     if (curUses !== Infinity) setSkillUsesLeft(a, activeSkillIdx, curUses - 1);
   }
+  if (s.oncePerTurn) {
+    a.skillTurnUsed = a.skillTurnUsed || {};
+    a.skillTurnUsed[activeSkillIdx] = turnSerial;
+  }
   if (s.costSwords) {
     a.swords = Math.max(0, (a.swords || 0) - s.costSwords);
     addLog("⚔ " + label(a) + " 消耗 " + s.costSwords + " 把剑（剩余 " + a.swords + " 把）。");
@@ -6052,6 +6176,11 @@ function activateSkill(idx) {
   const sl = skillUsesLeft(u, idx);
   if (!isSd2 && !isChase2 && !isWxtCombo && !isTbCombo && sl !== Infinity && sl <= 0) {
     addLog("【" + s.name + "】释放次数已用尽。");
+    render();
+    return;
+  }
+  if (s.oncePerTurn && skillUsedThisTurn(u, idx)) {
+    addLog("【" + s.name + "】每个回合最多使用 1 次。");
     render();
     return;
   }
@@ -7062,6 +7191,17 @@ function render() {
         cell.classList.add("blackflame-cell");
         cell.appendChild(buildBlackFlameObj(bf));
       }
+      // 牧师·神圣加护：金色领域地面层，不阻挡单位
+      const holyD = holyDomains.find((d) => d.cells.some(([hr, hc]) => hr === r && hc === c));
+      if (holyD) {
+        cell.classList.add("holy-domain-cell");
+        if (holyD.center.r === r && holyD.center.c === c) cell.classList.add("holy-domain-center");
+        const hd = document.createElement("span");
+        hd.className = "holy-domain-layer";
+        hd.title = "神圣加护领域：己方英雄获得 0.5 格挡，剩余 " + holyD.turns + " 回合";
+        hd.innerHTML = '<i class="holy-rune">✦</i><i class="holy-ring"></i>';
+        cell.appendChild(hd);
+      }
       // 亡灵之主：死亡十字架是地面层，不占格、不阻挡
       const deathCrosses = crossesAt(r, c);
       if (deathCrosses.length) {
@@ -7122,6 +7262,7 @@ function render() {
         if (d && d.flanked) cell.classList.add("flanked");
         else if (d && d.base && d.protected) cell.classList.add("protected-unit");
         if (hasSuperArmor(u)) cell.classList.add("superarmor");
+        if (holyDomainAt(u)) cell.classList.add("unit-blocked");
         const bzStage = berserkerStage(u);
         if (bzStage > 0) cell.classList.add("berserk-stage-" + bzStage);
         if (u.chaseMark) cell.classList.add("chase-marked");
@@ -7327,13 +7468,14 @@ function updateHeroCard() {
     const isP = isPassiveSkill(sk);
     const isCopied = u.copiedSkill && sk === u.copiedSkill;
     const sl = skillUsesLeft(u, i);
-    const cd = isP ? "被动" : (sl === Infinity ? "∞" : (sl > 0 ? "剩 " + sl : "已用尽"));
+    const onceUsed = sk.oncePerTurn && skillUsedThisTurn(u, i);
+    const cd = isP ? "被动" : (onceUsed ? "本回合已用" : (sl === Infinity ? "∞" : (sl > 0 ? "剩 " + sl : "已用尽")));
     const meta = (isCopied && u.copiedFrom
       ? "窃取来源：" + u.copiedFrom.name + " · 独立次数 · "
       : "") + (isP
       ? "被动（常驻）"
-      : (sk.perTurn
-          ? "每回合 " + sk.perTurn + " 次（本回合剩 " + (sl === Infinity ? "∞" : sl) + "）"
+      : ((sk.perTurn || sk.oncePerTurn)
+          ? "每回合 " + (sk.perTurn || 1) + " 次" + (onceUsed ? "（本回合已用）" : "") + " · 本局剩余 " + (sl === Infinity ? "∞" : sl + " / " + sk.uses) + " 次"
           : "本局剩余 " + (sl === Infinity ? "∞" : sl + " / " + sk.uses) + " 次")) +
         (sk.free ? " · 不消耗行动" : "") +
         (sk.costSwords ? " · 消耗剑 " + sk.costSwords : "") + " · 释放条件：" + (sk.condition || "无");
@@ -7359,6 +7501,11 @@ function updateHeroCard() {
     chips.push('<span class="chip berserk">🪓 狂化：' + fx.join(" · ") + "</span>");
   } else if (u.heroId === "berserker") {
     chips.push('<span class="chip">🪓 狂化未触发（生命 > 4）</span>');
+  }
+  if (holyDomainAt(u)) chips.push('<span class="chip holy">✨ 神圣加护：格挡 0.5</span>');
+  if (u.heroId === "cleric") {
+    const d = holyDomains.find((x) => x.owner === u.player);
+    if (d) chips.push('<span class="chip holy">✨ 神圣加护领域：剩 ' + d.turns + " 回合</span>");
   }
   if (u.heroId === "timewalker") {
     const ta = timeAnchorFor(u);
@@ -7446,6 +7593,9 @@ function updateSkillBar() {
     } else if (turnActionUsed && !skillFreeFor(u, s)) {
       disabled = true;
       label += " 本回合已行动";
+    } else if (s.oncePerTurn && skillUsedThisTurn(u, i)) {
+      disabled = true;
+      label += " 本回合已使用";
     } else {
       const isSd2 = s.type === "shuidiao" && (u.sdStage || 0) === 1;
       const isChase2 = s.type === "chase" && (u.chaseStage || 0) === 1;
@@ -7573,6 +7723,11 @@ function renderDetailCard() {
   if (u.heroId === "timewalker") {
     const ta = timeAnchorFor(u);
     if (ta) st.push("时空锚点：(" + (ta.r + 1) + "," + (ta.c + 1) + ") · " + (ta.kind === "void" ? "破空" : "裂空") + " · 下一回合结束回归");
+  }
+  if (holyDomainAt(u)) st.push("神圣加护：处于己方领域，获得 0.5 格挡");
+  if (u.heroId === "cleric") {
+    const d = holyDomains.find((x) => x.owner === u.player);
+    if (d) st.push("神圣加护领域：中心 (" + (d.center.r + 1) + "," + (d.center.c + 1) + ") · 剩余 " + d.turns + " 回合 · 己方 0.5 格挡");
   }
   if (isTimeStopped(u)) st.push("时间停止：无法移动 / 攻击 / 使用技能，所有回合计时暂停；结束时结算延迟效果");
   if (u.heroId === "raven") {
@@ -8078,6 +8233,17 @@ function aiSkillScore(u, s, pos, rr, cc, w) {
       if (healed <= 0) return null;
       return w.healW * healed + (t.hp <= 2 ? 12 : 0);
     }
+    case "holyguard": {
+      if (holyDomains.some((d) => d.owner === u.player)) return null;
+      let score = 0, allies = 0;
+      for (const [ar, ac] of thunderRangeCells(rr, cc, true)) {
+        const e = unitAt(ar, ac);
+        if (!e || e.sword || e.player !== u.player) continue;
+        allies++;
+        score += 8 + Math.max(0, e.maxHp - e.hp) * 5 + (e.hp <= 2 ? 12 : 0);
+      }
+      return allies ? score : null;
+    }
     case "shield_self":
       return 10;
     case "ziwei": {
@@ -8414,6 +8580,7 @@ function aiEnumerate() {
       const isTbCombo = s.type === "thunderblade" && (u.rbStage || 0) > 0;
       const sl = skillUsesLeft(u, si);
       if (!isSd2 && !isChase2 && !isWxtCombo && !isTbCombo && sl !== Infinity && sl <= 0) return;
+      if (s.oncePerTurn && skillUsedThisTurn(u, si)) return;
       if (!canPaySwords(u, s)) return;
       if (turnActionUsed && !skillFreeFor(u, s)) return;
       if (rooted && isSelfMoveSkill(u, s)) return; // 定身：不能用主动位移技能
@@ -9269,6 +9436,8 @@ function applyRemoteState(state) {
   const prevAnchors = timeAnchors.slice();
   timeAnchors = Array.isArray(state.timeAnchors) ? JSON.parse(JSON.stringify(state.timeAnchors)) : [];
   timeAnchorSeq = state.timeAnchorSeq || timeAnchors.reduce((mx, a) => Math.max(mx, a.id || 0), 0);
+  holyDomains = Array.isArray(state.holyDomains) ? JSON.parse(JSON.stringify(state.holyDomains)) : [];
+  holyDomainSeq = state.holyDomainSeq || holyDomains.reduce((mx, d) => Math.max(mx, d.id || 0), 0);
   if (prevSnap) {
     const oldIds = new Set(prevCrosses.map((x) => x.id));
     for (const cr of crosses) {
@@ -9816,6 +9985,7 @@ window.GameAPI = {
   getTalismanBuff() { return Object.assign({}, talismanBuff); },
   getGraveyard() { return graveyard.slice(); },
   getTimeAnchors() { return JSON.parse(JSON.stringify(timeAnchors)); },
+  getHolyDomains() { return JSON.parse(JSON.stringify(holyDomains)); },
   isTimeStopped,
   timeAnchorFor,
   applyTimeStop,
@@ -9927,6 +10097,8 @@ window.GameAPI = {
     crossSeq = 0;
     timeAnchors = [];
     timeAnchorSeq = 0;
+    holyDomains = [];
+    holyDomainSeq = 0;
     history = [];
     historyBase = 0;
     // 对局统计 & 结算演出：重置（测试/新局共用）
@@ -9954,6 +10126,7 @@ window.GameAPI = {
         statuses: spec.statuses || {},
         timeStop: spec.timeStop ? JSON.parse(JSON.stringify(spec.timeStop)) : null,
         timeStopPending: spec.timeStopPending ? JSON.parse(JSON.stringify(spec.timeStopPending)) : [],
+        skillTurnUsed: spec.skillTurnUsed ? JSON.parse(JSON.stringify(spec.skillTurnUsed)) : {},
         lockUsed: !!spec.lockUsed,
         sdStage: spec.sdStage || 0,
         dragonMoves: spec.dragonMoves || 0,

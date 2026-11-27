@@ -218,7 +218,7 @@
     bloodburst:"area", ziwei:"teleport", exile:"channel", tianwei:"area", shenluo:"area",
     wxt:"pull", metalpierce:"ranged", metalarmor:"defense", metaltide:"buff", meditate:"lotus",
     divinepalm:"thrust", stealth:"stealth", mistdash:"dash", shadowfang:"slash",
-    push:"thrust", charge:"dash", raikiri:"ranged", thunderblade:"dash", crosstep:"dash", riftslash:"dash", voidstep:"teleport",
+    push:"thrust", charge:"dash", raikiri:"ranged", thunderblade:"dash", crosstep:"dash", riftslash:"dash", voidstep:"teleport", holyguard:"defense",
     susano_dash:"dash", susano_pull:"pull", susano_arrow:"ranged", susano_crow:"summon",
   };
   function poseFor(heroId, skill, stage) {
@@ -265,6 +265,7 @@
       "undead:undeadarmy": "undead-army",
       "timewalker:riftslash": "timewalker-rift",
       "timewalker:voidstep": "timewalker-void",
+      "cleric:holyguard": "cleric-holyguard",
     };
     const key = heroId + ":" + type + (type === "thunderblade" ? ":" + (stage || 0) : "");
     if (special[key]) return special[key];
@@ -317,6 +318,8 @@
       inner = '<path d="M17 3 Q8 5 6 12 Q5 19 14 21 Q8 16 10 10 Q12 6 17 3 Z"/>';
     } else if (/heal|meditate|cleric/.test(t)) {
       inner = '<path d="M10 3 H14 V9 H20 V13 H14 V21 H10 V13 H4 V9 H10 Z"/>';
+    } else if (/holyguard/.test(t)) {
+      inner = '<path d="M12 2 Q19 5 19 12 Q19 18 12 22 Q5 18 5 12 Q5 5 12 2 Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 6 V18 M6 12 H18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/>';
     } else if (/shield|metalarmor|guard|defense/.test(t)) {
       inner = '<path d="M12 2 Q19 5 19 12 Q19 18 12 22 Q5 18 5 12 Q5 5 12 2 Z"/>';
     } else if (/summon|crow|wings/.test(t)) {

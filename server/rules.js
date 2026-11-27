@@ -175,6 +175,65 @@ function removeTimeAnchorsForS(s, uid) {
   if (!s.timeAnchors) return;
   s.timeAnchors = s.timeAnchors.filter((a) => a.uid !== uid);
 }
+function thunderRangeCellsS(r, c, includeCenter) {
+  const out = [];
+  const seen = new Set();
+  const add = (rr, cc) => {
+    if (!inB(rr, cc)) return;
+    if (!includeCenter && rr === r && cc === c) return;
+    const k = rr + "_" + cc;
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push([rr, cc]);
+  };
+  for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) add(r + dr, c + dc);
+  for (const [dr, dc] of DIRS) add(r + dr * 2, c + dc * 2);
+  return out;
+}
+function inThunderRangeS(r, c, tr, tc) {
+  const dr = r - tr, dc = c - tc;
+  if (Math.abs(dr) <= 1 && Math.abs(dc) <= 1) return true;
+  return (dr === 0 || dc === 0) && Math.abs(dr) + Math.abs(dc) <= 2;
+}
+function holyDomainForS(s, u) {
+  if (!u) return null;
+  const p = findPos(s, u);
+  if (!p) return null;
+  return (s.holyDomains || []).find((d) => d.owner === u.player && d.cells.some(([r, c]) => r === p.r && c === p.c)) || null;
+}
+function unitBlockSourceS(s, u) {
+  if (berserkerBlock(u)) return "狂化";
+  if (holyDomainForS(s, u)) return "神圣加护";
+  return "";
+}
+function addHolyDomainS(s, u, center) {
+  if (!u || !center) return null;
+  if (!s.holyDomains) s.holyDomains = [];
+  if (s.holyDomains.some((d) => d.owner === u.player)) return null;
+  if (!s.holyDomainSeq) s.holyDomainSeq = 0;
+  const d = {
+    id: ++s.holyDomainSeq,
+    uid: u.uid,
+    owner: u.player,
+    center: { r: center.r, c: center.c },
+    cells: thunderRangeCellsS(center.r, center.c, true),
+    turns: 3,
+    castTurn: s.turnSerial || 0,
+  };
+  s.holyDomains.push(d);
+  slog(s, "✨ " + uname(s, u) + " 在 (" + (center.r + 1) + "," + (center.c + 1) + ") 展开【神圣加护】，持续 3 回合");
+  return d;
+}
+function tickHolyDomainsS(s) {
+  if (!s.holyDomains || !s.holyDomains.length) return;
+  for (const d of s.holyDomains.slice()) {
+    d.turns -= 1;
+    if (d.turns <= 0) {
+      s.holyDomains = s.holyDomains.filter((x) => x.id !== d.id);
+      slog(s, "✨ 神圣加护领域消散");
+    }
+  }
+}
 function applyTimeStopS(s, target, source, skillName) {
   if (!target || !findPos(s, target) || isFormImmuneS(target)) return false;
   if (target.timeStop) {
@@ -304,6 +363,9 @@ function skillUsesLeft(s, u, idx) {
   if (u && u.copiedSkill && idx === skills.length - 1) return u.copiedUses != null ? u.copiedUses : sk.uses;
   if (skills.length === 1) return u.usesLeft;
   return u.usesArr && u.usesArr[idx] != null ? u.usesArr[idx] : sk.uses;
+}
+function skillUsedThisTurnS(s, u, idx) {
+  return !!(u && u.skillTurnUsed && u.skillTurnUsed[idx] === (s.turnSerial || 0));
 }
 function setSkillUses(s, u, idx, v) {
   const skills = unitSkills(u);
@@ -1100,7 +1162,7 @@ function createState() {
            turnActionsMax: 1, turnActionsLeft: 1, turnActorUid: 0, empowerTurnActive: false,
            talisman: { 1: drawTalismanId(), 2: drawTalismanId() }, talismanUsed: { 1: false, 2: false }, wildcards: { 1: 3, 2: 3 },
            assaultPlayer: 0, guardPlayer: 0, extraMoves: 0, extraTurnPending: false, graveyard: [], mists: {}, blackFlames: {}, meteors: [], meteorSeq: 0, crosses: [], crossSeq: 0,
-           timeAnchors: [], timeAnchorSeq: 0,
+           timeAnchors: [], timeAnchorSeq: 0, holyDomains: [], holyDomainSeq: 0,
            stats: { damage: { 1: 0, 2: 0 }, kills: { 1: 0, 2: 0 }, startedAt: 0, endedAt: 0, lastKiller: null },
            log: [], logSeq: 0, _undo: [] };
 }
@@ -1375,11 +1437,12 @@ function applyDamage(s, target, amount, source) {
     dmg = dmg * 0.5;
     slog(s, "🛡 金属狂潮：" + uname(s, target) + " 受到的伤害减半（" + beforeHalf + " → " + dmg + "）");
   }
-  // 狂战士·狂化（生命≤2）：每次独立伤害事件格挡 0.5 点，最低为 0。
-  if (berserkerBlock(target) && dmg > 0) {
+  // 统一格挡：狂化 / 神圣加护等来源只取一次 0.5，避免重复叠加。
+  const blockSource = unitBlockSourceS(s, target);
+  if (blockSource && dmg > 0) {
     const beforeBlock = dmg;
     dmg = Math.max(0, dmg - 0.5);
-    slog(s, "🛡 狂化·格挡：" + uname(s, target) + " 抵消 0.5 点伤害（" + beforeBlock + " → " + dmg + "）");
+    slog(s, "🛡 " + blockSource + "·格挡：" + uname(s, target) + " 抵消 0.5 点伤害（" + beforeBlock + " → " + dmg + "）");
   }
   if (target.shield > 0) { const a = Math.min(target.shield, dmg); target.shield -= a; dmg -= a; consumeShieldLayersS(target, a); if (a > 0) slog(s, uname(s, target) + " 的护盾抵挡了 " + a + " 点伤害"); }
   // 龙魂：龙人 1/2 概率闪避（护盾等前置处理之后、完全抵消则不触发）
@@ -1637,6 +1700,7 @@ function beginTurn(s) {
   // 限时护盾按自身真实行动回合倒计时，额外回合不推进
   if (!isExtraTurn) tickShieldLayersS(s, s.currentPlayer);
   for (const u of unitsOf(s, s.currentPlayer)) {
+    u.skillTurnUsed = {};
     unitSkills(u).forEach((sk, i) => {
       if (sk && sk.perTurn) setSkillUses(s, u, i, sk.perTurn);
     });
@@ -1752,6 +1816,7 @@ function endTurnOnce(s) {
   if (checkVictory(s)) return;
   // 临时石柱：每完成一个完整回合结束衰减一次（生成当回合不扣）
   tickPillarsS(s);
+  tickHolyDomainsS(s);
   for (const u of unitsOf(s, s.currentPlayer)) if (!isTimeStopped(u) && u.frozen > 0) u.frozen--;
   tickStatuses(s, s.currentPlayer);
   // 雷电之主：强化按自身回合递减，归零清除护盾
@@ -1887,7 +1952,7 @@ function applyAction(state, player, action) {
                       statuses: {}, lockUsed: false, sdStage: 0, dragonMoves: 0, empowerTurns: 0,
                       chaseStage: 0, chaseMark: 0, guixiongUsed: false, wxtStage: 0,
                       stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false, metalBuff: false, metalTide: 0, meditate: null,
-                      timeStop: null, timeStopPending: [],
+                      timeStop: null, timeStopPending: [], skillTurnUsed: {},
                       facing: player === 1 ? [0, 1] : [0, -1], rbStage: 0, rbBlade: null, rbDir: null, crowForm: null,
                       copiedSkill: null, copiedUses: 0, copiedFrom: null,
                       usesArr: heroSkills(def).map((sk) => (sk.uses == null ? 9999 : sk.uses)) };
@@ -2145,6 +2210,7 @@ function applyAction(state, player, action) {
     const isWxtCombo = sk.type === "wxt" && (u.wxtStage || 0) >= 1; // 万象天引第二/三段不重复占整套次数
     const isTbCombo = sk.type === "thunderblade" && (u.rbStage || 0) > 0; // 雷鸣刀第二/三段共享整套次数
     if (!isSd2 && !isChase2 && !isWxtCombo && !isTbCombo && skillUsesLeft(s, u, idx) <= 0) return err("技能次数不足");
+    if (sk.oncePerTurn && skillUsedThisTurnS(s, u, idx)) return err("【" + sk.name + "】每个回合最多使用 1 次");
     if (sk.costSwords && (u.swords || 0) < sk.costSwords) return err("没有剑，无法发动剑圣");
     if (!skillFreeForS(u, sk) && !canActNow(s, u)) return err("本回合已经行动过了");
     slog(s, uname(s, u) + " 释放【" + sk.name + "】");
@@ -2169,8 +2235,13 @@ function applyAction(state, player, action) {
       // 孤胆侠·霸体：抵抗冰封（伤害仍已正常结算）
       if (findPos(s, t) && !hasSuperArmor(s, t)) t.frozen = Math.max(t.frozen, sk.freeze || 1);
     } else if (sk.type === "heal") {
-      if (!isUnit(t) || t.player !== player || dist > sk.range || t.hp >= t.maxHp) return err("治疗目标不合法");
+      const inRange = sk.range === "thunder" ? inThunderRangeS(r, c, from.r, from.c) : dist <= sk.range;
+      if (!isUnit(t) || t.player !== player || !inRange || t.hp >= t.maxHp) return err("治疗目标不合法");
       t.hp += Math.max(0, Math.min(sk.heal, t.maxHp - t.hp));
+    } else if (sk.type === "holyguard") {
+      if (!inThunderRangeS(r, c, from.r, from.c)) return err("神圣加护：请选择雷电之主范围内的位置");
+      if ((s.holyDomains || []).some((d) => d.owner === player)) return err("神圣加护：当前领域尚未结束");
+      addHolyDomainS(s, u, { r, c });
     } else if (sk.type === "damage_adjacent_all") {
       let any = false;
       for (const [dr, dc] of DIRS) {
@@ -2942,6 +3013,10 @@ function applyAction(state, player, action) {
       consumeRavenAttackStateS(s, u);
     } else return err("未知技能");
 
+    if (sk.oncePerTurn) {
+      u.skillTurnUsed = u.skillTurnUsed || {};
+      u.skillTurnUsed[idx] = s.turnSerial || 0;
+    }
     if (!isSd2 && !isChase2 && !isWxtCombo && !isTbCombo && !consumedHere) setSkillUses(s, u, idx, Math.max(0, skillUsesLeft(s, u, idx) - 1));
     if (sk.costSwords) u.swords = Math.max(0, (u.swords || 0) - sk.costSwords);
     const isFree = freeAction;

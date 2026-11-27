@@ -1351,6 +1351,18 @@
       case "timeResume":
         push({ kind: "ring", x, y, r0: geo.cell * 0.2, r1: geo.cell * 0.72, color: "#c4b5fd", width: 2, dur: 320 });
         break;
+      case "holyDomain":
+      case "holyDomainFade": {
+        const cells = Array.isArray(m.cells) ? m.cells : [];
+        for (const [rr, cc] of cells) {
+          const bx = px(cc), by = py(rr);
+          push({ kind: "ring", x: bx, y: by, r0: geo.cell * (t === "holyDomainFade" ? 0.45 : 0.08), r1: geo.cell * (t === "holyDomainFade" ? 0.08 : 0.52), color: "#fbbf24", width: 1.8, dur: 520, delay: 20 });
+          push({ kind: "rune", x: bx, y: by, r: geo.cell * 0.27, color: "#fde68a", sides: 6, dur: 540 });
+        }
+        push({ kind: "ring", x, y, r0: geo.cell * 0.12, r1: geo.cell * 0.9, color: "#fef3c7", width: 3, dur: 620 });
+        spawn(x, y, 24, { color: "#fde68a", speed: 1.8, life: 620, size: 2 });
+        break;
+      }
       case "crosstep":
         // 狂战士·狂徒：脚下红色十字法阵 → 残影横移 → 落点红色冲击波
         if (tx != null) {

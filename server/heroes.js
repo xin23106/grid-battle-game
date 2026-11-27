@@ -22,7 +22,10 @@ module.exports = [
   { id: "warlock", name: "术士", hp: 7, sfx: "ice",
     skill: { name: "冰封", type: "freeze", range: 3, damage: 1, freeze: 1, uses: 2 } },
   { id: "cleric", name: "牧师", hp: 5, sfx: "holy",
-    skill: { name: "圣光", type: "heal", range: 3, heal: 3, uses: 2 } },
+    skill: { name: "圣光", type: "heal", range: "thunder", heal: 2, uses: 2, free: true, oncePerTurn: true },
+    extraSkills: [
+      { name: "神圣加护", type: "holyguard", range: "thunder", uses: 1, free: true, duration: 3, block: 0.5 },
+    ] },
   { id: "guardian", name: "守卫", hp: 8, sfx: "shield",
     skill: { name: "铁壁", type: "shield_ally", range: 0, shield: 2, uses: 1, free: true } },
   { id: "asura", name: "阿修罗", hp: 6, sfx: "blade", blades: 3,
