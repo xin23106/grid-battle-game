@@ -851,7 +851,7 @@ function slog(s, text, opts) {
 }
 function uname(s, u) {
   if (!u) return "？";
-  if (isMirrorS(u)) return "玩家" + u.player + "·镜像";
+  if (isMirrorS(u)) return "玩家" + u.player + "·镜影";
   const d = heroDef(u.heroId);
   return "玩家" + u.player + "·" + ((d && d.name) || u.heroId);
 }
@@ -1111,9 +1111,9 @@ function applyDamage(s, target, amount, source) {
   if (isMirrorS(target)) {
     if (!pos || amount <= 0) return 0;
     s.board[pos.r][pos.c] = null;
-    slog(s, "🪞 " + uname(s, target) + " 破碎（受到任意伤害立即消失）");
+    slog(s, "🪞 " + uname(s, target) + " 破碎（受到任意伤害立即消失）", { only: target.player });
     if (source && !source.sword && !isMirrorS(source) && source.player !== target.player && findPos(s, source)) {
-      slog(s, "🪞 镜像反射：" + uname(s, source) + " 击败镜像，受到 0.5 点反伤");
+      slog(s, "🪞 镜像反射：" + uname(s, source) + " 击败镜像，受到 0.5 点反伤", { only: target.player });
       applyDamage(s, source, 0.5, null);
     }
     return 1;
@@ -1910,17 +1910,17 @@ function applyAction(state, player, action) {
       if (action.swap) {
         s.board[r][c] = u;
         s.board[from.r][from.c] = m;
-        slog(s, "🪞 " + uname(s, u) + " 在 (" + (r + 1) + "," + (c + 1) + ") 召唤镜像并交换位置");
+        slog(s, "🪞 " + uname(s, u) + " 在 (" + (r + 1) + "," + (c + 1) + ") 召唤镜像并交换位置", { only: player });
       } else {
         s.board[r][c] = m;
-        slog(s, "🪞 " + uname(s, u) + " 在 (" + (r + 1) + "," + (c + 1) + ") 召唤镜像");
+        slog(s, "🪞 " + uname(s, u) + " 在 (" + (r + 1) + "," + (c + 1) + ") 召唤镜像", { only: player });
       }
     } else if (sk.type === "mirrorshift") {
       // 镜影·镜面折射：与任意己方镜像交换位置
       if (!isMirrorS(t) || t.player !== player) return err("镜面折射：请选择一个己方镜像");
       s.board[from.r][from.c] = t;
       s.board[r][c] = u;
-      slog(s, "🪞 " + uname(s, u) + " 与镜像交换位置：(" + (from.r + 1) + "," + (from.c + 1) + ") ↔ (" + (r + 1) + "," + (c + 1) + ")");
+      slog(s, "🪞 " + uname(s, u) + " 与镜像交换位置：(" + (from.r + 1) + "," + (from.c + 1) + ") ↔ (" + (r + 1) + "," + (c + 1) + ")", { only: player });
     } else if (sk.type === "steal") {
       // 窃神·窃取权柄：复制目标一个主动/被动技能，独立次数
       if (!isUnit(t) || isMirrorS(t) || t.player === player || hiddenFromS(t, player)) return err("窃取权柄：请选择一名可见的敌方英雄");

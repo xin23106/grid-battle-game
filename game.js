@@ -1825,6 +1825,29 @@ function mirrorsOf(player) {
   }
   return out;
 }
+/* 观察者视角：本地/AI 取当前操作方，联机取本人；敌方镜像伪装成镜影本体 */
+function mirrorViewerSide() {
+  if (gameMode === "online" && window.NET && window.NET.myPlayer) return window.NET.myPlayer;
+  if (gameMode === "ai") return aiPlayer === 2 ? 1 : 2;
+  return currentPlayer === 2 ? 2 : 1;
+}
+function isMirrorDisguised(u) {
+  return isMirror(u) && u.player !== mirrorViewerSide();
+}
+function mirrorViewUnit(u) {
+  const owner = unitsOf(u.player).find((v) => v.heroId === "mirror");
+  return Object.assign({}, u, {
+    mirror: false,
+    heroId: "mirror",
+    hp: owner ? owner.hp : 5,
+    maxHp: owner ? owner.maxHp : 5,
+    shield: 0,
+    shieldLayers: [],
+    statuses: {},
+    frozen: 0,
+    swords: 0,
+  });
+}
 /* 曼哈顿距离内的所有格子（includeSelf 决定是否含自身格） */
 function cellsWithin(r, c, range, includeSelf) {
   const res = [];
@@ -5853,6 +5876,7 @@ function onCellClick(r, c) {
   // 点击英雄 → 显示技能详情（不影响选中/移动/攻击/回合流程）
   const clickedUnit = isUnit(board[r][c]) ? board[r][c] : null;
   if (clickedUnit && !isMirror(clickedUnit)) showUnitDetail(clickedUnit);
+  else if (clickedUnit && isMirrorDisguised(clickedUnit)) showUnitDetail(mirrorViewUnit(clickedUnit));
   if (phase === "placement") handlePlacement(r, c);
   else if (phase === "battle") handleBattle(r, c);
   aiKick();
@@ -6362,8 +6386,13 @@ function render() {
         cell.classList.add("pillar-cell");
         cell.appendChild(buildPillarObj(u));
       } else if (isMirror(u)) {
-        cell.classList.add("mirror-cell");
-        cell.appendChild(buildMirrorObj(u));
+        if (isMirrorDisguised(u)) {
+          cell.classList.add("mirror-disguised-cell");
+          cell.appendChild(buildUnit(mirrorViewUnit(u)));
+        } else {
+          cell.classList.add("mirror-cell");
+          cell.appendChild(buildMirrorObj(u));
+        }
       } else if (u) {
         if (phase === "battle" && u.player === currentPlayer && u.frozen <= 0) {
           cell.classList.add("selectable");

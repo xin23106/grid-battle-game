@@ -104,6 +104,36 @@ function publicStateFor(state, player) {
       }
     }
   }
+  // 5.5) 镜影：对手看到的镜像伪装成镜影本体，无法从棋盘/卡面区分真假
+  const realMirror = state.board
+    ? (() => {
+        for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+          const u = state.board[r][c];
+          if (u && !u.mirror && u.heroId === "mirror" && u.player === opp) return JSON.parse(JSON.stringify(u));
+        }
+        return null;
+      })()
+    : null;
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const u = s.board[r][c];
+      if (!u || !u.mirror || u.player !== opp) continue;
+      const fake = realMirror ? Object.assign({}, realMirror) : {
+        heroId: "mirror", hp: 5, maxHp: 5, usesLeft: 2, usesArr: [2, 1], statuses: {},
+      };
+      fake.uid = u.uid;
+      fake.player = opp;
+      fake.heroId = "mirror";
+      fake.mirror = false;
+      delete fake.mirror;
+      fake.hp = realMirror ? realMirror.hp : 5;
+      fake.maxHp = realMirror ? realMirror.maxHp : 5;
+      fake.shield = 0;
+      fake.shieldLayers = [];
+      fake.statuses = {};
+      s.board[r][c] = fake;
+    }
+  }
   // 6) 日志：带 only 的条目只发给指定玩家（如隐身单位的移动坐标）
   if (Array.isArray(s.log)) s.log = s.log.filter((e) => !e.only || e.only === me);
   // 7) 联机悔棋：仅告知本人「当前是否可悔」，不下发快照内容
