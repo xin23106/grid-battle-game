@@ -2209,6 +2209,37 @@ function titanAttackPairs(u) {
 function titanPairFor(u, r, c) {
   return titanAttackPairs(u).find((pair) => pair.some(([rr, cc]) => rr === r && cc === c)) || null;
 }
+/* 泰坦变身可选的四格：2×2 必须包含山丘之王当前格，四个候选锚点对应四种包住当前格的方式。 */
+function titanPlacementAnchors(u) {
+  const p = findPos(u);
+  if (!p || isTitan(u)) return [];
+  const cand = [
+    { r: p.r, c: p.c },
+    { r: p.r - 1, c: p.c },
+    { r: p.r, c: p.c - 1 },
+    { r: p.r - 1, c: p.c - 1 },
+  ];
+  const seen = new Set();
+  const out = [];
+  for (const a of cand) {
+    const k = a.r + "_" + a.c;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    if (!inBounds(a.r, a.c) || !inBounds(a.r + 1, a.c + 1)) continue;
+    if (p.r < a.r || p.r > a.r + 1 || p.c < a.c || p.c > a.c + 1) continue;
+    if (canTitanFit(u, a.r, a.c, false)) out.push(a);
+  }
+  return out;
+}
+function titanAnchorForClick(u, tr, tc) {
+  const anchors = titanPlacementAnchors(u);
+  const exact = anchors.find((a) => a.r === tr && a.c === tc);
+  if (exact) return exact;
+  return anchors.find((a) => tr >= a.r && tr <= a.r + 1 && tc >= a.c && tc <= a.c + 1) || null;
+}
+function titanPlacementCells(anchor) {
+  return [[anchor.r, anchor.c], [anchor.r, anchor.c + 1], [anchor.r + 1, anchor.c], [anchor.r + 1, anchor.c + 1]];
+}
 function computeTitanTargets(u, pos) {
   if (!isRooted(u)) {
     for (const [dr, dc] of DIRS) {
@@ -2553,7 +2584,18 @@ function computeSkillTargets() {
 
     case "titan": {
       if (isTitan(u)) break;
-      if (canTitanFit(u, r, c, false)) skillTargets.push([r, c]);
+      const anchors = titanPlacementAnchors(u);
+      const seen = new Set();
+      for (const a of anchors) {
+        const cells = titanPlacementCells(a);
+        for (const [rr, cc] of cells) {
+          const k = rr + "_" + cc;
+          if (seen.has(k)) continue;
+          seen.add(k);
+          skillTargets.push([rr, cc]);
+        }
+        dashOptions.push({ kind: "titan-placement", path: cells, anchor: { r: a.r, c: a.c } });
+      }
       break;
     }
 
@@ -4918,17 +4960,18 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
         render();
         return;
       }
-      if (!canTitanFit(a, r, c, false)) {
-        addLog("泰坦之力：当前位置周围的 2×2 区域被单位或实体阻挡，无法巨大化。");
+      const anchor = titanAnchorForClick(a, tr, tc);
+      if (!anchor) {
+        addLog("泰坦之力：请选择包含山丘之王的合法 2×2 四格区域。");
         render();
         return;
       }
       a.size = 2;
-      a.titanTurns = s.duration || 3;
-      placeTitanFootprint(a, r, c);
-      addLog("🗿 " + label(a) + " 释放【泰坦之力】，占据以 (" + (r + 1) + "," + (c + 1) + ") 为左上角的 2×2 区域，持续 " + a.titanTurns + " 回合。");
+      a.titanTurns = s.duration || 4;
+      placeTitanFootprint(a, anchor.r, anchor.c);
+      addLog("🗿 " + label(a) + " 释放【泰坦之力】，选择占据 (" + (anchor.r + 1) + "," + (anchor.c + 1) + ") 为左上角的 2×2 区域，持续 " + a.titanTurns + " 回合。");
       if (window.BFX) {
-        try { window.BFX.cast({ type: "titanStart", heroId: "hillking", caster: { r, c }, cells: titanCellsForAnchor(r, c) }); } catch (e) { /* ignore */ }
+        try { window.BFX.cast({ type: "titanStart", heroId: "hillking", caster: anchor, cells: titanPlacementCells(anchor) }); } catch (e) { /* ignore */ }
       }
       if (window.SFX) window.SFX.play("buffUp", { hero: "hillking" });
       break;
@@ -8766,10 +8809,12 @@ function aiSkillScore(u, s, pos, rr, cc, w) {
       return sc > 0 ? sc : null;
     }
     case "titan": {
-      if (isTitan(u) || !canTitanFit(u, pos.r, pos.c, false)) return null;
+      if (isTitan(u)) return null;
+      const anchor = titanAnchorForClick(u, rr, cc);
+      if (!anchor) return null;
       let near = 0;
       for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) {
-        const e = unitAt(pos.r + dr, pos.c + dc);
+        const e = unitAt(anchor.r + dr, anchor.c + dc);
         if (e && e.player !== u.player) near++;
       }
       if (!near) return null;

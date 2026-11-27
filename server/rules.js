@@ -715,6 +715,36 @@ function hammerLandingLegalS(s, r, c, player) {
   if (isUnit(cell) && cell.player !== player && !isTitanS(cell)) return !!findAdjacentFreeForS(s, cell);
   return false;
 }
+function titanPlacementAnchorsS(s, u) {
+  const p = findPos(s, u);
+  if (!p || isTitanS(u)) return [];
+  const cand = [
+    { r: p.r, c: p.c },
+    { r: p.r - 1, c: p.c },
+    { r: p.r, c: p.c - 1 },
+    { r: p.r - 1, c: p.c - 1 },
+  ];
+  const seen = new Set();
+  const out = [];
+  for (const a of cand) {
+    const k = a.r + "_" + a.c;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    if (!inB(a.r, a.c) || !inB(a.r + 1, a.c + 1)) continue;
+    if (p.r < a.r || p.r > a.r + 1 || p.c < a.c || p.c > a.c + 1) continue;
+    if (canTitanFitS(s, u, a.r, a.c, false)) out.push(a);
+  }
+  return out;
+}
+function titanAnchorForClickS(s, u, tr, tc) {
+  const anchors = titanPlacementAnchorsS(s, u);
+  const exact = anchors.find((a) => a.r === tr && a.c === tc);
+  if (exact) return exact;
+  return anchors.find((a) => tr >= a.r && tr <= a.r + 1 && tc >= a.c && tc <= a.c + 1) || null;
+}
+function titanPlacementCellsS(anchor) {
+  return [[anchor.r, anchor.c], [anchor.r, anchor.c + 1], [anchor.r + 1, anchor.c], [anchor.r + 1, anchor.c + 1]];
+}
 function titanAttackPairsS(s, u) {
   const p = findPos(s, u);
   if (!p || !isTitanS(u)) return [];
@@ -2530,11 +2560,12 @@ function applyAction(state, player, action) {
       slog(s, "🔨 " + uname(s, u) + " 将战争之锤投掷到 (" + (r + 1) + "," + (c + 1) + ")，十字范围命中 " + hit + " 名敌人");
     } else if (sk.type === "titan") {
       if (isTitanS(u)) return err("泰坦之力已经生效");
-      if (!canTitanFitS(s, u, from.r, from.c, false)) return err("泰坦之力：周围 2×2 区域被阻挡");
+      const anchor = titanAnchorForClickS(s, u, r, c);
+      if (!anchor) return err("泰坦之力：请选择包含山丘之王的合法 2×2 区域");
       u.size = 2;
-      u.titanTurns = sk.duration || 3;
-      placeTitanFootprintS(s, u, from.r, from.c);
-      slog(s, "🗿 " + uname(s, u) + " 释放【泰坦之力】，占据以 (" + (from.r + 1) + "," + (from.c + 1) + ") 为左上角的 2×2 区域，持续 " + u.titanTurns + " 回合");
+      u.titanTurns = sk.duration || 4;
+      placeTitanFootprintS(s, u, anchor.r, anchor.c);
+      slog(s, "🗿 " + uname(s, u) + " 释放【泰坦之力】，选择占据以 (" + (anchor.r + 1) + "," + (anchor.c + 1) + ") 为左上角的 2×2 区域，持续 " + u.titanTurns + " 回合");
     } else if (sk.type === "damage_adjacent_all") {
       let any = false;
       for (const [dr, dc] of DIRS) {
