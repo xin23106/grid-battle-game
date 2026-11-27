@@ -24,6 +24,15 @@ const DIRS = [
   [0, 1],
 ]; // 仅上下左右四个正交方向（不含斜对角）
 
+const ELEMENTS = {
+  thunder: { key: "thunder", name: "雷", skill: "雷罚", icon: "⚡", color: "#a78bfa", desc: "雷电之主同范围一名敌人受 0.5 伤并眩晕 1 回合。" },
+  fire: { key: "fire", name: "火", skill: "火焰领域", icon: "🔥", color: "#fb923c", desc: "任意空格放置火焰 2 回合；每回合灼烧九宫格内一名敌人 1 点。" },
+  wood: { key: "wood", name: "木", skill: "木缚", icon: "🌿", color: "#4ade80", desc: "任意 2×2 区域：敌人受 0.5 伤并定身 2 回合。" },
+  wind: { key: "wind", name: "风", skill: "风眼", icon: "🌪", color: "#a5f3fc", desc: "雷电之主同范围放置风眼 3 回合，每回合将 5×5 内敌人拉近 1 格。" },
+  water: { key: "water", name: "水", skill: "水之庇护", icon: "💧", color: "#60a5fa", desc: "保护一名友军 1 回合：无敌且不能行动；结束时九宫格反击 1 伤。" },
+};
+const ELEMENT_KEYS = Object.keys(ELEMENTS);
+
 /* ----------------------------- DOM ----------------------------- */
 const boardEl = document.getElementById("board");
 const turnPlayerEl = document.getElementById("turn-player");
@@ -91,6 +100,9 @@ let meteors = [];                  // 天穹射手·天罚：尚未落下的陨�
 let meteorSeq = 0;                 // 本地陨星事件序号
 let crosses = [];                  // 亡灵之主·死亡十字架 [{id,r,c,player,heroId,deadUid}]
 let crossSeq = 0;
+let elementFields = [];             // 元素法师·火焰 / 风眼场地 [{id,kind,owner,r,c,turns}]
+let elementFieldSeq = 0;
+let elementCast = null;              // 五元/归一 当前待落点元素 { source, element, actorUid }
 let timeAnchors = [];               // 时间行者·时空锚点 [{id,uid,owner,kind,r,c,castTurn,blastDone}]
 let timeAnchorSeq = 0;
 let holyDomains = [];                // 牧师·神圣加护领域 [{id,uid,owner,center,cells,turns}]
@@ -331,6 +343,296 @@ function tickTitans(player) {
     }
   }
 }
+/* ---------------- 元素法师·五元 / 归一 ---------------- */
+function availableElements(u) {
+  return ELEMENT_KEYS.filter((k) => !(u && Array.isArray(u.elementsUsed) && u.elementsUsed.includes(k)));
+}
+function closeElementPanel() {
+  const el = document.querySelector(".element-overlay");
+  if (el) el.remove();
+}
+function openElementPanel(u) {
+  closeElementPanel();
+  if (!u) return;
+  const avail = availableElements(u);
+  if (!avail.length) {
+    addLog("五元：五种元素均已使用，无法继续选择。");
+    return;
+  }
+  const ov = document.createElement("div");
+  ov.className = "element-overlay";
+  const cards = ELEMENT_KEYS.map((k) => {
+    const e = ELEMENTS[k];
+    const used = !avail.includes(k);
+    return '<button class="element-card ' + (used ? "used" : "") + '" data-element="' + k + '" ' + (used ? "disabled" : "") + '>' +
+      '<span class="element-icon" style="color:' + e.color + '">' + e.icon + "</span>" +
+      '<span class="element-main"><b>' + e.name + " · " + e.skill + "</b><em>" + e.desc + "</em></span>" +
+      (used ? '<small class="element-used">本局已使用</small>' : "") + "</button>";
+  }).join("");
+  ov.innerHTML = '<div class="element-panel" role="dialog" aria-modal="true">' +
+    '<div class="element-head"><div><b>五元</b><span>选择本次释放的元素（已使用元素不可再选）</span></div><button class="element-cancel" type="button">取消</button></div>' +
+    '<div class="element-grid">' + cards + "</div></div>";
+  document.body.appendChild(ov);
+  ov.querySelector(".element-cancel").addEventListener("click", () => { closeElementPanel(); render(); });
+  ov.addEventListener("click", (ev) => { if (ev.target === ov) { closeElementPanel(); render(); } });
+  ov.querySelectorAll(".element-card").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const element = btn.getAttribute("data-element");
+      closeElementPanel();
+      beginElementTargeting(u, element, "mage");
+    });
+  });
+}
+function computeElementTargets(u, element) {
+  const p = findPos(u);
+  const out = [];
+  if (!p) return out;
+  if (element === "thunder") {
+    for (const [rr, cc] of thunderRangeCells(p.r, p.c, true)) {
+      const t = unitAt(rr, cc);
+      if (t && t.player !== u.player && !hiddenFrom(t, u.player)) out.push([rr, cc]);
+    }
+  } else if (element === "fire") {
+    for (let rr = 0; rr < SIZE; rr++) for (let cc = 0; cc < SIZE; cc++) if (!board[rr][cc]) out.push([rr, cc]);
+  } else if (element === "wood") {
+    for (let ar = 0; ar < SIZE - 1; ar++) for (let ac = 0; ac < SIZE - 1; ac++) {
+      let has = false;
+      for (const [rr, cc] of [[ar, ac], [ar, ac + 1], [ar + 1, ac], [ar + 1, ac + 1]]) {
+        const t = unitAt(rr, cc);
+        if (t && t.player !== u.player && !hiddenFrom(t, u.player)) { has = true; break; }
+      }
+      if (has) out.push([ar, ac]);
+    }
+  } else if (element === "wind") {
+    for (const [rr, cc] of thunderRangeCells(p.r, p.c, true)) out.push([rr, cc]);
+  } else if (element === "water") {
+    for (const v of unitsOf(u.player)) {
+      const vp = findPos(v);
+      if (vp) out.push([vp.r, vp.c]);
+    }
+  }
+  return out;
+}
+function beginElementTargeting(u, element, source) {
+  if (!u || !ELEMENTS[element]) return false;
+  if (source === "mage" && (u.elementsUsed || []).includes(element)) {
+    addLog("五元：该元素本局已经使用过。");
+    return false;
+  }
+  if (source === "inherited" && (u.inheritedElement !== element || u.inheritedElementUsed)) {
+    addLog("归一元素：该元素已经使用或不存在。");
+    return false;
+  }
+  const targets = computeElementTargets(u, element);
+  if (!targets.length) {
+    addLog("【" + ELEMENTS[element].skill + "】当前没有合法目标。");
+    elementCast = null;
+    skillMode = false;
+    skillTargets = [];
+    render();
+    return false;
+  }
+  elementCast = { source, element, actorUid: u.uid };
+  skillTargets = targets;
+  dashOptions = [];
+  skillMode = true;
+  moveTargets = [];
+  attackTargets = [];
+  render();
+  addLog("请选择【" + ELEMENTS[element].skill + "】的目标位置。");
+  return true;
+}
+function activateInheritedElement(u) {
+  if (!u || !u.inheritedElement || u.inheritedElementUsed) return;
+  if (phase !== "battle" || u.player !== currentPlayer || isDisabled(u)) return;
+  selected = findPos(u);
+  activeSkillIdx = 0;
+  beginElementTargeting(u, u.inheritedElement, "inherited");
+}
+function useElementEffect(u, tr, tc, cast) {
+  if (!u || !cast || !findPos(u)) return false;
+  const element = cast.element;
+  const p = findPos(u);
+  if (!ELEMENTS[element]) return false;
+  const enemyAt = (r, c) => {
+    const t = unitAt(r, c);
+    return t && t !== u && t.player !== u.player ? t : null;
+  };
+  if (element === "thunder") {
+    if (!inThunderRange(tr, tc, p.r, p.c)) { addLog("雷罚：目标不在范围内。"); render(); return false; }
+    const t = enemyAt(tr, tc);
+    if (!t || hiddenFrom(t, u.player)) { addLog("雷罚：请选择范围内的敌方英雄。"); render(); return false; }
+    applyDamage(t, 0.5, "skill", u);
+    if (findPos(t)) {
+      const r = applyNegativeStatus(t, "stun", { turns: 1, label: "雷罚·眩晕" });
+      addLog("⚡ 雷罚命中 " + label(t) + "，造成 0.5 点伤害" + (r.applied ? "并眩晕 1 回合。" : "（控制被抵抗）。"));
+    } else addLog("⚡ 雷罚命中 " + label(t) + "，造成 0.5 点伤害。");
+    if (window.BFX) {
+      try { window.BFX.cast({ type: "elementThunder", heroId: "mage", caster: p, target: { r: tr, c: tc } }); } catch (e) { /* ignore */ }
+    }
+  } else if (element === "fire") {
+    if (!inBounds(tr, tc) || board[tr][tc]) { addLog("火焰领域：请选择棋盘上的合法空格。"); render(); return false; }
+    const f = { id: ++elementFieldSeq, kind: "fire", owner: u.player, r: tr, c: tc, turns: 2 };
+    elementFields.push(f);
+    addLog("🔥 火焰领域生成于 (" + (tr + 1) + "," + (tc + 1) + ")，持续 2 回合。");
+    if (window.BFX) {
+      try { window.BFX.cast({ type: "elementFire", heroId: "mage", caster: { r: tr, c: tc } }); } catch (e) { /* ignore */ }
+    }
+  } else if (element === "wood") {
+    if (!inBounds(tr, tc) || !inBounds(tr + 1, tc + 1)) { addLog("木缚：请选择合法 2×2 区域。"); render(); return false; }
+    const cells = [[tr, tc], [tr, tc + 1], [tr + 1, tc], [tr + 1, tc + 1]];
+    const victims = [];
+    for (const [rr, cc] of cells) {
+      const t = enemyAt(rr, cc);
+      if (t && !victims.some((x) => x.uid === t.uid)) victims.push(t);
+    }
+    if (!victims.length) { addLog("木缚：该 2×2 区域没有敌人。"); render(); return false; }
+    for (const t of victims) {
+      applyDamage(t, 0.5, "skill", u);
+      if (findPos(t)) applyNegativeStatus(t, "root", { turns: 2, label: "木缚·定身" });
+    }
+    addLog("🌿 木缚命中 " + victims.length + " 名敌人，造成 0.5 点伤害并定身 2 回合。");
+    if (window.BFX) {
+      try { window.BFX.cast({ type: "elementWood", heroId: "mage", caster: p, target: { r: tr, c: tc }, cells }); } catch (e) { /* ignore */ }
+    }
+  } else if (element === "wind") {
+    if (!inThunderRange(tr, tc, p.r, p.c)) { addLog("风眼：落点不在范围内。"); render(); return false; }
+    const f = { id: ++elementFieldSeq, kind: "wind", owner: u.player, r: tr, c: tc, turns: 3 };
+    elementFields.push(f);
+    addLog("🌪 风眼生成于 (" + (tr + 1) + "," + (tc + 1) + ")，持续 3 回合。");
+    if (window.BFX) {
+      try { window.BFX.cast({ type: "elementWind", heroId: "mage", caster: { r: tr, c: tc } }); } catch (e) { /* ignore */ }
+    }
+  } else if (element === "water") {
+    const t = unitAt(tr, tc);
+    if (!t || isMirror(t) || t.player !== u.player) { addLog("水之庇护：请选择己方存活英雄。"); render(); return false; }
+    t.waterGuard = { casterUid: u.uid, casterPlayer: u.player };
+    addLog("💧 " + label(u) + " 为 " + label(t) + " 施加【水之庇护】，持续到其下一回合开始。");
+    if (window.BFX) {
+      const tp = findPos(t);
+      if (tp) {
+        try { window.BFX.cast({ type: "elementWater", heroId: "mage", caster: p, target: tp }); } catch (e) { /* ignore */ }
+      }
+    }
+  }
+  if (cast.source === "mage") {
+    u.elementsUsed = u.elementsUsed || [];
+    if (!u.elementsUsed.includes(element)) u.elementsUsed.push(element);
+    const cur = skillUsesLeft(u, 0);
+    if (cur !== Infinity) setSkillUsesLeft(u, 0, Math.max(0, cur - 1));
+    u.skillTurnUsed = u.skillTurnUsed || {};
+    u.skillTurnUsed[0] = turnSerial;
+  } else {
+    u.inheritedElementUsed = true;
+  }
+  elementCast = null;
+  afterAction(u, true);
+  return true;
+}
+
+function triggerElementLegacy(u, pos) {
+  if (!u || u.heroId !== "mage" || u.elementLegacyUsed) return;
+  const allies = unitsOf(u.player).filter((v) => v !== u && findPos(v));
+  if (!allies.length) {
+    addLog("🔮 元素法师阵亡，但没有存活友军可继承元素，【归一】未触发。");
+    return;
+  }
+  u.elementLegacyUsed = true;
+  const element = ELEMENT_KEYS[Math.floor(Math.random() * ELEMENT_KEYS.length)];
+  const target = allies[Math.floor(Math.random() * allies.length)];
+  target.inheritedElement = element;
+  target.inheritedElementUsed = false;
+  addLog("🔮 归一触发：" + label(u) + " 的元素化为【" + ELEMENTS[element].name + "】，融入 " + label(target) + "。");
+  if (window.BFX) {
+    try {
+      window.BFX.cast({ type: "elementLegacy", heroId: "mage", caster: pos, target: findPos(target), element });
+    } catch (e) { /* ignore */ }
+  }
+}
+
+/* ---------------- 元素法师·水之庇护 / 元素场地 ---------------- */
+function resolveWaterGuard(u) {
+  if (!u || !u.waterGuard) return;
+  const p = findPos(u);
+  u.waterGuard = null;
+  if (!p) return;
+  addLog("💧 " + label(u) + " 的水之庇护结束，水幕爆裂。");
+  if (window.BFX) {
+    try { window.BFX.cast({ type: "waterBurst", heroId: "mage", caster: p }); } catch (e) { /* ignore */ }
+  }
+  const hit = [];
+  for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+    const t = unitAt(p.r + dr, p.c + dc);
+    if (t && t.player !== u.player && !hit.includes(t.uid)) {
+      hit.push(t.uid);
+      applyDamage(t, 1, "skill", u);
+    }
+  }
+  addLog("💥 水之庇护反击：九宫格内命中 " + hit.length + " 名敌人。");
+}
+function resolveWaterGuards(player) {
+  for (const u of unitsOf(player)) resolveWaterGuard(u);
+}
+function tickElementFields(player) {
+  for (const f of elementFields.slice()) {
+    if (f.owner !== player) continue;
+    if (f.kind === "fire") {
+      const cells = [];
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        if (inBounds(f.r + dr, f.c + dc)) cells.push([f.r + dr, f.c + dc]);
+      }
+      const foes = [];
+      for (const [rr, cc] of cells) {
+        const t = unitAt(rr, cc);
+        if (t && t.player !== f.owner && !foes.some((x) => x.uid === t.uid)) foes.push(t);
+      }
+      foes.sort((a, b) => (a.hp - b.hp) || (a.uid - b.uid));
+      if (foes.length) {
+        const t = foes[0];
+        applyDamage(t, 1, "skill", null);
+        addLog("🔥 火焰领域灼烧 " + label(t) + "（1 点伤害）。");
+      } else {
+        addLog("🔥 火焰领域内没有敌人。");
+      }
+      f.turns -= 1;
+      if (f.turns <= 0) {
+        elementFields = elementFields.filter((x) => x.id !== f.id);
+        addLog("🔥 火焰领域熄灭。");
+      }
+    } else if (f.kind === "wind") {
+      const pulls = [];
+      for (const u of unitsOf(f.owner === 1 ? 2 : 1)) {
+        if (isWaterGuarded(u) || isTitan(u)) continue;
+        const p = findPos(u);
+        if (!p || Math.abs(p.r - f.r) > 2 || Math.abs(p.c - f.c) > 2) continue;
+        const dr = Math.sign(f.r - p.r), dc = Math.sign(f.c - p.c);
+        const opts = [[dr, dc], [dr, 0], [0, dc]].filter(([a, b]) => (a || b));
+        let moved = false;
+        for (const [a, b] of opts) {
+          const nr = p.r + a, nc = p.c + b;
+          if (!inBounds(nr, nc) || board[nr][nc]) continue;
+          if (isTitan(u)) break;
+          board[nr][nc] = u; board[p.r][p.c] = null; moved = true;
+          u.statuses = u.statuses || {};
+          u.statuses.windPull = { kind: "windPull", label: "风眼牵引", turns: 1 };
+          pulls.push({ u, from: p, to: { r: nr, c: nc } });
+          break;
+        }
+        if (!moved) { /* 被阻挡，保持原位 */ }
+      }
+      for (const q of pulls) {
+        if (window.BFX) window.BFX.knockback({ from: q.from, to: q.to, color: window.BFX.heroColor(q.u.heroId) });
+      }
+      f.turns -= 1;
+      if (f.turns <= 0) {
+        elementFields = elementFields.filter((x) => x.id !== f.id);
+        addLog("🌪 风眼消散。");
+      }
+    }
+  }
+}
+
 /* ---------------- 护卫·舍身守护 / 命运羁绊 ---------------- */
 function bondGuardianFor(target) {
   return target && target.bondGuardianUid != null ? findUnitByUid(target.bondGuardianUid) : null;
@@ -973,8 +1275,11 @@ function attackerBonus(u) {
   return assaultBonus(u.player) + (isLoneActive(u) ? 1 : 0);
 }
 /* 技能是否被负面状态禁止（抓取 / 眩晕；定身只禁止位移类技能） */
+function isWaterGuarded(u) {
+  return !!(u && u.waterGuard);
+}
 function skillBlockedByStatus(u) {
-  return isTimeStopped(u) || !!(u && u.statuses && ((u.statuses.grab && u.statuses.grab.turns > 0) || (u.statuses.stun && u.statuses.stun.turns > 0) || (u.statuses.silence && u.statuses.silence.turns > 0)));
+  return isTimeStopped(u) || isWaterGuarded(u) || !!(u && u.statuses && ((u.statuses.grab && u.statuses.grab.turns > 0) || (u.statuses.stun && u.statuses.stun.turns > 0) || (u.statuses.silence && u.statuses.silence.turns > 0)));
 }
 /* 被抓取：该单位在其回合内不能做任何动作（移动 / 普攻 / 技能） */
 function isGrabbed(u) {
@@ -993,7 +1298,7 @@ function isSilenced(u) {
   return !!(u && u.statuses && u.statuses.silence && u.statuses.silence.turns > 0);
 }
 function isDisabled(u) {
-  return isGrabbed(u) || isStunned(u) || isTimeStopped(u);
+  return isGrabbed(u) || isStunned(u) || isTimeStopped(u) || isWaterGuarded(u);
 }
 /* 定身：不能移动 / 主动位移，但仍可普通攻击与非位移技能 */
 const SELF_MOVE_SKILLS = ["dash", "blink", "ziwei", "tianwei", "shuidiao", "duanlang", "thunder", "mistdash", "stealth", "thunderblade", "susano_dash", "push", "crosstep", "riftslash", "voidstep"];
@@ -1004,6 +1309,7 @@ function isSelfMoveSkill(u, s) {
   return false;
 }
 function actionBlockReason(u) {
+  if (isWaterGuarded(u)) return "水之庇护";
   if (isTimeStopped(u)) return "时间停止";
   if (isGrabbed(u)) return "抓取";
   if (isStunned(u)) return "眩晕";
@@ -1033,6 +1339,10 @@ function applyNegativeStatus(target, kind, opts) {
   if (opts.damage) dmg = applyDamage(target, opts.damage, opts.fxKind || "skill");
   const alive = !!findPos(target);
   if (!alive) return { applied: false, immune: false, damage: dmg, dead: true };
+  if (isWaterGuarded(target)) {
+    addLog("💧 水之庇护：" + label(target) + " 免疫了【" + (opts.label || kind) + "】。");
+    return { applied: false, immune: true, damage: dmg };
+  }
   if (isFormImmune(target)) {
     const crow = isCrowForm(target);
     addLog(crow ? "🪶 鸦天狗：免疫了【" + (opts.label || kind) + "】。" : "🛡 禅坐：免疫了【" + (opts.label || kind) + "】。");
@@ -1240,7 +1550,7 @@ function removeTimeAnchorsFor(uid) {
   for (const a of timeAnchors.slice()) if (a.uid === uid) removeTimeAnchor(a, "silent");
 }
 function applyTimeStop(target, source, skillName) {
-  if (!target || !findPos(target) || isFormImmune(target)) return false;
+  if (!target || !findPos(target) || isFormImmune(target) || isWaterGuarded(target)) return false;
   if (target.timeStop) {
     target.timeStop.turns = Math.max(target.timeStop.turns || 1, 1);
     return true;
@@ -1672,7 +1982,7 @@ function pushHistory() {
       board, phase, currentPlayer, winner, unitSeq, toPlace, placedIds,
       talisman, talismanUsed, talismanBuff, extraMoves, graveyard, reviveOptions,
       logs, turnActionUsed, turnActionsLeft, turnActionsMax, turnActorUid,
-      empowerTurnActive, mists, blackFlames, meteors, meteorSeq, crosses, crossSeq,
+      empowerTurnActive, mists, blackFlames, meteors, meteorSeq, crosses, crossSeq, elementFields, elementFieldSeq,
       timeAnchors, timeAnchorSeq, holyDomains, holyDomainSeq, pendingHero, wildcards, localPools,
       wildcardMode, pendingWildcard, onlineWildcards, turnSerial, matchStats,
     }));
@@ -1705,6 +2015,8 @@ function applyHistorySnapshot(s) {
   meteorSeq = s.meteorSeq || meteors.reduce((mx, m) => Math.max(mx, m.id || 0), 0);
   crosses = Array.isArray(s.crosses) ? JSON.parse(JSON.stringify(s.crosses)) : [];
   crossSeq = s.crossSeq || crosses.reduce((mx, x) => Math.max(mx, x.id || 0), 0);
+  elementFields = Array.isArray(s.elementFields) ? JSON.parse(JSON.stringify(s.elementFields)) : [];
+  elementFieldSeq = s.elementFieldSeq || elementFields.reduce((mx, f) => Math.max(mx, f.id || 0), 0);
   timeAnchors = Array.isArray(s.timeAnchors) ? JSON.parse(JSON.stringify(s.timeAnchors)) : [];
   timeAnchorSeq = s.timeAnchorSeq || timeAnchors.reduce((mx, a) => Math.max(mx, a.id || 0), 0);
   holyDomains = Array.isArray(s.holyDomains) ? JSON.parse(JSON.stringify(s.holyDomains)) : [];
@@ -1797,6 +2109,8 @@ function init() {
   reviveOptions = [];
   mists = {};
   blackFlames = {};
+  elementFields = [];
+  elementFieldSeq = 0;
   meteors = [];
   meteorSeq = 0;
   crosses = [];
@@ -1943,6 +2257,8 @@ function clearSelection() {
   closeOmniPanel();
   closeStealPanel();
   closeMirrorSwapPanel();
+  closeElementPanel();
+  elementCast = null;
   skillSub = null;
   // 龙胆选点与普通选择互斥；换回合 / 执行其它行动时一并取消
   dragonMoveUnit = null;
@@ -1963,6 +2279,8 @@ function beginTurn() {
   // 须佐·鸦天狗：自身行动回合开始时对前方九宫格结算 0.5（开启当回合不结算；额外回合不推进）
   if (!isExtraTurn) resolveCrowTurn(currentPlayer);
   if (checkVictory()) return;
+  // 元素法师·水之庇护：目标下一次自身回合开始时结束并反击
+  if (!isExtraTurn) { resolveWaterGuards(currentPlayer); if (checkVictory()) return; }
   // 杨戬等临时护盾：按自身真实行动回合倒计时，额外回合不推进
   if (!isExtraTurn) tickShieldLayers(currentPlayer);
   for (const u of unitsOf(currentPlayer)) {
@@ -2031,6 +2349,8 @@ function endTurnOnce() {
   tickTitans(currentPlayer);
   // 舍身守护：标记持续一个完整回合（施放回合结束后才开始计时）。
   tickGuardianMarks();
+  // 元素场地：火焰每回合灼烧一名敌人，风眼每回合牵引敌人。
+  tickElementFields(currentPlayer);
   for (const u of unitsOf(currentPlayer)) {
     if (!isTimeStopped(u) && u.frozen > 0) u.frozen -= 1;
   }
@@ -2131,6 +2451,7 @@ function checkVictory() {
     // 对局结束：清理临时地形与潜行相关状态
     mists = {};
     blackFlames = {};
+    elementFields = [];
     meteors = [];
     crosses = [];
     for (const u of unitsOf(1).concat(unitsOf(2))) { clearRavenStealth(u); resetThunderblade(u); resetCrowForm(u); }
@@ -3372,6 +3693,7 @@ function handleUnitDeath(target, source, pos) {
   titanSnapshot.bondGuardianUid = null;
   if (isTitan(target)) clearTitanFootprint(target);
   if (target.heroId === "hillking") removeHammer(target.player);
+  if (target.heroId === "mage") triggerElementLegacy(target, pos);
   clearGuardianEffectsForDeath(target);
   // 须佐：阵亡立即清除鸦天狗形态
   resetCrowForm(target);
@@ -3526,6 +3848,12 @@ function applyDamage(target, amount, kind, source, opts) {
       addLog("🪞 镜像反射结算：" + label(source) + (dealt > 0 ? " 实际扣血 " + dealt : " 未造成生命伤害") + "。");
     }
     return 1;
+  }
+  // 水之庇护：持续期间完全无敌。
+  if (isWaterGuarded(target)) {
+    addLog("💧 水之庇护：" + label(target) + " 处于无敌状态，免疫本次伤害。");
+    if (pos && window.BFX) window.BFX.cast({ type: "waterGuard", heroId: "mage", caster: pos });
+    return 0;
   }
   // 禅坐 / 鸦天狗：完全免疫伤害（含黑炎、毒雾等持续伤害）
   if (isFormImmune(target)) {
@@ -4425,7 +4753,7 @@ const BLACK_FLAME_TURNS = 3;
 const CROW_FORM_TURNS = 3;
 function isCrowForm(u) { return !!(u && u.crowForm); }
 /* 所有伤害 / 控制 / 强制位移免疫的形态（禅坐 + 鸦天狗） */
-function isFormImmune(u) { return isMeditating(u) || isCrowForm(u); }
+function isFormImmune(u) { return isMeditating(u) || isCrowForm(u) || isWaterGuarded(u); }
 function resetCrowForm(u) { if (u) u.crowForm = null; }
 function blackFlameKey(r, c) { return r + "_" + c; }
 function blackFlameAt(r, c) { return blackFlames[blackFlameKey(r, c)] || null; }
@@ -4684,6 +5012,21 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
   if (!a) { clearSelection(); render(); return; }
   const s = activeSkillOf(a);
   if (!s) { clearSelection(); render(); return; }
+  if (elementCast) {
+    if (elementCast.actorUid !== a.uid) { elementCast = null; clearSelection(); render(); return; }
+    if (gameMode === "online") {
+      onlineForward({
+        type: elementCast.source === "inherited" ? "inheritedElement" : "skill",
+        from: { r, c },
+        to: { r: tr, c: tc },
+        idx: activeSkillIdx,
+        element: elementCast.element,
+      });
+      return;
+    }
+    useElementEffect(a, tr, tc, elementCast);
+    return;
+  }
   if (isCrowForm(a)) {
     addLog(label(a) + " 处于【鸦天狗】形态，无法使用其它技能。");
     render();
@@ -4968,7 +5311,9 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
       if (window.BFX) window.BFX.cast({ type: "freeze", heroId: a.heroId, caster: { r, c }, target: { r: tr, c: tc } });
       applyDamage(target, rd.damage, "skill", a);
       if (findPos(target)) {
-        if (hasSuperArmor(target)) {
+        if (isWaterGuarded(target)) {
+          addLog("💧 水之庇护：" + label(target) + " 免疫了【冰封】。");
+        } else if (hasSuperArmor(target)) {
           // 孤胆侠·霸体：抵抗冰封（伤害仍已正常结算）
           addLog("🛡 霸体：" + label(target) + " 抵抗了【冰封】（伤害仍已结算）。");
           fx.push({ r: tr, c: tc, text: "霸体", kind: "shield" });
@@ -6787,6 +7132,7 @@ function activateSkill(idx) {
     skillTargets = [];
     dashOptions = [];
     skillSub = null;
+    elementCast = null;
     computeTargets();
     if (same) {
       render();
@@ -6854,6 +7200,10 @@ function activateSkill(idx) {
   if (!canPaySwords(u, s)) {
     addLog("没有剑可用，【" + s.name + "】无法发动。");
     render();
+    return;
+  }
+  if (s.type === "fiveelements") {
+    openElementPanel(u);
     return;
   }
 
@@ -7188,6 +7538,7 @@ function handleBattle(r, c) {
     // 点击非目标 → 取消技能
     skillMode = false;
     skillSub = null;
+    elementCast = null;
     computeTargets();
     render();
     return;
@@ -7887,6 +8238,16 @@ function render() {
         hd.innerHTML = '<i class="holy-rune">✦</i><i class="holy-ring"></i>';
         cell.appendChild(hd);
       }
+      // 元素法师：火焰 / 风眼场地（不占格、不阻挡）
+      const eField = elementFields.find((f) => f.r === r && f.c === c);
+      if (eField) {
+        cell.classList.add("element-field-cell", eField.kind === "fire" ? "fire-field-cell" : "wind-field-cell");
+        const ef = document.createElement("span");
+        ef.className = "element-field-obj " + eField.kind;
+        ef.title = (eField.kind === "fire" ? "火焰领域" : "风眼") + "：剩余 " + eField.turns + " 回合";
+        ef.innerHTML = '<i>' + (eField.kind === "fire" ? "🔥" : "🌪") + '</i><b>' + eField.turns + "</b>";
+        cell.appendChild(ef);
+      }
       // 亡灵之主：死亡十字架是地面层，不占格、不阻挡
       const deathCrosses = crossesAt(r, c);
       if (deathCrosses.length) {
@@ -7959,6 +8320,8 @@ function render() {
         if (u.hammerBuff) cell.classList.add("hammer-buffed");
         if (u.guardMark) cell.classList.add("guard-marked");
         if (u.bondGuardianUid != null || u.bondTargetUid != null) cell.classList.add("bonded");
+        if (u.waterGuard) cell.classList.add("water-guarded");
+        if (u.inheritedElement) cell.classList.add("element-inherited");
         if (u.chaseMark) cell.classList.add("chase-marked");
         if (isStealthed(u)) cell.classList.add("stealth-unit");
         if (u.ravenBuff) cell.classList.add("raven-buffed");
@@ -8036,6 +8399,20 @@ function render() {
           b.className = "bond-glyph";
           b.title = "命运羁绊";
           b.textContent = "💫";
+          cell.appendChild(b);
+        }
+        if (u.waterGuard) {
+          const b = document.createElement("span");
+          b.className = "water-guard-glyph";
+          b.title = "水之庇护：无敌且无法行动";
+          b.textContent = "💧";
+          cell.appendChild(b);
+        }
+        if (u.inheritedElement && ELEMENTS[u.inheritedElement]) {
+          const b = document.createElement("span");
+          b.className = "element-glyph";
+          b.title = "归一·" + ELEMENTS[u.inheritedElement].name;
+          b.textContent = ELEMENTS[u.inheritedElement].icon;
           cell.appendChild(b);
         }
       }
@@ -8285,6 +8662,9 @@ function updateHeroCard() {
   if (u.guardMark) chips.push('<span class="chip">🛡 舍身守护：下一次伤害转移给护卫（剩余 ' + Math.max(1, (u.guardMark.untilTurn || turnSerial + 1) - turnSerial) + ' 回合）</span>');
   if (u.bondGuardianUid != null) chips.push('<span class="chip">💫 命运羁绊：致命伤害时与护卫换位</span>');
   if (u.bondTargetUid != null) chips.push('<span class="chip">💫 命运羁绊：守护着另一名友军</span>');
+  if (u.inheritedElement && ELEMENTS[u.inheritedElement]) chips.push('<span class="chip">' + ELEMENTS[u.inheritedElement].icon + ' 归一·' + ELEMENTS[u.inheritedElement].name + (u.inheritedElementUsed ? "（已使用）" : "（1 次）") + '</span>');
+  if (u.waterGuard) chips.push('<span class="chip">💧 水之庇护：无敌 · 无法行动 · 下回合开始时反击</span>');
+  if (u.heroId === "mage" && u.elementsUsed && u.elementsUsed.length) chips.push('<span class="chip">五元已用：' + u.elementsUsed.map((k) => ELEMENTS[k] ? ELEMENTS[k].name : k).join(" / ") + '</span>');
   if (u.heroId === "hillking") {
     const hm = findHammer(u.player);
     if (hm) chips.push('<span class="chip">🔨 战争之锤位于 (' + (hm.r + 1) + "," + (hm.c + 1) + ')</span>');
@@ -8426,6 +8806,24 @@ function updateSkillBar() {
     skillBarEl.appendChild(b);
   });
 
+  // 元素法师·归一：被授予元素的友军拥有独立的一次性元素技能
+  if (u.inheritedElement && ELEMENTS[u.inheritedElement]) {
+    const e = ELEMENTS[u.inheritedElement];
+    const b = document.createElement("button");
+    b.className = "skill-btn inherited-element-btn";
+    const active = elementCast && elementCast.source === "inherited" && elementCast.actorUid === u.uid;
+    b.disabled = u.inheritedElementUsed || skillBlockedByStatus(u) || isCrowForm(u);
+    b.innerHTML = (window.HeroVisuals ? window.HeroVisuals.skillIcon(u.inheritedElement) : e.icon) +
+      "【归一·" + e.name + "】" + (u.inheritedElementUsed ? " 已使用" : " " + e.skill + "（1 次）");
+    b.title = e.desc;
+    if (active) b.classList.add("active");
+    b.addEventListener("click", () => {
+      if (active) { clearSelection(); render(); return; }
+      activateInheritedElement(u);
+    });
+    skillBarEl.appendChild(b);
+  }
+
   // 龙人·龙胆：主动「额外移动」按钮（仅在“自己的回合”可用）
   if (hasPassiveEffect(u, "longren", "龙胆")) {
     const b = document.createElement("button");
@@ -8516,6 +8914,9 @@ function renderDetailCard() {
   if (u.guardMark) st.push("舍身守护：下一次受到的独立伤害由护卫承担，仅触发一次");
   if (u.bondGuardianUid != null) st.push("命运羁绊：受到致命伤害时与护卫换位，由护卫承担剩余伤害");
   if (u.bondTargetUid != null) st.push("命运羁绊：正在守护羁绊目标");
+  if (u.inheritedElement && ELEMENTS[u.inheritedElement]) st.push("归一元素：" + ELEMENTS[u.inheritedElement].name + "（" + ELEMENTS[u.inheritedElement].skill + "，剩余 " + (u.inheritedElementUsed ? 0 : 1) + " 次）");
+  if (u.waterGuard) st.push("水之庇护：无敌且无法行动，下回合开始时结束并造成九宫格 1 点反击");
+  if (u.heroId === "mage" && u.elementsUsed && u.elementsUsed.length) st.push("五元已使用元素：" + u.elementsUsed.map((k) => ELEMENTS[k] ? ELEMENTS[k].name : k).join(" / "));
   if (u.heroId === "hillking") {
     const hm = findHammer(u.player);
     if (hm) st.push("战争之锤：位于 (" + (hm.r + 1) + "," + (hm.c + 1) + ")，移动到该格可回收");
@@ -8958,6 +9359,47 @@ function dangerAt(r, c, u) {
   }
   return danger;
 }
+function aiElementScore(u, element, rr, cc, w) {
+  if (element === "thunder") {
+    const t = unitAt(rr, cc);
+    if (!t || t.player === u.player) return null;
+    const dmg = 0.5;
+    return w.dmgW * dmg + (t.hp <= dmg ? w.killW : 0) + 22;
+  }
+  if (element === "fire") {
+    if (board[rr][cc]) return null;
+    let n = 0, low = 0;
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      const e = unitAt(rr + dr, cc + dc);
+      if (e && e.player !== u.player) { n++; low += e.hp <= 2 ? 8 : 0; }
+    }
+    return 9 + n * 8 + low;
+  }
+  if (element === "wood") {
+    const cells = [[rr, cc], [rr, cc + 1], [rr + 1, cc], [rr + 1, cc + 1]];
+    let n = 0, score = 0;
+    for (const [er, ec] of cells) {
+      const e = unitAt(er, ec);
+      if (e && e.player !== u.player) { n++; score += w.dmgW * 0.5 + 12; }
+    }
+    return n ? score : null;
+  }
+  if (element === "wind") {
+    let n = 0;
+    for (const v of unitsOf(u.player === 1 ? 2 : 1)) {
+      const p = findPos(v);
+      if (p && Math.abs(p.r - rr) <= 2 && Math.abs(p.c - cc) <= 2) n++;
+    }
+    return n ? 10 + n * 9 : null;
+  }
+  if (element === "water") {
+    const t = unitAt(rr, cc);
+    if (!t || t.player !== u.player) return null;
+    return 18 + Math.max(0, t.maxHp - t.hp) * 5 + (t === u ? -6 : 4);
+  }
+  return null;
+}
+
 function aiSkillScore(u, s, pos, rr, cc, w) {
   const t = unitAt(rr, cc);
   if (t && hiddenFrom(t, u.player) && (s.type === "damage_single" || s.type === "freeze" || s.type === "damage_line" || s.type === "skyarrow")) return null;
@@ -9953,6 +10395,19 @@ function aiEnumerate() {
         return;
       }
 
+      if (s.type === "fiveelements") {
+        if (s.oncePerTurn && skillUsedThisTurn(u, si)) return;
+        for (const element of availableElements(u)) {
+          const tg = computeElementTargets(u, element);
+          for (const [rr, cc] of tg) {
+            const sc = aiElementScore(u, element, rr, cc, w);
+            if (sc == null) continue;
+            acts.push({ type: "element", u, pos, target: { r: rr, c: cc }, element, skillIdx: si, score: sc * w.skillW });
+          }
+        }
+        return;
+      }
+
       activeSkillIdx = si;
       selected = { r: pos.r, c: pos.c };
       computeSkillTargets();
@@ -9962,6 +10417,15 @@ function aiEnumerate() {
         if (sc != null) acts.push({ type: "skill", u, pos, target: { r: rr, c: cc }, skillIdx: si, score: sc * w.skillW });
       }
     });
+    }
+
+    // 归一元素：被授予元素的一次性技能也由 AI 使用
+    if (u.inheritedElement && !u.inheritedElementUsed && !isDisabled(u)) {
+      const tg = computeElementTargets(u, u.inheritedElement);
+      for (const [rr, cc] of tg) {
+        const sc = aiElementScore(u, u.inheritedElement, rr, cc, w);
+        if (sc != null) acts.push({ type: "inheritedElement", u, pos, target: { r: rr, c: cc }, element: u.inheritedElement, score: sc * w.skillW });
+      }
     }
 
     // 移动（本回合若已行动则不可；行军令的额外移动次数可用；定身不能移动）
@@ -9999,6 +10463,14 @@ function aiApplyAction(act) {
     normalAttack(board[pos.r][pos.c], unitAt(act.target.r, act.target.c));
   } else if (act.type === "move") {
     moveHero(act.target.r, act.target.c);
+  } else if (act.type === "element") {
+    activeSkillIdx = act.skillIdx || 0;
+    elementCast = { source: "mage", element: act.element, actorUid: mover.uid };
+    useSkill(act.target.r, act.target.c);
+  } else if (act.type === "inheritedElement") {
+    activeSkillIdx = 0;
+    elementCast = { source: "inherited", element: act.element, actorUid: mover.uid };
+    useSkill(act.target.r, act.target.c);
   } else {
     activeSkillIdx = act.skillIdx || 0;
     skillSub = act.wxtDir ? { kind: "wxt-dir-set", dir: [act.wxtDir.dr, act.wxtDir.dc] } : null;
@@ -10348,6 +10820,8 @@ function applyRemoteState(state) {
   for (const row of board) for (const cell of row) if (isUnit(cell)) hydrateCopiedSkill(cell);
   mists = state.mists ? JSON.parse(JSON.stringify(state.mists)) : {};
   blackFlames = state.blackFlames ? JSON.parse(JSON.stringify(state.blackFlames)) : {};
+  elementFields = Array.isArray(state.elementFields) ? JSON.parse(JSON.stringify(state.elementFields)) : [];
+  elementFieldSeq = state.elementFieldSeq || elementFields.reduce((mx, f) => Math.max(mx, f.id || 0), 0);
   meteors = Array.isArray(state.meteors) ? JSON.parse(JSON.stringify(state.meteors)) : [];
   meteorSeq = state.meteorSeq || meteors.reduce((mx, m) => Math.max(mx, m.id || 0), 0);
   crosses = Array.isArray(state.crosses) ? JSON.parse(JSON.stringify(state.crosses)) : [];
@@ -11026,6 +11500,8 @@ window.GameAPI = {
     reviveOptions = [];
     mists = {};
     blackFlames = {};
+    elementFields = [];
+    elementFieldSeq = 0;
     meteors = Array.isArray(setupMeteors) ? JSON.parse(JSON.stringify(setupMeteors)) : [];
     meteorSeq = meteors.reduce((mx, m) => Math.max(mx, m.id || 0), 0);
     crosses = [];
@@ -11068,6 +11544,11 @@ window.GameAPI = {
         guardMark: spec.guardMark ? JSON.parse(JSON.stringify(spec.guardMark)) : null,
         bondTargetUid: spec.bondTargetUid == null ? null : spec.bondTargetUid,
         bondGuardianUid: spec.bondGuardianUid == null ? null : spec.bondGuardianUid,
+        elementsUsed: Array.isArray(spec.elementsUsed) ? spec.elementsUsed.slice() : [],
+        inheritedElement: spec.inheritedElement || null,
+        inheritedElementUsed: !!spec.inheritedElementUsed,
+        elementLegacyUsed: !!spec.elementLegacyUsed,
+        waterGuard: spec.waterGuard ? JSON.parse(JSON.stringify(spec.waterGuard)) : null,
         lockUsed: !!spec.lockUsed,
         sdStage: spec.sdStage || 0,
         dragonMoves: spec.dragonMoves || 0,

@@ -3042,3 +3042,55 @@ html, body {
 .cell.bonded .unit { box-shadow: 0 0 0 1px rgba(251, 191, 36, .5), 0 0 16px rgba(251, 191, 36, .25); }
 @keyframes guardMarkPulse { 0%,100% { opacity: .65; transform: scale(.9); } 50% { opacity: 1; transform: scale(1.12); } }
 @keyframes bondPulse { 0%,100% { opacity: .6; transform: scale(.88) rotate(-6deg); } 50% { opacity: 1; transform: scale(1.1) rotate(6deg); } }
+
+/* ============================ 元素法师 · 五元 / 归一 ============================ */
+.element-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1250;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(2, 6, 23, .74);
+  backdrop-filter: blur(7px);
+}
+.element-panel {
+  width: min(780px, 95vw);
+  padding: 22px;
+  border-radius: 20px;
+  background: radial-gradient(circle at 50% 0%, rgba(167,139,250,.16), transparent 48%), linear-gradient(160deg, rgba(30,41,59,.99), rgba(2,6,23,.99));
+  border: 1px solid rgba(167,139,250,.38);
+  box-shadow: 0 25px 80px rgba(0,0,0,.72), inset 0 0 42px rgba(167,139,250,.08);
+  color: #e2e8f0;
+}
+.element-head { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; margin-bottom: 16px; }
+.element-head b { color: #ddd6fe; font-size: 22px; display: block; }
+.element-head span { display: block; margin-top: 6px; color: #94a3b8; font-size: 12px; }
+.element-cancel { border: 1px solid rgba(148,163,184,.3); background: transparent; color: #cbd5e1; border-radius: 9px; padding: 7px 12px; cursor: pointer; }
+.element-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
+.element-card {
+  display: flex; align-items: center; gap: 11px; text-align: left; padding: 13px; border-radius: 13px;
+  border: 1px solid rgba(148,163,184,.2); background: rgba(15,23,42,.7); color: #e2e8f0; cursor: pointer;
+  transition: transform .14s, border-color .14s, box-shadow .14s;
+}
+.element-card:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--skill, #a78bfa); box-shadow: 0 8px 24px rgba(167,139,250,.16); }
+.element-card.used, .element-card:disabled { opacity: .38; cursor: not-allowed; filter: grayscale(.65); }
+.element-icon { font-size: 27px; width: 36px; text-align: center; filter: drop-shadow(0 0 8px currentColor); }
+.element-main { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.element-main b { color: #e9d5ff; font-size: 14px; }
+.element-main em { color: #a8b3c4; font-size: 11px; line-height: 1.55; font-style: normal; }
+.element-used { color: #94a3b8; font-size: 10px; margin-left: auto; white-space: nowrap; }
+.element-field-obj { position: absolute; inset: 4px; z-index: 3; display: flex; align-items: center; justify-content: center; pointer-events: none; border-radius: 50%; }
+.element-field-obj.fire { background: radial-gradient(circle, rgba(251,146,60,.45), rgba(127,29,29,.16) 48%, transparent 70%); animation: fieldFire 1.4s ease-in-out infinite; }
+.element-field-obj.wind { background: radial-gradient(circle, rgba(165,243,252,.3), rgba(14,116,144,.12) 48%, transparent 72%); border: 1px dashed rgba(165,243,252,.5); animation: fieldWind 2.4s linear infinite; }
+.element-field-obj i { font-size: 24px; font-style: normal; filter: drop-shadow(0 0 9px currentColor); }
+.element-field-obj b { position: absolute; right: 5px; top: 3px; font-size: 10px; color: #fef3c7; }
+.water-guard-glyph, .element-glyph { position: absolute; z-index: 9; pointer-events: none; font-style: normal; font-size: 15px; filter: drop-shadow(0 0 6px rgba(96,165,250,.8)); }
+.water-guard-glyph { right: 4px; top: 4px; animation: waterFloat 2s ease-in-out infinite; }
+.element-glyph { left: 4px; top: 4px; }
+.cell.water-guarded .unit { box-shadow: 0 0 0 2px rgba(96,165,250,.72), 0 0 20px rgba(59,130,246,.38); }
+.cell.element-inherited .unit { box-shadow: 0 0 0 1px rgba(167,139,250,.58), 0 0 14px rgba(167,139,250,.25); }
+@keyframes fieldFire { 0%,100% { transform: scale(.94); opacity: .72; } 50% { transform: scale(1.06); opacity: 1; } }
+@keyframes fieldWind { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+@keyframes waterFloat { 0%,100% { transform: translateY(0) scale(.9); opacity: .7; } 50% { transform: translateY(-3px) scale(1.1); opacity: 1; } }

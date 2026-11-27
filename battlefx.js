@@ -1427,6 +1427,53 @@
           spawn(tx, ty, 26, { color: "#fde68a", speed: 2.6, life: 520, size: 3 });
         }
         break;
+      case "elementThunder":
+        if (tx != null) {
+          push({ kind: "beam", x: tx, y: ty - geo.cell, x2: tx, y2: ty, color: "#a78bfa", width: 7, dur: 260 });
+          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.08, r1: geo.cell * 0.6, color: "#ddd6fe", width: 2.4, dur: 360 });
+          spawn(tx, ty, 20, { color: "#c4b5fd", speed: 2.6, life: 420, size: 2 });
+        }
+        break;
+      case "elementFire":
+        push({ kind: "ring", x, y, r0: geo.cell * 0.08, r1: geo.cell * 0.62, color: "#fb923c", width: 2.5, dur: 500 });
+        push({ kind: "rune", x, y, r: geo.cell * 0.3, color: "#fdba74", sides: 6, dur: 520 });
+        spawn(x, y, 22, { color: "#fb923c", speed: 1.5, life: 620, size: 3 });
+        break;
+      case "elementWood": {
+        const cells = Array.isArray(m.cells) ? m.cells : [];
+        for (const [rr, cc] of cells) {
+          push({ kind: "ring", x: px(cc), y: py(rr), r0: geo.cell * 0.55, r1: geo.cell * 0.1, color: "#4ade80", width: 2.2, dur: 420 });
+          push({ kind: "rune", x: px(cc), y: py(rr), r: geo.cell * 0.26, color: "#86efac", sides: 6, dur: 480 });
+        }
+        spawn(px(m.target.c), py(m.target.r), 24, { color: "#86efac", speed: 1.2, life: 600, size: 3 });
+        break;
+      }
+      case "elementWind":
+        push({ kind: "portal", x, y, r: geo.cell * 0.5, color: "#a5f3fc", dur: 520 });
+        push({ kind: "ring", x, y, r0: geo.cell * 0.1, r1: geo.cell * 0.9, color: "#a5f3fc", width: 2.2, dur: 520 });
+        spawn(x, y, 24, { color: "#cffafe", speed: 2.2, life: 560, size: 2 });
+        break;
+      case "elementWater":
+      case "waterGuard":
+        if (tx != null) {
+          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.1, r1: geo.cell * 0.72, color: "#60a5fa", width: 2.4, dur: 460 });
+          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.65, r1: geo.cell * 0.15, color: "#93c5fd", width: 1.8, dur: 520 });
+          spawn(tx, ty, 18, { color: "#93c5fd", speed: 1.2, life: 600, size: 2 });
+        }
+        break;
+      case "waterBurst":
+        push({ kind: "wave", x, y, r1: geo.cell * 1.3, color: "#60a5fa", dur: 480 });
+        push({ kind: "ring", x, y, r0: geo.cell * 0.1, r1: geo.cell * 1.2, color: "#93c5fd", width: 3, dur: 520 });
+        spawn(x, y, 30, { color: "#93c5fd", speed: 2.5, life: 600, size: 3 });
+        break;
+      case "elementLegacy":
+        push({ kind: "ring", x, y, r0: geo.cell * 0.1, r1: geo.cell * 1.1, color: "#ddd6fe", width: 3, dur: 620 });
+        if (tx != null) {
+          push({ kind: "line", x, y, x2: tx, y2: ty, color: "#c4b5fd", width: 3, dur: 520, alpha: .75 });
+          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.1, r1: geo.cell * 0.58, color: "#a78bfa", width: 2, dur: 520 });
+        }
+        spawn(x, y, 30, { color: "#c4b5fd", speed: 1.7, life: 700, size: 3 });
+        break;
       case "crosstep":
         // 狂战士·狂徒：脚下红色十字法阵 → 残影横移 → 落点红色冲击波
         if (tx != null) {

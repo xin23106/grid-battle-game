@@ -218,7 +218,7 @@
     bloodburst:"area", ziwei:"teleport", exile:"channel", tianwei:"area", shenluo:"area",
     wxt:"pull", metalpierce:"ranged", metalarmor:"defense", metaltide:"buff", meditate:"lotus",
     divinepalm:"thrust", stealth:"stealth", mistdash:"dash", shadowfang:"slash",
-    push:"thrust", charge:"dash", raikiri:"ranged", thunderblade:"dash", crosstep:"dash", riftslash:"dash", voidstep:"teleport", holyguard:"defense", warhammer:"thrust", titan:"defense", guardianmark:"defense", destinybond:"channel",
+    push:"thrust", charge:"dash", raikiri:"ranged", thunderblade:"dash", crosstep:"dash", riftslash:"dash", voidstep:"teleport", holyguard:"defense", warhammer:"thrust", titan:"defense", guardianmark:"defense", destinybond:"channel", fiveelements:"channel",
     susano_dash:"dash", susano_pull:"pull", susano_arrow:"ranged", susano_crow:"summon",
   };
   function poseFor(heroId, skill, stage) {
@@ -322,6 +322,13 @@
       inner = '<path d="M10 3 H14 V9 H20 V13 H14 V21 H10 V13 H4 V9 H10 Z"/>';
     } else if (/holyguard/.test(t)) {
       inner = '<path d="M12 2 Q19 5 19 12 Q19 18 12 22 Q5 18 5 12 Q5 5 12 2 Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 6 V18 M6 12 H18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/>';
+    } else if (/^(fire|wood|wind|water)$/.test(t)) {
+      if (t === "fire") inner = '<path d="M13 2 Q7 8 9 14 Q10 18 14 20 Q12 15 15 12 Q17 16 19 17 Q20 10 13 2 Z"/>';
+      else if (t === "wood") inner = '<path d="M12 21 V8 M12 12 Q6 8 4 3 M12 11 Q18 7 20 2 M12 17 Q7 15 5 11 M12 16 Q17 14 19 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
+      else if (t === "wind") inner = '<path d="M3 8 H12 Q16 8 16 4 M3 12 H18 Q21 12 21 15 Q21 18 18 18 M4 16 H11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
+      else inner = '<path d="M12 2 Q18 7 18 13 Q18 20 12 22 Q6 20 6 13 Q6 7 12 2 Z" fill="none" stroke="currentColor" stroke-width="2"/>';
+    } else if (/fiveelements|mage/.test(t)) {
+      inner = '<path d="M12 2 L15 9 L22 12 L15 15 L12 22 L9 15 L2 12 L9 9 Z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" fill="currentColor"/>';
     } else if (/guardianmark/.test(t)) {
       inner = '<path d="M12 2 L20 6 V13 Q20 19 12 22 Q4 19 4 13 V6 Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 12 L11 15 L16 9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>';
     } else if (/destinybond/.test(t)) {
