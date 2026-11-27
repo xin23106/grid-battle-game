@@ -246,14 +246,16 @@ function processTimeAnchorsEndS(s, player) {
       removeTimeAnchorS(s, anchor);
       continue;
     }
-    const dest = nearestTimeReturnCellS(s, anchor.r, anchor.c);
     const from = findPos(s, caster);
+    const dest = (from && from.r === anchor.r && from.c === anchor.c)
+      ? { r: from.r, c: from.c }
+      : nearestTimeReturnCellS(s, anchor.r, anchor.c);
     if (dest && from) {
       if (from.r !== dest.r || from.c !== dest.c) {
         s.board[dest.r][dest.c] = caster;
         s.board[from.r][from.c] = null;
       }
-      slog(s, "🌌 " + uname(s, caster) + " 沿时空锚点回到 (" + (dest.r + 1) + "," + (dest.c + 1) + ")" + (dest.r === anchor.r && dest.c === anchor.c ? "" : "（锚点被占据，改在最近空格）"));
+      slog(s, "🌌 " + uname(s, caster) + " " + (from.r === dest.r && from.c === dest.c ? "仍停留在时空锚点原位" : "沿时空锚点回到 (" + (dest.r + 1) + "," + (dest.c + 1) + ")") + (dest.r === anchor.r && dest.c === anchor.c ? "" : "（锚点被占据，改在最近空格）"));
     } else {
       slog(s, "🌌 " + uname(s, caster) + " 没有合法回归落点，位置保持不变");
     }
@@ -2307,19 +2309,22 @@ function applyAction(state, player, action) {
       if (timeAnchorForS(s, u)) return err("裂空斩：当前已有时空锚点，必须等待它回归");
       const rp = action.reposition || {};
       const lr = rp.r, lc = rp.c;
-      if (!inB(lr, lc) || s.board[lr][lc] || Math.abs(lr - from.r) > 1 || Math.abs(lc - from.c) > 1 || (lr === from.r && lc === from.c)) {
-        return err("裂空斩：请选择锚点九宫格内的合法空格");
+      const stay = lr === from.r && lc === from.c;
+      if (!inB(lr, lc) || (!stay && s.board[lr][lc]) || Math.abs(lr - from.r) > 1 || Math.abs(lc - from.c) > 1 || (stay && s.board[lr][lc] !== u)) {
+        return err("裂空斩：请选择锚点九宫格内的合法落点（可原地劈）");
       }
       if (!isUnit(t) || t.player === player || isMirrorS(t) || hiddenFromS(t, player) || Math.abs(r - lr) + Math.abs(c - lc) !== 1) {
         return err("裂空斩：请选择落点旁的一名敌方英雄");
       }
       addTimeAnchorS(s, u, "rift", from.r, from.c);
-      s.board[lr][lc] = u;
-      s.board[from.r][from.c] = null;
+      if (!stay) {
+        s.board[lr][lc] = u;
+        s.board[from.r][from.c] = null;
+      }
       // 先挂时停再结算伤害，保证受伤触发的被动反击进入延迟队列。
       if (findPos(s, t)) applyTimeStopS(s, t, u, sk.name);
       applyDamage(s, t, sk.damage == null ? 1.5 : sk.damage, u);
-      slog(s, "🌌 " + uname(s, u) + " 发动【裂空斩】，位移到 (" + (lr + 1) + "," + (lc + 1) + ") 并斩击 " + uname(s, t));
+      slog(s, "🌌 " + uname(s, u) + " 发动【裂空斩】，" + (stay ? "原地劈击" : "位移到 (" + (lr + 1) + "," + (lc + 1) + ")") + " 并斩击 " + uname(s, t));
     } else if (sk.type === "voidstep") {
       if (timeAnchorForS(s, u)) return err("破空：当前已有时空锚点，必须等待它回归");
       if (!inB(r, c) || (r === from.r && c === from.c) || s.board[r][c]) return err("破空：请选择棋盘内未被占据的合法空格");

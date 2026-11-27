@@ -1032,17 +1032,19 @@ function processTimeAnchorsEnd(player) {
       removeTimeAnchor(anchor, "silent");
       continue;
     }
-    const dest = nearestTimeReturnCell(anchor.r, anchor.c);
     const from = findPos(caster);
+    const dest = (from && from.r === anchor.r && from.c === anchor.c)
+      ? { r: from.r, c: from.c }
+      : nearestTimeReturnCell(anchor.r, anchor.c);
     if (dest && from) {
       if (from.r !== dest.r || from.c !== dest.c) {
         board[dest.r][dest.c] = caster;
         board[from.r][from.c] = null;
       }
       if (window.BFX) {
-        try { window.BFX.cast({ type: "timeReturn", heroId: "timewalker", caster: from, target: dest }); } catch (e) { /* ignore */ }
+        try { window.BFX.cast({ type: "timeReturn", heroId: "timewalker", caster: from, target: dest, stay: from.r === dest.r && from.c === dest.c }); } catch (e) { /* ignore */ }
       }
-      addLog("🌌 " + label(caster) + " 沿时空锚点回到 (" + (dest.r + 1) + "," + (dest.c + 1) + ")" + (dest.r === anchor.r && dest.c === anchor.c ? "。" : "（锚点被占据，改在最近空格）。"));
+      addLog("🌌 " + label(caster) + " " + (from.r === dest.r && from.c === dest.c ? "仍停留在时空锚点原位" : "沿时空锚点回到 (" + (dest.r + 1) + "," + (dest.c + 1) + ")") + (dest.r === anchor.r && dest.c === anchor.c ? "。" : "（锚点被占据，改在最近空格）。"));
     } else {
       addLog("🌌 " + label(caster) + " 的时空锚点没有合法回归落点，位置保持不变。");
     }
@@ -2333,11 +2335,12 @@ function computeSkillTargets() {
           }
         }
       } else {
-        // 第二阶段：锚点九宫格内的合法空格；只显示至少有一名敌人可斩击的落点
+        // 第二阶段：锚点九宫格内的合法落点；包含原地（原地劈），只显示至少有一名敌人可斩击的落点
         for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
-          if (!dr && !dc) continue;
+          const stay = !dr && !dc;
           const rr = r + dr, cc = c + dc;
-          if (!inBounds(rr, cc) || board[rr][cc]) continue;
+          if (!inBounds(rr, cc)) continue;
+          if (!stay && board[rr][cc]) continue;
           let hasTarget = false;
           for (const [er, ec] of DIRS) {
             const t = unitAt(rr + er, cc + ec);
@@ -4656,8 +4659,9 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
       }
       if (!(skillSub && skillSub.kind === "rift-landing")) {
         const dr = tr - r, dc = tc - c;
-        if (Math.abs(dr) > 1 || Math.abs(dc) > 1 || (!dr && !dc) || !inBounds(tr, tc) || board[tr][tc]) {
-          addLog("裂空斩·第二阶段：请选择锚点九宫格内的一个合法空格。");
+        const stay = !dr && !dc;
+        if (Math.abs(dr) > 1 || Math.abs(dc) > 1 || !inBounds(tr, tc) || (!stay && board[tr][tc])) {
+          addLog("裂空斩·第二阶段：请选择锚点九宫格内的一个合法落点（可原地劈）。");
           render();
           return;
         }
@@ -4671,7 +4675,7 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
           render();
           return;
         }
-        skillSub = { kind: "rift-landing", r: tr, c: tc };
+        skillSub = { kind: "rift-landing", r: tr, c: tc, stay };
         computeSkillTargets();
         render();
         return;
@@ -4689,17 +4693,20 @@ function useSkill(tr, tc, copyIdx, mirrorSwap) {
         render();
         return;
       }
-      if (window.BFX) window.BFX.cast({ type: "riftslash", heroId: a.heroId, caster: { r, c }, target: { r: lr, c: lc }, from: { r, c }, to: { r: lr, c: lc } });
-      board[lr][lc] = a;
-      board[r][c] = null;
-      if (lr !== r) setFace(a, lr > r ? 1 : -1, 0);
-      else setFace(a, 0, lc > c ? 1 : -1);
+      const stay = lr === r && lc === c;
+      if (window.BFX) window.BFX.cast({ type: "riftslash", heroId: a.heroId, caster: { r, c }, target: { r: lr, c: lc }, from: { r, c }, to: { r: lr, c: lc }, stay });
+      if (!stay) {
+        board[lr][lc] = a;
+        board[r][c] = null;
+        if (lr !== r) setFace(a, lr > r ? 1 : -1, 0);
+        else setFace(a, 0, lc > c ? 1 : -1);
+      }
       const nominal = s.damage == null ? 1.5 : s.damage;
       // 先挂时停再结算伤害：西楚霸王等“受伤触发”的被动会进入时停延迟队列，
       // 不会在裂空斩的时停生效前提前反击。
       if (findPos(target)) applyTimeStop(target, a, s.name);
       const dealt = applyDamage(target, nominal, "skill", a);
-      addLog("🌌 " + label(a) + " 释放【裂空斩】，在锚点九宫格内位移到 (" + (lr + 1) + "," + (lc + 1) + ")，对 " + label(target) + " 造成 " + nominal + " 点伤害" + (dealt > 0 ? "（实际扣血 " + dealt + "）" : "（未造成生命伤害）") + "。");
+      addLog("🌌 " + label(a) + " 释放【裂空斩】，" + (stay ? "原地劈击" : "在锚点九宫格内位移到 (" + (lr + 1) + "," + (lc + 1) + ")") + "，对 " + label(target) + " 造成 " + nominal + " 点伤害" + (dealt > 0 ? "（实际扣血 " + dealt + "）" : "（未造成生命伤害）") + "。");
       skillSub = null;
       break;
     }
@@ -8442,15 +8449,16 @@ function aiEnumerate() {
       if (s.type === "riftslash") {
         if (timeAnchorFor(u)) return;
         for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
-          if (!dr && !dc) continue;
+          const stay = !dr && !dc;
           const lr = pos.r + dr, lc = pos.c + dc;
-          if (!inBounds(lr, lc) || board[lr][lc]) continue;
+          if (!inBounds(lr, lc) || (!stay && board[lr][lc])) continue;
           for (const [er, ec] of DIRS) {
             const e = unitAt(lr + er, lc + ec);
             if (!e || e.sword || e.player === u.player || hiddenFrom(e, u.player)) continue;
             const kill = e.hp <= (s.damage == null ? 1.5 : s.damage);
             let sc = (s.damage || 1.5) * w.dmgW + (kill ? w.killW : 0) + 30 + (isTimeStopped(e) ? 0 : 18);
             sc -= dangerAt(lr, lc, u) * (w.riskW / 12);
+            if (stay) sc += 2; // 原地劈更安全，AI 略偏好
             acts.push({ type: "skill", u, pos, target: { r: lr + er, c: lc + ec }, skillIdx: si, reposition: { r: lr, c: lc }, score: sc * w.skillW });
           }
         }
