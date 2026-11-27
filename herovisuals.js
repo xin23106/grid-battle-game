@@ -34,6 +34,7 @@
     mirror:    { c1:"#c4b5fd", c2:"#312e81", c3:"#f5f3ff", weapon:"orb", aura:"void", build:"robed", head:"mask", acc:"cape", sigil:"diamond", dur:300, tilt:3 },
     undead:    { c1:"#a3e635", c2:"#1e1b4b", c3:"#e9d5ff", weapon:"staff", aura:"void", build:"robed", head:"hood", acc:"cape", sigil:"drop", dur:360, tilt:3 },
     minion:    { c1:"#a3e635", c2:"#1f2937", c3:"#d9f99d", weapon:"claw", aura:"void", build:"lean", head:"mask", acc:"none", sigil:"diamond", dur:300, tilt:4 },
+    timewalker:{ c1:"#22d3ee", c2:"#1e1b4b", c3:"#cffafe", weapon:"scepter", aura:"void", build:"robed", head:"halo", acc:"cape", sigil:"eye", dur:280, tilt:3 },
   };
   const DEFAULT = { c1:"#93c5fd", c2:"#334155", c3:"#e2e8f0", weapon:"sword", aura:"default", build:"lean", head:"hood", acc:"none", sigil:"diamond", dur:340, tilt:4 };
 
@@ -217,7 +218,7 @@
     bloodburst:"area", ziwei:"teleport", exile:"channel", tianwei:"area", shenluo:"area",
     wxt:"pull", metalpierce:"ranged", metalarmor:"defense", metaltide:"buff", meditate:"lotus",
     divinepalm:"thrust", stealth:"stealth", mistdash:"dash", shadowfang:"slash",
-    push:"thrust", charge:"dash", raikiri:"ranged", thunderblade:"dash", crosstep:"dash",
+    push:"thrust", charge:"dash", raikiri:"ranged", thunderblade:"dash", crosstep:"dash", riftslash:"dash", voidstep:"teleport",
     susano_dash:"dash", susano_pull:"pull", susano_arrow:"ranged", susano_crow:"summon",
   };
   function poseFor(heroId, skill, stage) {
@@ -262,6 +263,8 @@
       "mirror:mirrorshift": "mirror-shift",
       "undead:soulrevive": "undead-revive",
       "undead:undeadarmy": "undead-army",
+      "timewalker:riftslash": "timewalker-rift",
+      "timewalker:voidstep": "timewalker-void",
     };
     const key = heroId + ":" + type + (type === "thunderblade" ? ":" + (stage || 0) : "");
     if (special[key]) return special[key];
@@ -298,6 +301,8 @@
       inner = '<path d="M12 2 L15 9 L22 12 L15 15 L12 22 L9 15 L2 12 L9 9 Z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2"/><path d="M4 20 L8 16 M20 20 L16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>';
     } else if (/steal/.test(t)) {
       inner = '<path d="M4 19 Q9 13 11 8 L13 4 L16 7 L12 10 Q9 15 8 21 Z"/><path d="M15 14 Q19 12 21 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="18" cy="18" r="2.2"/>';
+    } else if (/riftslash|voidstep|time/.test(t)) {
+      inner = '<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 2 V6 M12 18 V22 M2 12 H6 M18 12 H22 M5 5 L8 8 M16 16 L19 19 M19 5 L16 8 M8 16 L5 19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 8 L14 12 L12 16 L10 12 Z" fill="currentColor"/>';
     } else if (/skyarrow/.test(t)) {
       inner = '<path d="M4 20 L18 6 M13 5 L19 5 L19 11 M7 21 L3 21 L3 17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 17 L18 14 L20 17 L23 18 L20 19 L18 22 L16 19 L13 18 Z" fill="currentColor"/>';
     } else if (/meteor/.test(t)) {

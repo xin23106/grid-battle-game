@@ -86,6 +86,8 @@ function copyableSkillsS(u) {
 }
 function hasPassiveEffectS(u, heroId, passiveName) {
   if (!u || u.sword || isSilenced(u)) return false;
+  // 时间停止：被动全部停摆；西楚霸王的鬼雄例外，仍需锁血，反击延迟结算。
+  if (isTimeStopped(u) && !(heroId === "xiangyu" && passiveName === "鬼雄")) return false;
   if (u.heroId === heroId) {
     const ps = heroPassivesS(heroDef(u.heroId));
     const known = {
@@ -136,6 +138,128 @@ function addDeathCrossS(s, target, pos) {
 function removeCrossesForDeadS(s, deadUid) {
   if (!deadUid || !s.crosses) return;
   s.crosses = s.crosses.filter((x) => x.deadUid !== deadUid);
+}
+
+/* ============================ 时间行者：锚点 / 时间停止 ============================ */
+function timeAnchorForS(s, u) {
+  return u ? (s.timeAnchors || []).find((a) => a.uid === u.uid) || null : null;
+}
+function nearestTimeReturnCellS(s, r, c) {
+  if (inB(r, c) && !s.board[r][c]) return { r, c };
+  let best = null;
+  for (let rr = 0; rr < SIZE; rr++) {
+    for (let cc = 0; cc < SIZE; cc++) {
+      if (s.board[rr][cc]) continue;
+      const d = Math.abs(rr - r) + Math.abs(cc - c);
+      if (!best || d < best.d || (d === best.d && (rr < best.r || (rr === best.r && cc < best.c)))) {
+        best = { r: rr, c: cc, d };
+      }
+    }
+  }
+  return best ? { r: best.r, c: best.c } : null;
+}
+function addTimeAnchorS(s, u, kind, r, c) {
+  if (!u || timeAnchorForS(s, u)) return null;
+  if (!s.timeAnchors) s.timeAnchors = [];
+  if (!s.timeAnchorSeq) s.timeAnchorSeq = 0;
+  const a = { id: ++s.timeAnchorSeq, uid: u.uid, owner: u.player, heroId: u.heroId, kind, r, c, castTurn: s.turnSerial || 0, blastDone: false };
+  s.timeAnchors.push(a);
+  slog(s, "🌌 " + uname(s, u) + " 在 (" + (r + 1) + "," + (c + 1) + ") 留下时空锚点");
+  return a;
+}
+function removeTimeAnchorS(s, anchor) {
+  if (!anchor || !s.timeAnchors) return;
+  s.timeAnchors = s.timeAnchors.filter((a) => a.id !== anchor.id);
+}
+function removeTimeAnchorsForS(s, uid) {
+  if (!s.timeAnchors) return;
+  s.timeAnchors = s.timeAnchors.filter((a) => a.uid !== uid);
+}
+function applyTimeStopS(s, target, source, skillName) {
+  if (!target || !findPos(s, target) || isFormImmuneS(target)) return false;
+  if (target.timeStop) {
+    target.timeStop.turns = Math.max(target.timeStop.turns || 1, 1);
+    return true;
+  }
+  target.timeStop = { turns: 1, label: "时间停止", sourceUid: source ? source.uid : 0, sourcePlayer: source ? source.player : 0, skill: skillName || "", castTurn: s.turnSerial || 0 };
+  target.timeStopPending = target.timeStopPending || [];
+  slog(s, "⏳ " + uname(s, target) + " 进入【时间停止】：下个目标行动回合无法行动，所有回合计时暂停");
+  return true;
+}
+function queueTimeStopEffectS(target, effect) {
+  if (!target || !effect) return;
+  target.timeStopPending = target.timeStopPending || [];
+  target.timeStopPending.push(effect);
+}
+function endTimeStopS(s, target) {
+  if (!target) return;
+  target.timeStop = null;
+  const pending = Array.isArray(target.timeStopPending) ? target.timeStopPending.slice() : [];
+  target.timeStopPending = [];
+  slog(s, "⏳ " + uname(s, target) + " 的【时间停止】结束，状态计时恢复");
+  for (const eff of pending) {
+    if (!findPos(s, target)) break;
+    if (eff.kind === "guixiong") {
+      const victims = (eff.victimUids || []).map((uid) => findUnitByUidS(s, uid)).filter((v) => v && findPos(s, v));
+      let hit = 0;
+      for (const v of victims) {
+        applyDamage(s, v, eff.damage || 2, target);
+        hit++;
+      }
+      slog(s, "👹 延迟结算·鬼雄反击：对九宫格内 " + hit + " 名敌人各造成 " + (eff.damage || 2) + " 点伤害");
+    }
+  }
+}
+function processTimeAnchorsStartS(s, player) {
+  for (const anchor of (s.timeAnchors || []).slice()) {
+    if (anchor.owner !== player) continue;
+    if ((s.turnSerial || 0) <= (anchor.castTurn || 0)) continue;
+    const caster = findUnitByUidS(s, anchor.uid);
+    if (!caster || !findPos(s, caster)) {
+      removeTimeAnchorS(s, anchor);
+      continue;
+    }
+    if (anchor.kind !== "void" || anchor.blastDone) continue;
+    const p = findPos(s, caster);
+    const cells = [];
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      const rr = p.r + dr, cc = p.c + dc;
+      if (inB(rr, cc)) cells.push([rr, cc]);
+    }
+    slog(s, "🌌 破空·延迟时空爆发：" + uname(s, caster) + " 当前位置的九宫格开始塌缩");
+    for (const [rr, cc] of cells) {
+      const t = s.board[rr][cc];
+      if (isUnit(t) && !t.sword && t.player !== caster.player) {
+        applyDamage(s, t, 2, caster);
+      }
+    }
+    anchor.blastDone = true;
+    if (checkVictory(s)) return;
+  }
+}
+function processTimeAnchorsEndS(s, player) {
+  for (const anchor of (s.timeAnchors || []).slice()) {
+    if (anchor.owner !== player) continue;
+    if ((s.turnSerial || 0) <= (anchor.castTurn || 0)) continue;
+    const caster = findUnitByUidS(s, anchor.uid);
+    if (!caster || !findPos(s, caster)) {
+      removeTimeAnchorS(s, anchor);
+      continue;
+    }
+    const dest = nearestTimeReturnCellS(s, anchor.r, anchor.c);
+    const from = findPos(s, caster);
+    if (dest && from) {
+      if (from.r !== dest.r || from.c !== dest.c) {
+        s.board[dest.r][dest.c] = caster;
+        s.board[from.r][from.c] = null;
+      }
+      slog(s, "🌌 " + uname(s, caster) + " 沿时空锚点回到 (" + (dest.r + 1) + "," + (dest.c + 1) + ")" + (dest.r === anchor.r && dest.c === anchor.c ? "" : "（锚点被占据，改在最近空格）"));
+    } else {
+      slog(s, "🌌 " + uname(s, caster) + " 没有合法回归落点，位置保持不变");
+    }
+    removeTimeAnchorS(s, anchor);
+    if (checkVictory(s)) return;
+  }
 }
 function reviveAllyFromGraveS(s, rec, tr, tc, hp) {
   if (!rec) return null;
@@ -203,8 +327,11 @@ function isRooted(u) {
 function isSilenced(u) {
   return !!(u && u.statuses && u.statuses.silence && u.statuses.silence.turns > 0);
 }
+function isTimeStopped(u) {
+  return !!(u && u.timeStop && (u.timeStop.turns || 0) > 0);
+}
 function isDisabled(u) {
-  return isGrabbed(u) || isStunned(u);
+  return isGrabbed(u) || isStunned(u) || isTimeStopped(u);
 }
 /* 定身：不能移动 / 主动位移，但仍可普通攻击与非位移技能 */
 const SELF_MOVE_SKILLS = ["dash", "blink", "ziwei", "tianwei", "shuidiao", "duanlang", "thunder", "mistdash", "stealth", "thunderblade", "susano_dash", "push", "crosstep"];
@@ -215,6 +342,7 @@ function isSelfMoveSkillS(u, sk) {
   return false;
 }
 function actionBlockReason(u) {
+  if (isTimeStopped(u)) return "时间停止";
   if (isGrabbed(u)) return "抓取";
   if (isStunned(u)) return "眩晕";
   if (isSilenced(u)) return "沉默";
@@ -224,6 +352,7 @@ function actionBlockReason(u) {
 /* 雷电之主：本方的强化英雄 */
 function empoweredActorFor(s, player) {
   for (const u of unitsOf(s, player)) {
+    if (isTimeStopped(u)) continue;
     if (u.heroId === "thunder" && (u.empowerTurns || 0) > 0) return u;
   }
   return null;
@@ -343,6 +472,11 @@ function applyNegativeStatus(s, target, kind, opts) {
 }
 function tickStatuses(s, player) {
   for (const u of unitsOf(s, player)) {
+    if (isTimeStopped(u)) {
+      u.timeStop.turns -= 1;
+      if (u.timeStop.turns <= 0) endTimeStopS(s, u);
+      continue;
+    }
     if (!u.statuses) continue;
     for (const k of Object.keys(u.statuses)) {
       const st = u.statuses[k];
@@ -458,6 +592,7 @@ const MIST_TURNS = 3;
 function isMeditatingS(u) { return !!(u && u.meditate); }
 function resolveMeditateTurnS(s, player) {
   for (const u of unitsOf(s, player)) {
+    if (isTimeStopped(u)) continue;
     const md = u.meditate;
     if (!md) continue;
     if ((s.turnSerial || 0) <= (md.castTurn || 0)) continue;
@@ -667,6 +802,7 @@ function tickMeteorsS(s, endedPlayer) {
 }
 function applyBlackFlameS(s, player) {
   for (const u of unitsOf(s, player).slice()) {
+    if (isTimeStopped(u)) continue;
     const p = findPos(s, u);
     if (!p) continue;
     const f = blackFlameAtS(s, p.r, p.c);
@@ -713,6 +849,7 @@ function endCrowFormS(s, u) {
 }
 function resolveCrowTurnS(s, player) {
   for (const u of unitsOf(s, player)) {
+    if (isTimeStopped(u)) continue;
     const f = u.crowForm;
     if (!f) continue;
     if ((s.turnSerial || 0) <= (f.castTurn || 0)) continue;
@@ -854,6 +991,7 @@ function tickMistsS(s) {
 }
 function applyMistPoisonS(s, player) {
   for (const u of unitsOf(s, player).slice()) {
+    if (isTimeStopped(u)) continue;
     const p = findPos(s, u);
     if (!p) continue;
     const m = mistAtS(s, p.r, p.c);
@@ -894,6 +1032,7 @@ function consumeRavenAttackStateS(s, u) {
 /* 金元素·金属狂潮：按自身行动回合计时（本回合使用后跨 3 个自身回合） */
 function tickMetalTurnS(s, player) {
   for (const u of unitsOf(s, player)) {
+    if (isTimeStopped(u)) continue;
     if (!u.metalTide || u.metalTide <= 0) continue;
     u.metalTide -= 1;
     if (u.metalTide <= 0) {
@@ -905,6 +1044,7 @@ function tickMetalTurnS(s, player) {
 function tickRavenTurnS(s, player, countDuration) {
   if (countDuration) {
     for (const u of unitsOf(s, player)) {
+      if (isTimeStopped(u)) continue;
       if (!u.stealth) continue;
       if (u.stealth.fresh) { u.stealth.fresh = false; continue; }
       u.stealth.turns -= 1;
@@ -915,6 +1055,7 @@ function tickRavenTurnS(s, player, countDuration) {
     }
   }
   for (const u of unitsOf(s, player)) {
+    if (isTimeStopped(u)) continue;
     if (u.ravenDoubleUsed) { u.ravenDouble = false; u.ravenDoubleUsed = false; }
   }
 }
@@ -957,6 +1098,7 @@ function createState() {
            turnActionsMax: 1, turnActionsLeft: 1, turnActorUid: 0, empowerTurnActive: false,
            talisman: { 1: drawTalismanId(), 2: drawTalismanId() }, talismanUsed: { 1: false, 2: false }, wildcards: { 1: 3, 2: 3 },
            assaultPlayer: 0, guardPlayer: 0, extraMoves: 0, extraTurnPending: false, graveyard: [], mists: {}, blackFlames: {}, meteors: [], meteorSeq: 0, crosses: [], crossSeq: 0,
+           timeAnchors: [], timeAnchorSeq: 0,
            stats: { damage: { 1: 0, 2: 0 }, kills: { 1: 0, 2: 0 }, startedAt: 0, endedAt: 0, lastKiller: null },
            log: [], logSeq: 0, _undo: [] };
 }
@@ -1048,9 +1190,9 @@ function normalDamage(s, attacker, target) {
   return BASE_ATTACK + (d ? d.bonus : 0) + assassin + guixiong + berserker + attackerBonus(s, attacker);
 }
 /* 鬼雄触发时的九宫格反击：对周围 8 格内敌人各 2 点（走统一结算） */
-function guixiongCounter(s, u) {
+function guixiongVictimsS(s, u) {
   const p = findPos(s, u);
-  if (!p) return 0;
+  if (!p) return [];
   const victims = [];
   for (let dr = -1; dr <= 1; dr++) {
     for (let dc = -1; dc <= 1; dc++) {
@@ -1059,6 +1201,11 @@ function guixiongCounter(s, u) {
       if (isUnit(t) && t.player !== u.player) victims.push(t);
     }
   }
+  return victims;
+}
+function guixiongCounter(s, u, readyVictims) {
+  if (!u || !findPos(s, u)) return 0;
+  const victims = readyVictims || guixiongVictimsS(s, u);
   let hit = 0;
   for (const t of victims) {
     if (!findPos(s, t)) continue;
@@ -1183,6 +1330,7 @@ function consumeShieldLayersS(target, absorbed) {
 }
 function tickShieldLayersS(s, player) {
   for (const u of unitsOf(s, player)) {
+    if (isTimeStopped(u)) continue;
     const layers = u.shieldLayers || [];
     if (!layers.length) continue;
     const expired = [];
@@ -1253,7 +1401,16 @@ function applyDamage(s, target, amount, source) {
     slog(s, "👹 鬼雄：" + uname(s, target) + " 生命锁定为 1，并对九宫格内敌人反击 2 点");
   }
   if (dmg > 0) { target.hp -= dmg; slog(s, uname(s, target) + " 受到 " + dmg + " 点伤害（余 " + target.hp + "）"); }
-  if (guixiongTriggered && findPos(s, target)) guixiongCounter(s, target);
+  if (guixiongTriggered && findPos(s, target)) {
+    if (isTimeStopped(target)) {
+      const victims = guixiongVictimsS(s, target);
+      queueTimeStopEffectS(target, { kind: "guixiong", victimUids: victims.map((v) => v.uid), damage: 2 });
+      slog(s, "👹 鬼雄反击已触发，但因【时间停止】延迟到时停结束后结算");
+    } else {
+      guixiongCounter(s, target);
+    }
+    slog(s, "👹 西楚霸王进入【绝境】：普通攻击 +1");
+  }
   if (target.hp <= 0 && pos) handleUnitDeathS(s, target, source, pos);
   // 真实战绩：实际造成的生命伤害
   if (dmg > 0 && source && !source.sword && source.player !== target.player && s.stats) {
@@ -1280,6 +1437,9 @@ function handleUnitDeathS(s, target, source, pos) {
   target.chaseMark = 0;
   if (target.heroId === "assassin") clearChaseMarks(s, target.uid);
   s.graveyard.push({ player: target.player, heroId: target.heroId, deadUid: target.uid, r: pos.r, c: pos.c, usesLeft: target.usesLeft || 0, usesArr: target.usesArr ? target.usesArr.slice() : null, swords: target.swords || 0, lockUsed: !!target.lockUsed, guixiongUsed: !!target.guixiongUsed, snapshot: JSON.parse(JSON.stringify(target)) });
+  removeTimeAnchorsForS(s, target.uid);
+  target.timeStop = null;
+  target.timeStopPending = [];
   s.board[pos.r][pos.c] = null;
   slog(s, "☠ " + uname(s, target) + " 阵亡！");
   addDeathCrossS(s, target, pos);
@@ -1463,6 +1623,9 @@ function beginTurn(s) {
   const isExtraTurn = !!s.turnIsExtra; // 行军令额外回合：不推进鸦天狗
   s.turnIsExtra = false;
   s._undo = []; // 新回合：不能悔到上一回合
+  // 时间行者：破空延迟爆发在自身下一回合开始时触发
+  processTimeAnchorsStartS(s, s.currentPlayer);
+  if (checkVictory(s)) return;
   // 金蝉·禅坐：自身行动回合开始时结算九宫格（开启当回合不结算）
   resolveMeditateTurnS(s, s.currentPlayer);
   if (checkVictory(s)) return;
@@ -1587,11 +1750,12 @@ function endTurnOnce(s) {
   if (checkVictory(s)) return;
   // 临时石柱：每完成一个完整回合结束衰减一次（生成当回合不扣）
   tickPillarsS(s);
-  for (const u of unitsOf(s, s.currentPlayer)) if (u.frozen > 0) u.frozen--;
+  for (const u of unitsOf(s, s.currentPlayer)) if (!isTimeStopped(u) && u.frozen > 0) u.frozen--;
   tickStatuses(s, s.currentPlayer);
   // 雷电之主：强化按自身回合递减，归零清除护盾
   if (s.empowerTurnActive) {
     for (const u of unitsOf(s, s.currentPlayer)) {
+      if (isTimeStopped(u)) continue;
       if (u.heroId === "thunder" && (u.empowerTurns || 0) > 0) {
         u.empowerTurns -= 1;
         if (u.empowerTurns <= 0) u.shield = 0;
@@ -1599,6 +1763,9 @@ function endTurnOnce(s) {
     }
   }
   s.empowerTurnActive = false;
+  // 时间行者：裂空斩 / 破空在下一回合结束时回归锚点
+  processTimeAnchorsEndS(s, ended);
+  if (checkVictory(s)) return;
   // 行军令：若存在「额外回合」，则当前玩家再获得一个完整回合，结束后才交给对手
   const samePlayer = !!s.extraTurnPending;
   s.extraTurnPending = false;
@@ -1679,7 +1846,7 @@ function applyAction(state, player, action) {
     if (!isUnit(u) || u.player !== player) return err("无效的单位");
     if (player !== s.currentPlayer) return err("只能在自己回合使用龙胆");
     if (!hasPassiveEffectS(u, "longren", "龙胆") || (u.dragonMoves || 0) <= 0) return err("没有额外移动机会");
-    if (isRooted(u) || isSilenced(u)) return err("当前状态无法使用额外移动");
+    if (isTimeStopped(u) || isRooted(u) || isSilenced(u)) return err("当前状态无法使用额外移动");
     const { r, c } = action.to || {};
     if (!inB(r, c) || Math.abs(r - from.r) + Math.abs(c - from.c) !== 1) return err("只能额外移动一格");
     if (s.board[r][c]) return err("目标格被占用");
@@ -1718,6 +1885,7 @@ function applyAction(state, player, action) {
                       statuses: {}, lockUsed: false, sdStage: 0, dragonMoves: 0, empowerTurns: 0,
                       chaseStage: 0, chaseMark: 0, guixiongUsed: false, wxtStage: 0,
                       stealth: null, ravenBuff: false, ravenDouble: false, ravenDoubleUsed: false, metalBuff: false, metalTide: 0, meditate: null,
+                      timeStop: null, timeStopPending: [],
                       facing: player === 1 ? [0, 1] : [0, -1], rbStage: 0, rbBlade: null, rbDir: null, crowForm: null,
                       copiedSkill: null, copiedUses: 0, copiedFrom: null,
                       usesArr: heroSkills(def).map((sk) => (sk.uses == null ? 9999 : sk.uses)) };
@@ -2135,6 +2303,30 @@ function applyAction(state, player, action) {
       s.board[from.r][from.c] = null;
       setFaceS(u, r - from.r, c - from.c);
       slog(s, "🪓 " + uname(s, u) + " 发动【狂徒】，十字位移到 (" + (r + 1) + "," + (c + 1) + ")");
+    } else if (sk.type === "riftslash") {
+      if (timeAnchorForS(s, u)) return err("裂空斩：当前已有时空锚点，必须等待它回归");
+      const rp = action.reposition || {};
+      const lr = rp.r, lc = rp.c;
+      if (!inB(lr, lc) || s.board[lr][lc] || Math.abs(lr - from.r) > 1 || Math.abs(lc - from.c) > 1 || (lr === from.r && lc === from.c)) {
+        return err("裂空斩：请选择锚点九宫格内的合法空格");
+      }
+      if (!isUnit(t) || t.player === player || isMirrorS(t) || hiddenFromS(t, player) || Math.abs(r - lr) + Math.abs(c - lc) !== 1) {
+        return err("裂空斩：请选择落点旁的一名敌方英雄");
+      }
+      addTimeAnchorS(s, u, "rift", from.r, from.c);
+      s.board[lr][lc] = u;
+      s.board[from.r][from.c] = null;
+      // 先挂时停再结算伤害，保证受伤触发的被动反击进入延迟队列。
+      if (findPos(s, t)) applyTimeStopS(s, t, u, sk.name);
+      applyDamage(s, t, sk.damage == null ? 1.5 : sk.damage, u);
+      slog(s, "🌌 " + uname(s, u) + " 发动【裂空斩】，位移到 (" + (lr + 1) + "," + (lc + 1) + ") 并斩击 " + uname(s, t));
+    } else if (sk.type === "voidstep") {
+      if (timeAnchorForS(s, u)) return err("破空：当前已有时空锚点，必须等待它回归");
+      if (!inB(r, c) || (r === from.r && c === from.c) || s.board[r][c]) return err("破空：请选择棋盘内未被占据的合法空格");
+      addTimeAnchorS(s, u, "void", from.r, from.c);
+      s.board[r][c] = u;
+      s.board[from.r][from.c] = null;
+      slog(s, "🌌 " + uname(s, u) + " 发动【破空】，穿梭到 (" + (r + 1) + "," + (c + 1) + ")");
     } else if (sk.type === "dash") {
       const opt = DIRS.map(([dr, dc]) => computeDash(s, u, from.r, from.c, dr, dc))
                       .find((o) => o.dest && o.dest.r === r && o.dest.c === c);

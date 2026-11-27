@@ -88,6 +88,7 @@
     thiefgod:  { wave: "sawtooth", base: 180, air: 3600, metal: 0.35, wet: 0.55, pan: 0.0 },
     mirror:    { wave: "sine",     base: 980, air: 6200, metal: 0.10, wet: 0.2, pan: 0.04 },
     undead:    { wave: "sawtooth", base: 140, air: 1600, metal: 0.30, wet: 0.8, pan: -0.02 },
+    timewalker:{ wave: "sine",     base: 320, air: 6400, metal: 0.12, wet: 0.25, pan: 0.02 },
     minion:    { wave: "square",   base: 320, air: 1800, metal: 0.20, wet: 0.6, pan: 0.0 },
     __default: { wave: "triangle", base: 600, air: 2400, metal: 0.25, wet: 0.3, pan: 0 },
   };
@@ -1045,6 +1046,20 @@
         N(L, { at: 0, dur: 0.24, bp: 900, q: 1.2, sweepTo: 320, peak: 0.15 });
         T(L, { at: 0, dur: 0.26, wave: "sawtooth", f0: 120, f1: 55, peak: 0.07 });
         M(L, { at: 0.04, base: 620, dur: 0.18, peak: 0.05, partials: [1, 2.4, 4.6] });
+        break;
+      case "riftslash":
+      case "voidstep":
+        // 时间行者：玻璃般的时空裂隙 + 倒放感
+        N(L, { at: 0, dur: 0.30, bp: 1800, q: 1.6, sweepTo: 600, peak: 0.11 });
+        S(L, { at: 0, f0: 780, f1: 130, dur: 0.34, peak: 0.07, wave: "sine" });
+        M(L, { at: 0.08, base: 1250, dur: 0.30, peak: 0.05, partials: [1, 2.7, 5.1] });
+        break;
+      case "timeStop":
+        HP(L, { at: 0, dur: 0.38, f0: 120, f1: 42, peak: 0.16 });
+        T(L, { at: 0.02, dur: 0.34, wave: "sine", f0: 1200, f1: 260, peak: 0.06 });
+        break;
+      case "timeResume":
+        S(L, { at: 0, f0: 180, f1: 760, dur: 0.24, peak: 0.055, wave: "triangle" });
         break;
       case "dashHit":
         M(L, { at: 0, base: h.base * 2.4, dur: 0.22, peak: 0.10, partials: [1, 2.7, 5.2] });

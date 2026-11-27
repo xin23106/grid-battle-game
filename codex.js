@@ -28,6 +28,8 @@
     charge: "相邻目标；沿远离自身方向击退",
     chase: "第一段：整行 / 整列直线贯穿；第二段：带标记敌人的相邻空格",
     crosstep: "上 / 下 / 左 / 右相邻 1 格（不能斜向）",
+    riftslash: "先落点九宫格 + 落点普通攻击范围（相邻）",
+    voidstep: "全棋盘任意合法空格",
     damage_adjacent_all: "所有相邻敌人",
     damage_single: "按技能射程内的单个敌人",
     dash: "直线方向最多 3 格",
@@ -96,6 +98,7 @@
     metalarmor: "强化 / 定身", metaltide: "减伤", meditate: "形态 / 无敌",
     divinepalm: "伤害 / 击退", stealth: "隐身 / 位移", mistdash: "突进 / 地形",
     shadowfang: "单体攻击", push: "推击 / 地形", charge: "冲锋 / 击退", crosstep: "十字位移",
+    riftslash: "位移 / 斩击 / 时停", voidstep: "全图传送 / 延迟爆发",
     raikiri: "直线二段", thunderblade: "三段连招", susano_dash: "斜线位移",
     susano_pull: "拉拽", susano_arrow: "范围 / 地形", susano_crow: "变身 / 范围",
   };
@@ -308,7 +311,7 @@
     const src = String(text || "");
     // 只把真正作为段落标题的“第一段：/ 第一段·/ 第二段（…）：”视为分段，
     // 避免把“第一段、第二段各消耗…”这种概述误拆成额外段落。
-    const re = /第[一二三四五六七八九十百]+段(?:[（(][^）)]{1,40}[）)])?(?=\s*[：:·])/g;
+    const re = /第[一二三四五六七八九十百]+(?:段|阶段)(?:[（(][^）)]{1,40}[）)])?(?=\s*[：:·])/g;
     const marks = [];
     let m;
     while ((m = re.exec(src))) marks.push({ index: m.index, title: m[0] });

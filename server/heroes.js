@@ -112,4 +112,9 @@ module.exports = [
     extraSkills: [
       { name: "亡灵军团", type: "undeadarmy", uses: 1, free: false },
     ] },
+  { id: "timewalker", name: "时间行者", hp: 5, sfx: "time",
+    skill: { name: "裂空斩", type: "riftslash", uses: 1, damage: 1.5, stopTurns: 1 },
+    extraSkills: [
+      { name: "破空", type: "voidstep", uses: 1, damage: 2, radius: 1 },
+    ] },
 ];

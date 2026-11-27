@@ -2765,6 +2765,74 @@ html, body {
 @keyframes yjQiankunBody { 0% { transform: translateY(0) scale(1); } 28% { transform: translateY(4px) scaleY(.95); } 58% { transform: translateY(-7px) scale(1.07); } 100% { transform: translateY(0) scale(1); } }
 @keyframes yjQiankunWeapon { 0% { transform: rotate(0); } 30% { transform: rotate(16deg) translateY(2px); } 62% { transform: rotate(-24deg) translateY(-5px); } 100% { transform: rotate(0); } }
 @keyframes yjQiankunAura { 0% { opacity: .45; transform: scale(.85); } 45% { opacity: 1; transform: scale(1.35); } 100% { opacity: .75; transform: scale(1); } }
+
+/* ============================ 时间行者：时空锚点 / 时间停止 ============================ */
+.chip.timewalker { background: #164e63; color: #cffafe; box-shadow: 0 0 10px rgba(34, 211, 238, .22); }
+.chip.time-stop { background: #312e81; color: #e0e7ff; box-shadow: 0 0 12px rgba(129, 140, 248, .35); }
+.time-anchor-mark {
+  position: absolute;
+  inset: 4px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  color: #a5f3fc;
+  border-radius: 12px;
+  background: radial-gradient(circle, rgba(34, 211, 238, .28), rgba(14, 116, 144, .08) 42%, transparent 66%);
+  animation: anchorBreath 2.2s ease-in-out infinite;
+}
+.time-anchor-mark .anchor-ring {
+  position: absolute;
+  width: 74%;
+  height: 74%;
+  border: 1px solid rgba(103, 232, 249, .72);
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(34, 211, 238, .55), inset 0 0 12px rgba(34, 211, 238, .2);
+  animation: anchorSpin 7s linear infinite;
+}
+.time-anchor-mark .anchor-ring::before,
+.time-anchor-mark .anchor-ring::after {
+  content: "";
+  position: absolute;
+  inset: 16%;
+  border: 1px dashed rgba(165, 243, 252, .58);
+  border-radius: 50%;
+}
+.time-anchor-mark .anchor-ring::after { inset: 31%; border-style: solid; opacity: .7; }
+.time-anchor-mark .anchor-core { font-size: 18px; line-height: 1; text-shadow: 0 0 12px #67e8f9; animation: anchorCore 1.6s ease-in-out infinite; }
+.time-anchor-mark .anchor-label { position: absolute; bottom: 2px; font-size: 8px; color: #cffafe; letter-spacing: 1px; opacity: .9; }
+.time-anchor-mark.anchor-void { color: #c4b5fd; background: radial-gradient(circle, rgba(139, 92, 246, .34), rgba(30, 27, 75, .12) 45%, transparent 68%); }
+.time-anchor-mark.anchor-void .anchor-ring { border-color: rgba(196, 181, 253, .75); box-shadow: 0 0 12px rgba(139, 92, 246, .6), inset 0 0 12px rgba(139, 92, 246, .22); }
+.time-anchor-mark.anchor-void .anchor-core { color: #ddd6fe; text-shadow: 0 0 12px #a78bfa; }
+.cell.time-stopped .unit { filter: grayscale(.28) hue-rotate(12deg) brightness(.86); box-shadow: 0 0 0 2px rgba(129, 140, 248, .75), 0 0 18px rgba(99, 102, 241, .45); }
+.cell.time-stopped { box-shadow: inset 0 0 18px rgba(99, 102, 241, .18); }
+.cell.time-stopped .hero-figure-wrap { animation-play-state: paused !important; filter: saturate(.45) brightness(1.08) drop-shadow(0 0 6px #818cf8); }
+.time-stop-mark {
+  position: absolute;
+  right: 2px;
+  bottom: 9px;
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px;
+  border-radius: 5px;
+  border: 1px solid rgba(165, 180, 252, .7);
+  background: rgba(30, 27, 75, .82);
+  color: #e0e7ff;
+  font-size: 8px;
+  box-shadow: 0 0 8px rgba(99, 102, 241, .45);
+  pointer-events: none;
+}
+.time-stop-clock { font-size: 10px; }
+@keyframes anchorBreath { 0%,100% { opacity: .58; transform: scale(.94); } 50% { opacity: 1; transform: scale(1.03); } }
+@keyframes anchorSpin { to { transform: rotate(360deg); } }
+@keyframes anchorCore { 0%,100% { opacity: .62; transform: scale(.86); } 50% { opacity: 1; transform: scale(1.14); } }
+.unit-pose-timewalker-rift .hero-figure-wrap { animation: timeRiftBody .55s ease-out; }
+.unit-pose-timewalker-void .hero-figure-wrap { animation: timeVoidBody .5s ease-out; }
+@keyframes timeRiftBody { 0% { transform: translateX(0) skewX(0); filter: drop-shadow(0 0 0 transparent); } 35% { transform: translateX(-5px) skewX(-8deg); filter: drop-shadow(0 0 8px #67e8f9); } 100% { transform: translateX(0) skewX(0); } }
+@keyframes timeVoidBody { 0% { opacity: 1; transform: scale(1); } 40% { opacity: .35; transform: scale(.9); } 100% { opacity: 1; transform: scale(1); } }
+
 /* ============================ 狂战士·狂化 ============================ */
 .chip.berserk { background: #7f1d1d; color: #fecaca; box-shadow: 0 0 10px rgba(239, 68, 68, .28); }
 .cell.berserk-stage-1 .hero-aura { background: radial-gradient(ellipse, rgba(248, 113, 113, .35), rgba(127, 29, 29, .18) 52%, transparent 70%); }

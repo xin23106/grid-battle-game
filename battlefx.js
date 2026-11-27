@@ -45,7 +45,7 @@
     assassin: "#22d3ee", warlock: "#a5f3fc", cleric: "#86efac", guardian: "#93c5fd",
     asura: "#e2e8f0", lone: "#facc15", cang: "#38bdf8", longren: "#fbbf24",
     thunder: "#c084fc", vampire: "#e11d48", jade: "#a78bfa", xiangyu: "#f87171",
-    tiandao: "#c084fc", huamulan: "#f43f5e", hillking: "#a8a29e", raven: "#8b5cf6", metal: "#fbbf24", cicada: "#fcd34d", eagle: "#a78bfa", susanoo: "#7c3aed", yangjian: "#fbbf24", thiefgod: "#fbbf24", mirror: "#c4b5fd", undead: "#a3e635", minion: "#a3e635",
+    tiandao: "#c084fc", huamulan: "#f43f5e", hillking: "#a8a29e", raven: "#8b5cf6", metal: "#fbbf24", cicada: "#fcd34d", eagle: "#a78bfa", susanoo: "#7c3aed", yangjian: "#fbbf24", thiefgod: "#fbbf24", mirror: "#c4b5fd", undead: "#a3e635", timewalker: "#67e8f9", minion: "#a3e635",
   };
   function heroColor(id) { return HERO_COLOR[id] || "#93c5fd"; }
 
@@ -1291,6 +1291,65 @@
           push({ kind: "portal", x: tx, y: ty, r: geo.cell * 0.32, color: col, dur: 380, delay: 70 });
           addMark("space", tg.r, tg.c, col, 10000);
         }
+        break;
+      case "timeAnchor":
+      case "timeAnchorFade": {
+        const cyan = m.anchorKind === "void" ? "#c4b5fd" : "#67e8f9";
+        push({ kind: "rune", x, y, r: geo.cell * 0.55, color: cyan, sides: 8, dur: 520 });
+        push({ kind: "ring", x, y, r0: geo.cell * (t === "timeAnchorFade" ? 0.5 : 0.12), r1: geo.cell * (t === "timeAnchorFade" ? 0.08 : 0.62), color: cyan, width: 2.2, dur: 500 });
+        push({ kind: "crack", x, y, r: geo.cell * 0.28, color: cyan, dur: 360, n: 5 });
+        spawn(x, y, 18, { color: cyan, speed: 1.6, life: 520, size: 1.8 });
+        break;
+      }
+      case "riftslash":
+      case "voidstep": {
+        const cyan = t === "riftslash" ? "#67e8f9" : "#c4b5fd";
+        if (tx != null) {
+          push({ kind: "portal", x, y, r: geo.cell * 0.4, color: cyan, dur: 330 });
+          push({ kind: "portal", x: tx, y: ty, r: geo.cell * 0.4, color: cyan, dur: 330, delay: 55 });
+          push({ kind: "line", x, y, x2: tx, y2: ty, color: cyan, width: 8, dur: 220, alpha: 0.5 });
+          for (let i = 0; i <= 4; i++) {
+            const q = i / 4;
+            push({ kind: "ghost", x: x + (tx - x) * q, y: y + (ty - y) * q, r: geo.cell * 0.24, color: cyan, dur: 240, delay: i * 25 });
+          }
+          if (t === "riftslash") {
+            push({ kind: "slash", x: tx, y: ty, angle: Math.PI * 0.25, len: geo.cell * 1.05, width: 5, color: "#f0fdff", dur: 260, delay: 90 });
+            push({ kind: "crack", x: tx, y: ty, r: geo.cell * 0.62, color: cyan, dur: 400, n: 7 });
+            addMark("impact", tg.r, tg.c, cyan, 10000);
+          }
+          spawn(tx, ty, 14, { color: cyan, speed: 2.2, life: 440, size: 2 });
+        }
+        break;
+      }
+      case "timeBlast": {
+        const cells = Array.isArray(m.cells) ? m.cells : [];
+        for (const [rr, cc] of cells) {
+          const bx = px(cc), by = py(rr);
+          push({ kind: "ring", x: bx, y: by, r0: 2, r1: geo.cell * 0.54, color: "#a5f3fc", width: 2.4, dur: 440, delay: 20 });
+          push({ kind: "crack", x: bx, y: by, r: geo.cell * 0.3, color: "#818cf8", dur: 380, n: 4 });
+        }
+        push({ kind: "wave", x, y, r1: geo.cell * 1.9, color: "#67e8f9", dur: 480 });
+        spawn(x, y, 30, { color: "#cffafe", speed: 3.6, life: 500, size: 2.3 });
+        flash("#cffafe", 0.28);
+        break;
+      }
+      case "timeReturn":
+        if (tx != null) {
+          push({ kind: "portal", x, y, r: geo.cell * 0.45, color: "#a5f3fc", dur: 360 });
+          push({ kind: "portal", x: tx, y: ty, r: geo.cell * 0.45, color: "#a5f3fc", dur: 360, delay: 90 });
+          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.6, r1: geo.cell * 0.08, color: "#c4b5fd", width: 2, dur: 420 });
+        }
+        break;
+      case "timeStop":
+        if (tx != null) {
+          push({ kind: "ring", x: tx, y: ty, r0: geo.cell * 0.8, r1: geo.cell * 0.16, color: "#a5b4fc", width: 3, dur: 460 });
+          push({ kind: "rune", x: tx, y: ty, r: geo.cell * 0.5, color: "#e0e7ff", sides: 12, dur: 520 });
+          spawn(tx, ty, 24, { color: "#c7d2fe", speed: 0.8, life: 620, size: 2 });
+          addMark("frost", tg.r, tg.c, "#a5b4fc", 12000);
+        }
+        break;
+      case "timeResume":
+        push({ kind: "ring", x, y, r0: geo.cell * 0.2, r1: geo.cell * 0.72, color: "#c4b5fd", width: 2, dur: 320 });
         break;
       case "crosstep":
         // 狂战士·狂徒：脚下红色十字法阵 → 残影横移 → 落点红色冲击波
