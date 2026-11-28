@@ -1382,23 +1382,21 @@ function drawPools() {
   while (pool2.length < PER_PLAYER && shuffled.length) pool2.push(shuffled[pool2.length % shuffled.length]);
   return { 1: pool1, 2: pool2 };
 }
-/* 联机混合卡槽：每方固定 3 个槽位。
- * 先抽取英雄池（3 名候选英雄），再加入 3 张选将卡组成 6 张卡池，最后随机抽出 3 张。
- * 英雄卡给出候选英雄；选将卡可以任选英雄。 */
+/* 联机混合卡槽：英雄池（全部英雄）+ 3 张选将卡，共 32 张。
+ * 洗牌后双方各从同一卡池抽 3 张，共 6 个槽位；抽到英雄卡使用该英雄，抽到选将卡可任选英雄。
+ * 双方英雄卡不重复；最多共有 3 个选将卡槽位。 */
 const CARD_SLOTS = 3;
 function drawCardSlots() {
-  const pools = drawPools();
-  const slots = { 1: [], 2: [] };
-  for (const p of [1, 2]) {
-    const deck = pools[p].map((heroId) => ({ type: "hero", heroId, used: false }));
-    for (let i = 0; i < 3; i++) deck.push({ type: "wildcard", used: false });
-    for (let i = deck.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      const t = deck[i]; deck[i] = deck[j]; deck[j] = t;
-    }
-    slots[p] = deck.slice(0, CARD_SLOTS);
+  const deck = HEROES.map((h) => ({ type: "hero", heroId: h.id, used: false }));
+  for (let i = 0; i < 3; i++) deck.push({ type: "wildcard", used: false });
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const t = deck[i]; deck[i] = deck[j]; deck[j] = t;
   }
-  return slots;
+  return {
+    1: deck.slice(0, CARD_SLOTS),
+    2: deck.slice(CARD_SLOTS, CARD_SLOTS * 2),
+  };
 }
 function cardSlotsPools(slots) {
   return {
