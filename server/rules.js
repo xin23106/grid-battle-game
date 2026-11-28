@@ -1382,31 +1382,21 @@ function drawPools() {
   while (pool2.length < PER_PLAYER && shuffled.length) pool2.push(shuffled[pool2.length % shuffled.length]);
   return { 1: pool1, 2: pool2 };
 }
-/* 联机混合卡槽：每方固定 6 个卡槽，每个卡槽随机成为英雄卡或选将卡。
- * 英雄卡给出一名不重复的候选英雄；选将卡可以任选英雄。
- * 至少保证每方各有一张英雄卡和一张选将卡，避免抽到全同类时无法展示两种卡。 */
-const CARD_SLOTS = 6;
+/* 联机混合卡槽：每方固定 3 个槽位。
+ * 先抽取英雄池（3 名候选英雄），再加入 3 张选将卡组成 6 张卡池，最后随机抽出 3 张。
+ * 英雄卡给出候选英雄；选将卡可以任选英雄。 */
+const CARD_SLOTS = 3;
 function drawCardSlots() {
-  const ids = HEROES.map((h) => h.id);
-  const shuffled = ids.slice();
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const t = shuffled[i]; shuffled[i] = shuffled[j]; shuffled[j] = t;
-  }
-  let heroCursor = 0;
+  const pools = drawPools();
   const slots = { 1: [], 2: [] };
   for (const p of [1, 2]) {
-    for (let i = 0; i < CARD_SLOTS; i++) {
-      let isHero = Math.random() < 0.5 && heroCursor < shuffled.length;
-      if (i === CARD_SLOTS - 1) {
-        const hasWild = slots[p].some((s) => s.type === "wildcard");
-        const hasHero = slots[p].some((s) => s.type === "hero");
-        if (!hasWild) isHero = false;
-        else if (!hasHero) isHero = true;
-      }
-      if (isHero) slots[p].push({ type: "hero", heroId: shuffled[heroCursor++], used: false });
-      else slots[p].push({ type: "wildcard", used: false });
+    const deck = pools[p].map((heroId) => ({ type: "hero", heroId, used: false }));
+    for (let i = 0; i < 3; i++) deck.push({ type: "wildcard", used: false });
+    for (let i = deck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = deck[i]; deck[i] = deck[j]; deck[j] = t;
     }
+    slots[p] = deck.slice(0, CARD_SLOTS);
   }
   return slots;
 }

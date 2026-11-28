@@ -8598,7 +8598,7 @@ function updateRoster() {
   const local = gameMode === "local";
   const me = mySide();
   const used = placedIds[me] || [];
-  // 联机混合卡槽：6 个槽位随机成为英雄卡 / 选将卡，按抽到的顺序展示。
+  // 联机混合卡槽：英雄池 + 3 张选将卡中抽出 3 个槽位，按抽到的顺序展示。
   if (online && onlineCardSlots.length && !wildcardMode) {
     const titleEl0 = heroRosterEl.querySelector(".roster-title");
     if (titleEl0) titleEl0.textContent = "开局随机卡槽：英雄卡 / 选将卡（选将卡剩余 " + onlineWildcards + " 张）";
