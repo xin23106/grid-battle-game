@@ -264,7 +264,22 @@ function handle(ws, msg) {
     case "ready": {
       const room = rooms.get(ws.room);
       if (!room) return send(ws, { type: "error", message: "不在房间中" });
+      // 对局结束后双方再次准备：重新创建整局状态，英雄卡槽 / 锦囊 / 后手二选一全部重新抽取。
+      const ended = room.state && room.state.phase === "over";
+      if (ended && !room.rematchPending) {
+        room.rematchPending = true;
+        room.ready = { 1: false, 2: false };
+        room.started = false;
+      }
       room.ready[ws.player] = true;
+      if (ended && room.rematchPending && room.ready[1] && room.ready[2]) {
+        room.state = createState();
+        room.rematchPending = false;
+        room.started = true;
+        room.ready = { 1: false, 2: false };
+        sendEach(room, (p) => ({ type: "start", state: publicStateFor(room.state, p) }));
+        break;
+      }
       sendEach(room, (p) => ({ type: "joined", code: room.code, player: p, state: publicStateFor(room.state, p), ready: room.ready, players: room.players.size }));
       if (room.ready[1] && room.ready[2] && !room.started) {
         room.started = true;
