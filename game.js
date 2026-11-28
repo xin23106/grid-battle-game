@@ -133,6 +133,7 @@ let wildcardMode = false;          // 选将卡：正在从全部英雄中任选
 let pendingWildcard = false;       // 当前待放置英雄是否由选将卡指定
 let history = [];                  // 悔棋：行动前快照栈
 let historyBase = 0;               // 悔棋下界：当前回合开始时已有的快照数量（不能悔到上一回合）
+let undoLocked = false;            // 本回合已出现龙魂判定，禁止悔棋重刷概率
 let onlineLogSeq = 0;              // 联机：已合并的服务端日志最大 id（去重，避免重连/重复广播刷屏）
 let bfxPrevSnap = null;            // 联机：上一份权威棋盘快照（用于派生表现事件，不改变任何状态）
 let bfxPillarSnap = null;          // 联机：上一份石柱位置（用于升起 / 碎裂表现）
@@ -2041,6 +2042,7 @@ function clearVictoryUi() {
 }
 function undoStep() {
   if (gameMode === "online") { addLog("联机对局由服务器结算，不能悔棋。"); render(); return; }
+  if (undoLocked) { addLog("本回合已触发龙魂判定，不能悔棋重刷概率。"); render(); return; }
   if (history.length <= historyBase) { addLog("已经回到本回合的第一步，无法再悔棋。"); render(); return; }
   applyHistorySnapshot(JSON.parse(history.pop()));
   // AI 模式：继续回退到本回合的起点，避免刚悔棋 AI 立刻又行动
@@ -2084,6 +2086,7 @@ function init() {
   else { localPools = { 1: [], 2: [] }; wildcards = { 1: 0, 2: 0 }; wildcardMode = false; pendingWildcard = false; }
   onlineWildcards = 0;
   onlineCardSlots = [];
+  undoLocked = false;
   history = [];
   historyBase = 0;
   pendingHero = firstAvailableHero(1);
@@ -2271,6 +2274,7 @@ function beginTurn() {
   turnSerial += 1;
   const isExtraTurn = !!turnFxExtra; // 行军令额外回合：不按真实自身回合结算鸦天狗
   historyBase = history.length; // 本回合的悔棋下界：不能回退到上一回合
+  undoLocked = false; // 新回合重置龙魂悔棋锁
   // 时间行者：破空的延迟爆发在自身下一回合开始时触发
   processTimeAnchorsStart(currentPlayer);
   if (checkVictory()) return;
@@ -3972,13 +3976,17 @@ function applyDamage(target, amount, kind, source, opts) {
     if (pos) fx.push({ r: pos.r, c: pos.c, text: "锁血!", kind: "shield" });
   }
   // 龙魂：龙人受到实际伤害前有 1/2（50%）概率闪避（护盾等前置减伤处理之后；完全抵消则不触发）
-  // 每次伤害事件只判定一次；闪避成功则获得 1 次龙胆额外移动次数
+  // 每次伤害事件只判定一次；一旦进行判定，本回合禁止悔棋，防止反复重开刷概率。
   let dodged = false;
-  if (dmg > 0 && hasPassiveEffect(target, "longren", "龙魂") && dragonDodged()) {
-    dodged = true;
-    dmg = 0;
-    addLog("🐉 龙魂：龙人闪避了本次伤害（0 点）。");
-    grantDragonMove(target);
+  if (dmg > 0 && hasPassiveEffect(target, "longren", "龙魂")) {
+    if (!undoLocked) addLog("🐉 龙魂判定触发：本回合悔棋已锁定。");
+    undoLocked = true;
+    if (dragonDodged()) {
+      dodged = true;
+      dmg = 0;
+      addLog("🐉 龙魂：龙人闪避了本次伤害（0 点）。");
+      grantDragonMove(target);
+    }
   }
   // 西楚霸王·鬼雄：首次致命伤害 → 锁血到 1（每局一次），随后反击九宫格内敌人并进入绝境强化
   let guixiongTriggered = false;
@@ -9171,8 +9179,10 @@ function updatePanel() {
   skipBtn.classList.toggle("hidden", phase !== "battle");
   if (undoBtn) {
     undoBtn.classList.toggle("hidden", phase === "over");
-    undoBtn.disabled = gameMode === "online" ? !onlineCanUndo : (!history || !history.length || history.length <= historyBase);
-    undoBtn.title = gameMode === "online" ? "联机悔棋：回退本回合上一步" : "悔棋：回退到上一步";
+    undoBtn.disabled = gameMode === "online" ? !onlineCanUndo : (undoLocked || !history || !history.length || history.length <= historyBase);
+    undoBtn.title = gameMode === "online"
+      ? (onlineCanUndo ? "联机悔棋：回退本回合上一步" : "本回合已触发龙魂判定，不能悔棋")
+      : (undoLocked ? "本回合已触发龙魂判定，不能悔棋" : "悔棋：回退到上一步");
   }
   const mustAct = phase === "battle" && turnActionsLeft === turnActionsMax && hasAnyAction(currentPlayer) && hasAnyMove(currentPlayer);
   skipBtn.disabled = mustAct;
@@ -10987,6 +10997,7 @@ function applyRemoteState(state) {
   if (state.extraMoves != null) extraMoves = state.extraMoves;
   if (state.extraTurnPending != null) extraTurnPending = !!state.extraTurnPending;
   if (state.turnActionUsed != null) turnActionUsed = state.turnActionUsed;
+  undoLocked = !!state.undoLocked;
   // 联机：同步行动预算（否则“行动后不自动结束”时无法判断能否结束回合）
   if (state.turnActionsLeft != null) turnActionsLeft = state.turnActionsLeft;
   if (state.turnActionsMax != null) turnActionsMax = state.turnActionsMax;
@@ -11078,6 +11089,7 @@ window.onNetJoined = () => {
   onlineWildcards = 0;
   onlineCardSlots = [];
   onlineCanUndo = false;
+  undoLocked = false;
   history = [];
 };
 window.onNetStart = () => {
@@ -11628,6 +11640,7 @@ window.GameAPI = {
     timeAnchorSeq = 0;
     holyDomains = [];
     holyDomainSeq = 0;
+    undoLocked = false;
     history = [];
     historyBase = 0;
     // 对局统计 & 结算演出：重置（测试/新局共用）

@@ -152,7 +152,7 @@ function publicStateFor(state, player) {
   // 6) 日志：带 only 的条目只发给指定玩家（如隐身单位的移动坐标）
   if (Array.isArray(s.log)) s.log = s.log.filter((e) => !e.only || e.only === me);
   // 7) 联机悔棋：仅告知本人「当前是否可悔」，不下发快照内容
-  s.canUndo = !!(state._undo && state._undo.length && state.phase === "battle" && state.currentPlayer === me);
+  s.canUndo = !!(state._undo && state._undo.length && state.phase === "battle" && state.currentPlayer === me && !state.undoLocked);
   delete s._undo;
   return s;
 }

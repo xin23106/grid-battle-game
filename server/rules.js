@@ -1445,7 +1445,7 @@ function createState() {
   const cardSlots = drawCardSlots();
   return { board, phase: "placement", currentPlayer: 1, winner: 0, unitSeq: 1,
            toPlace: PER_PLAYER, placed: { 1: [], 2: [] }, pools: cardSlotsPools(cardSlots), cardSlots, turnActionUsed: false,
-           turnActionsMax: 1, turnActionsLeft: 1, turnActorUid: 0, empowerTurnActive: false,
+           turnActionsMax: 1, turnActionsLeft: 1, turnActorUid: 0, empowerTurnActive: false, undoLocked: false,
            talisman: { 1: drawTalismanId(), 2: null }, talismanUsed: { 1: false, 2: false }, wildcards: cardSlotsWildcards(cardSlots),
            talismanChoice: { player: 2, options: p2Options, done: false },
            assaultPlayer: 0, guardPlayer: 0, extraMoves: 0, extraTurnPending: false, graveyard: [], mists: {}, blackFlames: {}, elementFields: [], elementFieldSeq: 0, meteors: [], meteorSeq: 0, crosses: [], crossSeq: 0,
@@ -1821,10 +1821,15 @@ function applyDamage(s, target, amount, source, opts) {
   // 命运羁绊：目标护盾结算后仍会受到致命伤害时，换位并由护卫承担剩余伤害。
   if (!opts.skipProtection && dmg > 0 && tryDestinyBondS(s, target, dmg, source)) return 0;
   // 龙魂：龙人 1/2 概率闪避（护盾等前置处理之后、完全抵消则不触发）
-  if (dmg > 0 && hasPassiveEffectS(target, "longren", "龙魂") && Math.random() < 1 / 2) {
-    dmg = 0;
-    target.dragonMoves = (target.dragonMoves || 0) + 1;
-    slog(s, "🐉 龙魂：" + uname(s, target) + " 闪避了本次伤害（并积累 1 次龙胆）");
+  // 只要进行了龙魂判定，本回合就锁定悔棋，防止反复重开刷概率。
+  if (dmg > 0 && hasPassiveEffectS(target, "longren", "龙魂")) {
+    if (!s.undoLocked) slog(s, "🐉 龙魂判定触发：本回合悔棋已锁定");
+    s.undoLocked = true;
+    if (Math.random() < 1 / 2) {
+      dmg = 0;
+      target.dragonMoves = (target.dragonMoves || 0) + 1;
+      slog(s, "🐉 龙魂：" + uname(s, target) + " 闪避了本次伤害（并积累 1 次龙胆）");
+    }
   }
   // 孤胆侠·霸体：首次致命伤害锁血到 1
   if (dmg > 0 && target.hp - dmg <= 0 && hasPassiveEffectS(target, "lone", "孤胆") && hasSuperArmor(s, target) && !target.lockUsed) {
@@ -2230,6 +2235,7 @@ function beginTurn(s) {
   const isExtraTurn = !!s.turnIsExtra; // 行军令额外回合：不推进鸦天狗
   s.turnIsExtra = false;
   s._undo = []; // 新回合：不能悔到上一回合
+  s.undoLocked = false; // 新回合：龙魂悔棋锁重置
   // 时间行者：破空延迟爆发在自身下一回合开始时触发
   processTimeAnchorsStartS(s, s.currentPlayer);
   if (checkVictory(s)) return;
@@ -2563,6 +2569,7 @@ function applyAction(state, player, action) {
   };
   if (act === "undo") {
     if (s.phase !== "battle") return err("当前阶段不能悔棋");
+    if (s.undoLocked) return err("本回合已触发龙魂判定，不能悔棋");
     if (!s._undo || !s._undo.length) return err("没有可悔棋的步骤");
     const keepLog = s.log, keepSeq = s.logSeq;
     const snap = JSON.parse(s._undo.pop());
